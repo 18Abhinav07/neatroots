@@ -1,0 +1,16 @@
+{
+  "name": "bolts-monorepo",
+  "private": true,
+  "description": "Neatlogs Bolts: local, private checks for AI agents while they run",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "pnpm -r --filter @neatlogs/bolts-ui build && pnpm -r --filter @neatlogs/bolts build && pnpm -r --filter @neatlogs/bolts-steer build",
+    "dev": "pnpm --filter @neatlogs/bolts dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
