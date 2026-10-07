@@ -350,7 +350,7 @@ export function encodeTraceRequest(batches: ResourceSpansBatch[]): Uint8Array {
       ],
     })),
   };
-  const err = T.verify(obj);
-  if (err) throw new Error(`OTLP encode: ${err}`);
+  // fromObject converts decimal-string int64 values (times, intValue) without precision loss;
+  // verify() would reject them, so it is not used here.
   return T.encode(T.fromObject(obj)).finish();
 }
