@@ -8,9 +8,9 @@
   },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "build": "pnpm -r --filter @neatlogs/bolts-ui build && pnpm -r --filter @neatlogs/bolts build && pnpm -r --filter @neatlogs/bolts-steer build",
+    "build": "pnpm --filter @neatlogs/bolts-ui build && pnpm --filter @neatlogs/bolts build",
     "dev": "pnpm --filter @neatlogs/bolts dev",
-    "test": "pnpm -r test",
+    "test": "pnpm --filter @neatlogs/bolts test",
     "typecheck": "pnpm -r typecheck"
   }
 }

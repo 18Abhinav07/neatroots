@@ -55,7 +55,7 @@ export class SteeringHub {
   /** Queues a note for a run. Returns undefined when steering is off or the run's limit is reached. */
   push(input: { traceId: string; findingId: string | null; kind: Note["kind"]; text: string; checks?: Note["checks"] }): Note | undefined {
     const run = this.bolts.store.getRun(input.traceId);
-    if (!run) return undefined;
+    if (!run || run.status !== "running") return undefined;
     if (input.kind !== "halt" && this.mode(run.project) === "off") return undefined;
     const limit = this.bolts.config.steering.maxNotesPerRun;
     if (input.kind !== "halt" && this.deliveredCount(input.traceId) >= limit) return undefined;
@@ -79,7 +79,8 @@ export class SteeringHub {
   replace(oldId: string, text: string, checks: Note["checks"]): Note | undefined {
     const old = this.bolts.store.getNote(oldId);
     if (!old) return undefined;
-    if (old.status !== "pending") {
+    const ended = this.bolts.store.getRun(old.trace_id)?.status !== "running";
+    if (old.status !== "pending" || ended) {
       return this.bolts.store.insertNote({ trace_id: old.trace_id, finding_id: old.finding_id, kind: "llm", text, status: "expired", checks });
     }
     const next = this.bolts.store.insertNote({ trace_id: old.trace_id, finding_id: old.finding_id, kind: "llm", text, status: "pending", checks });

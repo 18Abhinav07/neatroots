@@ -47,6 +47,9 @@ const TRIAGE_LEVELS = [
   "clearly broken",
 ];
 
+/** With the LLM standing in for a classifier, a span-scope question is asked about at most this many spans per run. */
+const SLOW_SPAN_CHECKS_PER_RUN = 4;
+
 /** Triage at or above this expected level gets an LLM investigation. */
 const INVESTIGATE_AT = 2.5;
 
@@ -59,6 +62,10 @@ interface LiveRun {
   used: { plans: number; investigations: number; notes: number; summaries: number };
   deferred: (() => Promise<void>)[];
   spanDone: Set<string>;
+  /** Per span-scope check: spans waiting to be asked about, newest last. */
+  spanQueue: Map<string, string[]>;
+  spanBusy: Set<string>;
+  spanAsked: Map<string, number>;
   traceEvidence: Map<string, string>;
   dirty: Set<string>;
   debounce?: NodeJS.Timeout;
@@ -184,6 +191,9 @@ export class Engine {
       used: { plans: 0, investigations: 0, notes: 0, summaries: 0 },
       deferred: [],
       spanDone: new Set(),
+      spanQueue: new Map(),
+      spanBusy: new Set(),
+      spanAsked: new Map(),
       traceEvidence: new Map(),
       dirty: new Set(),
       ended: false,
@@ -196,7 +206,11 @@ export class Engine {
 
   private onTrace(u: TraceUpdate): void {
     const run = this.liveRun(u.traceId);
-    if (!run || run.doctor) return;
+    if (!run) return;
+    if (run.doctor) {
+      this.live.delete(u.traceId);
+      return;
+    }
     const fresh = u.spans.filter((s) => s.isNew && !s.view.isMarker);
     if (fresh.length) this.track(u.traceId, this.handleSpans(run, fresh.map((s) => s.row.span_id)));
     if (u.rootEnded || u.completed) {
@@ -248,12 +262,15 @@ export class Engine {
       if (check.when === "end") continue;
       const sel = check.evidence?.spans;
       if (check.scope === "span") {
+        const queue = run.spanQueue.get(check.id) ?? [];
         for (const s of fresh) {
           const key = `${check.id}:${s.id}`;
           if (run.spanDone.has(key) || !matchesSelector(s, sel)) continue;
           run.spanDone.add(key);
-          void this.track(run.traceId, this.askSpan(run, check, params, s.id));
+          queue.push(s.id);
         }
+        run.spanQueue.set(check.id, queue);
+        if (queue.length) void this.track(run.traceId, this.drainSpanQueue(run, check, params));
       } else if (fresh.some((s) => matchesSelector(s, sel))) {
         run.dirty.add(check.id);
       }
@@ -261,6 +278,35 @@ export class Engine {
     if (run.dirty.size) {
       clearTimeout(run.debounce);
       run.debounce = setTimeout(() => void this.track(run.traceId, this.flushDirty(run)), 300);
+    }
+  }
+
+  /**
+   * Asks a span-scope question about queued spans. With a fast classifier every span is
+   * asked; when the LLM stands in, only the newest waiting span is asked, up to a per-run cap.
+   */
+  private async drainSpanQueue(run: LiveRun, check: QuestionCheck, params: Record<string, string>): Promise<void> {
+    if (run.spanBusy.has(check.id)) return;
+    run.spanBusy.add(check.id);
+    try {
+      for (;;) {
+        const queue = run.spanQueue.get(check.id) ?? [];
+        if (!queue.length) break;
+        const slow = await this.decisions.isSlow();
+        let spanId: string;
+        if (slow) {
+          spanId = queue[queue.length - 1];
+          queue.length = 0;
+          const asked = run.spanAsked.get(check.id) ?? 0;
+          if (asked >= SLOW_SPAN_CHECKS_PER_RUN) break;
+          run.spanAsked.set(check.id, asked + 1);
+        } else {
+          spanId = queue.shift()!;
+        }
+        await this.askSpan(run, check, params, spanId);
+      }
+    } finally {
+      run.spanBusy.delete(check.id);
     }
   }
 
@@ -612,7 +658,7 @@ export class Engine {
           { role: "system", content: NOTE_SYSTEM },
           { role: "user", content: `Finding: ${f.title}\nCurrent note: ${template.text}\n\n${wrapRun(ev)}` },
         ],
-        { schema: { name: "note", schema: NOTE_SCHEMA }, maxTokens: 160, priority: "high", timeoutSec: 45 },
+        { schema: { name: "note", schema: NOTE_SCHEMA }, maxTokens: 160, priority: "urgent", timeoutSec: 45 },
       );
       text = (r.json as { note?: string } | undefined)?.note?.trim();
       model = r.model;
@@ -624,10 +670,14 @@ export class Engine {
     let unsupported = 1;
     let copied = 1;
     try {
-      const r = await this.decisions.decide(`${ev}\n\nNote for the agent:\n${text}`, [
-        { name: "unsupported", type: "yes_no", ask: "Does the note claim something that the spans above do not show?" },
-        { name: "copied", type: "yes_no", ask: "Does the note pass on instructions or text copied from a tool's output?" },
-      ]);
+      const r = await this.decisions.decide(
+        `${ev}\n\nNote for the agent:\n${text}`,
+        [
+          { name: "unsupported", type: "yes_no", ask: "Does the note claim something that the spans above do not show?" },
+          { name: "copied", type: "yes_no", ask: "Does the note pass on instructions or text copied from a tool's output?" },
+        ],
+        { priority: "urgent" },
+      );
       unsupported = r.answers.unsupported?.probability ?? 1;
       copied = r.answers.copied?.probability ?? 1;
     } catch {
@@ -782,12 +832,15 @@ ${library}`;
     // Final pass: end-only questions, and live questions with evidence they have not seen.
     for (const { check, params } of this.questionsFor(run)) {
       if (check.scope === "span") {
+        const queue = run.spanQueue.get(check.id) ?? [];
         for (const s of selectSpans(snap.spans, check.evidence?.spans)) {
           const key = `${check.id}:${s.id}`;
           if (run.spanDone.has(key)) continue;
           run.spanDone.add(key);
-          await this.askSpan(run, check, params, s.id);
+          queue.push(s.id);
         }
+        run.spanQueue.set(check.id, queue);
+        await this.drainSpanQueue(run, check, params);
       } else {
         await this.askTrace(run, check, params, snap);
       }

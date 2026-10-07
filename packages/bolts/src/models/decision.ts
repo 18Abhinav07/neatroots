@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { BoltsConfig } from "../config.js";
 import { LlmClient, LlmUnavailableError, type TokenLogprob } from "./llm.js";
 import { log } from "../util/log.js";
@@ -42,10 +43,14 @@ export interface DecisionResult {
 
 export class DecisionUnavailableError extends Error {}
 
+export interface DecideOptions {
+  priority?: "urgent" | "high" | "low";
+}
+
 export interface DecisionBackend {
   readonly name: string;
   available(): Promise<boolean>;
-  decide(state: string, questions: DecisionQuestion[]): Promise<DecisionResult>;
+  decide(state: string, questions: DecisionQuestion[], opts?: DecideOptions): Promise<DecisionResult>;
 }
 
 function labelsFor(q: DecisionQuestion): string[] {
@@ -221,7 +226,7 @@ export class LlmDecisionBackend implements DecisionBackend {
     return this.llm.isAvailable();
   }
 
-  async decide(state: string, questions: DecisionQuestion[]): Promise<DecisionResult> {
+  async decide(state: string, questions: DecisionQuestion[], opts: DecideOptions = {}): Promise<DecisionResult> {
     const started = Date.now();
     const answers: Record<string, DecisionAnswer> = {};
     let model = this.llm.model ?? "llm";
@@ -247,6 +252,7 @@ export class LlmDecisionBackend implements DecisionBackend {
             logprobs: true,
             topLogprobs: 10,
             timeoutSec: 60,
+            priority: opts.priority ?? "high",
           },
         );
         model = r.model;
@@ -271,6 +277,8 @@ export class LlmDecisionBackend implements DecisionBackend {
 export class DecisionModel {
   readonly jev: JevBackend;
   readonly llmBackend: LlmDecisionBackend;
+  /** Identical state + questions get the same answer; avoids re-asking a slow local model. */
+  private cache = new Map<string, DecisionResult>();
 
   constructor(
     private readonly cfg: BoltsConfig["classifier"],
@@ -294,17 +302,29 @@ export class DecisionModel {
     return { backend: b.name, model: b.name === "jev" ? this.cfg.model : (this.llm.model ?? null) };
   }
 
-  async decide(state: string, questions: DecisionQuestion[]): Promise<DecisionResult> {
+  /** True when decisions are slow (the LLM stands in), so callers should ask fewer questions. */
+  async isSlow(): Promise<boolean> {
+    const b = await this.backend();
+    return !b || b.name === "llm";
+  }
+
+  async decide(state: string, questions: DecisionQuestion[], opts: DecideOptions = {}): Promise<DecisionResult> {
+    const key = createHash("sha256").update(state).update(JSON.stringify(questions)).digest("hex");
+    const hit = this.cache.get(key);
+    if (hit) return { ...hit, latencyMs: 0 };
     const b = await this.backend();
     if (!b) throw new DecisionUnavailableError("no decision model available: start a Jev-compatible server or a local LLM");
+    let result: DecisionResult;
     try {
-      return await b.decide(state, questions);
+      result = await b.decide(state, questions, opts);
     } catch (err) {
       if (b === this.jev && this.cfg.backend === "auto" && (await this.llmBackend.available())) {
         log.warn(`decision server failed, using the local LLM instead: ${(err as Error).message}`);
-        return this.llmBackend.decide(state, questions);
-      }
-      throw err;
+        result = await this.llmBackend.decide(state, questions, opts);
+      } else throw err;
     }
+    this.cache.set(key, result);
+    if (this.cache.size > 1000) this.cache.delete(this.cache.keys().next().value as string);
+    return result;
   }
 }

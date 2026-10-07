@@ -7,7 +7,7 @@ export default defineConfig({
   platform: "node",
   sourcemap: true,
   clean: true,
-  dts: { entry: { index: "src/index.ts" } },
+  dts: { entry: { index: "src/index.ts" }, compilerOptions: { ignoreDeprecations: "6.0" } },
   banner: ({ format }) => (format === "esm" ? { js: "" } : {}),
   external: ["better-sqlite3"],
 });

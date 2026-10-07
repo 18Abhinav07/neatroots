@@ -30,8 +30,8 @@ export interface ChatOptions {
   topLogprobs?: number;
   timeoutSec?: number;
   signal?: AbortSignal;
-  /** high: decisions and notes for a live run. low: investigations, summaries, planning. */
-  priority?: "high" | "low";
+  /** urgent: notes for a running agent. high: decisions and planning. low: investigations and summaries. */
+  priority?: "urgent" | "high" | "low";
 }
 
 export class LlmUnavailableError extends Error {}
@@ -59,6 +59,7 @@ export class LlmClient {
   private resolvedModel?: string;
   private lastProbe = 0;
   private available = false;
+  private urgent: (() => Promise<void>)[] = [];
   private high: (() => Promise<void>)[] = [];
   private low: (() => Promise<void>)[] = [];
   private running = false;
@@ -134,7 +135,7 @@ export class LlmClient {
           this.pending--;
         }
       };
-      (opts.priority === "low" ? this.low : this.high).push(job);
+      (opts.priority === "low" ? this.low : opts.priority === "urgent" ? this.urgent : this.high).push(job);
       void this.drain();
     });
   }
@@ -144,7 +145,7 @@ export class LlmClient {
     this.running = true;
     try {
       for (;;) {
-        const job = this.high.shift() ?? this.low.shift();
+        const job = this.urgent.shift() ?? this.high.shift() ?? this.low.shift();
         if (!job) break;
         await job();
       }

@@ -288,7 +288,7 @@ export function preview(v: Plain | undefined, max = 400): string {
   else if (Array.isArray(v) && v.every((m) => m && typeof m === "object" && "role" in (m as object))) {
     s = (v as Record<string, Plain>[])
       .map((m) => {
-        const content = typeof m.content === "string" ? m.content : m.content ? JSON.stringify(m.content) : "";
+        const content = typeof m.content === "string" ? (m.content === "null" ? "" : m.content) : m.content ? JSON.stringify(m.content) : "";
         const calls = Array.isArray(m.tool_calls)
           ? " → " + (m.tool_calls as Record<string, Plain>[]).map((c) => `${c.name}(${JSON.stringify(c.arguments)})`).join(", ")
           : "";
