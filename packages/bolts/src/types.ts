@@ -146,6 +146,10 @@ export interface PlanRow {
   model: string | null;
   rationale: string | null;
   check_ids: string[];
+  /** Values the planner filled in per check. */
+  params: Record<string, Record<string, string>>;
+  /** Tools the agent had when the plan was made; new tools trigger a new plan. */
+  tools: string[];
 }
 
 export interface DecisionRow {

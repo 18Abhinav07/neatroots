@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS plans (
   created_by TEXT NOT NULL,
   model TEXT,
   rationale TEXT,
-  check_ids TEXT NOT NULL
+  check_ids TEXT NOT NULL,
+  body TEXT
 );
 CREATE INDEX IF NOT EXISTS plans_workflow ON plans (workflow, created_ms DESC);
 
@@ -314,6 +315,7 @@ export class Store {
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("busy_timeout = 5000");
     this.db.exec(SCHEMA);
+    this.migrate();
     this.blobs = new BlobStore(path.join(dir, "blobs"));
     const row = this.db.prepare("SELECT MAX(seq) AS s FROM spans").get() as { s: number | null };
     this.seq = row.s ?? 0;
@@ -321,6 +323,16 @@ export class Store {
 
   close(): void {
     this.db.close();
+  }
+
+  /** Adds columns introduced after a database was first created. */
+  private migrate(): void {
+    const ensure = (table: string, column: string, type: string) => {
+      const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      if (!cols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    };
+    ensure("plans", "body", "TEXT");
+    this.db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1')").run();
   }
 
   // ------------------------------------------------------------------ ingest
@@ -960,21 +972,35 @@ export class Store {
   insertPlan(p: Omit<PlanRow, "id" | "created_ms">): PlanRow {
     const row: PlanRow = { ...p, id: newId("plan"), created_ms: Date.now() };
     this.db
-      .prepare("INSERT INTO plans (id, workflow, created_ms, created_by, model, rationale, check_ids) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(row.id, row.workflow, row.created_ms, row.created_by, row.model, row.rationale, JSON.stringify(row.check_ids));
+      .prepare("INSERT INTO plans (id, workflow, created_ms, created_by, model, rationale, check_ids, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(row.id, row.workflow, row.created_ms, row.created_by, row.model, row.rationale, JSON.stringify(row.check_ids), JSON.stringify({ params: row.params, tools: row.tools }));
     return row;
+  }
+
+  private planFromRow(r: Record<string, unknown>): PlanRow {
+    const body = json<{ params?: PlanRow["params"]; tools?: string[] }>(r.body as string, {});
+    return {
+      ...(r as unknown as PlanRow),
+      check_ids: json(r.check_ids as string, []),
+      params: body.params ?? {},
+      tools: body.tools ?? [],
+    };
   }
 
   latestPlan(workflow: string): PlanRow | undefined {
     const r = this.db.prepare("SELECT * FROM plans WHERE workflow = ? ORDER BY created_ms DESC LIMIT 1").get(workflow) as
       | Record<string, unknown>
       | undefined;
-    return r ? { ...(r as unknown as PlanRow), check_ids: json(r.check_ids as string, []) } : undefined;
+    return r ? this.planFromRow(r) : undefined;
   }
 
   getPlan(id: string): PlanRow | undefined {
     const r = this.db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as Record<string, unknown> | undefined;
-    return r ? { ...(r as unknown as PlanRow), check_ids: json(r.check_ids as string, []) } : undefined;
+    return r ? this.planFromRow(r) : undefined;
+  }
+
+  listPlans(limit = 50): PlanRow[] {
+    return (this.db.prepare("SELECT * FROM plans ORDER BY created_ms DESC LIMIT ?").all(limit) as Record<string, unknown>[]).map((r) => this.planFromRow(r));
   }
 
   // ------------------------------------------------------------------ checks

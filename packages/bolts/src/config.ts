@@ -56,9 +56,13 @@ export interface BoltsConfig {
   };
   cloud: {
     endpoint: string;
+    /** Where people open runs in Neatlogs Cloud. */
+    appUrl: string;
     /** User regexes to redact before forwarding, in addition to the built-ins. */
     redactPatterns: string[];
   };
+  /** Commands the user registered to rerun an agent, per project (MCP rerun tool). */
+  rerun: Record<string, { command: string; cwd?: string }>;
   /** Extra directories holding checks (YAML), e.g. <repo>/.bolts/checks. */
   checkDirs: string[];
   projects: Record<string, Partial<ProjectSettings>>;
@@ -91,7 +95,8 @@ export function defaultConfig(): BoltsConfig {
     },
     retention: { days: 14, maxGb: 5 },
     steering: { enabled: true, maxNotesPerRun: 3, gateWaitMs: 300 },
-    cloud: { endpoint: "https://ingest.neatlogs.com", redactPatterns: [] },
+    cloud: { endpoint: "https://ingest.neatlogs.com", appUrl: "https://app.neatlogs.com", redactPatterns: [] },
+    rerun: {},
     checkDirs: [],
     projects: {},
   };
