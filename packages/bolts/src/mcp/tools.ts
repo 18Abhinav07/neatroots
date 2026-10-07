@@ -41,7 +41,7 @@ function resolveTrace(bolts: Bolts, id: string | undefined): string {
   }
   if (bolts.focus) return bolts.focus.trace_id;
   const latest = bolts.store.listRuns({ limit: 1 })[0];
-  if (!latest) throw new Error("Bolts has no runs yet. Point NEATLOGS_ENDPOINT at http://localhost:4100 and run your agent.");
+  if (!latest) throw new Error(`Bolts has no runs yet. Point NEATLOGS_ENDPOINT at http://localhost:${bolts.config.port} and run your agent.`);
   return latest.trace_id;
 }
 

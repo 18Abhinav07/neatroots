@@ -12,27 +12,21 @@ export function ago(ms: number | null | undefined): string {
 
 export function dur(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return "—";
-  if (ms < 1) return "<1ms";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)}s`;
+  if (ms < 1) return "<1 ms";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`;
   const m = Math.floor(ms / 60_000);
-  return `${m}m ${Math.round((ms % 60_000) / 1000)}s`;
+  return `${m} m ${Math.round((ms % 60_000) / 1000)} s`;
 }
 
 export function num(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`;
   return n.toLocaleString();
 }
 
 export function pct(p: number | null | undefined): string {
   if (p === null || p === undefined) return "—";
   return `${Math.round(p * 100)}%`;
-}
-
-export function shortId(id: string, n = 8): string {
-  return id.slice(0, n);
 }
 
 export function bytes(n: number): string {
@@ -42,23 +36,9 @@ export function bytes(n: number): string {
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
-export const KIND_COLOR: Record<string, string> = {
-  LLM: "var(--k-llm)",
-  TOOL: "var(--k-tool)",
-  MCP_TOOL: "var(--k-tool)",
-  WORKFLOW: "var(--k-flow)",
-  AGENT: "var(--k-flow)",
-  CHAIN: "var(--k-flow)",
-  TASK: "var(--k-flow)",
-  RETRIEVER: "var(--k-retr)",
-  RERANKER: "var(--k-retr)",
-  EMBEDDING: "var(--k-retr)",
-  VECTOR_STORE: "var(--k-retr)",
-  GUARDRAIL: "var(--k-guard)",
-};
-
-export function kindColor(kind: string): string {
-  return KIND_COLOR[kind] ?? "var(--k-other)";
+/** Keeps the start and end of an id so similar ids stay distinguishable. */
+export function midId(id: string, keep = 6): string {
+  return id.length <= keep * 2 + 1 ? id : `${id.slice(0, keep)}…${id.slice(-4)}`;
 }
 
 export function pretty(v: unknown): string {

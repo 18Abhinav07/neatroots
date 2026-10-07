@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+/** Typed client for the Bolts app API. */
 
 export type RunStatus = "running" | "ok" | "error" | "interrupted";
 
@@ -17,8 +17,6 @@ export interface Run {
   tool_calls: number;
   error_count: number;
   total_tokens: number;
-  prompt_tokens: number;
-  completion_tokens: number;
   input_preview: string | null;
   output_preview: string | null;
   finding_count: number;
@@ -31,7 +29,6 @@ export interface Run {
 }
 
 export interface Span {
-  trace_id: string;
   span_id: string;
   parent_span_id: string | null;
   name: string;
@@ -40,7 +37,6 @@ export interface Span {
   end_ms: number;
   duration_ms: number;
   status_code: number;
-  status_message: string | null;
   model: string | null;
   tool_name: string | null;
   total_tokens: number | null;
@@ -60,6 +56,8 @@ export interface Explanation {
   created_ms: number;
 }
 
+export type FindingStatus = "raised" | "active" | "resolved" | "dismissed" | "failed";
+
 export interface Finding {
   id: string;
   trace_id: string;
@@ -67,7 +65,7 @@ export interface Finding {
   check_kind: "rule" | "question";
   title: string;
   probability: number | null;
-  status: "raised" | "active" | "resolved" | "dismissed" | "failed";
+  status: FindingStatus;
   evidence_span_ids: string[];
   detail: Record<string, unknown>;
   model: string | null;
@@ -77,12 +75,14 @@ export interface Finding {
   created_ms: number;
 }
 
+export type NoteStatus = "pending" | "delivered" | "superseded" | "blocked" | "expired";
+
 export interface Note {
   id: string;
   finding_id: string | null;
   kind: "template" | "llm" | "halt";
   text: string;
-  status: "pending" | "delivered" | "superseded" | "blocked" | "expired";
+  status: NoteStatus;
   created_ms: number;
   delivered_ms: number | null;
   checks: { unsupported?: number; copied?: number; model?: string } | null;
@@ -90,11 +90,18 @@ export interface Note {
 
 export interface Plan {
   id: string;
-  workflow: string;
   created_by: string;
   model: string | null;
   rationale: string | null;
   check_ids: string[];
+}
+
+export interface Annotation {
+  id: string;
+  span_id: string | null;
+  label: "issue" | "good" | "note";
+  text: string | null;
+  author: string;
   created_ms: number;
 }
 
@@ -105,7 +112,7 @@ export interface RunDetail {
   notes: Note[];
   explanation: Explanation | null;
   summary: { text: string; model: string | null } | null;
-  annotations: { id: string; span_id: string | null; label: string; text: string | null; author: string; created_ms: number }[];
+  annotations: Annotation[];
   plan: Plan | null;
   forwarded: boolean;
 }
@@ -118,7 +125,6 @@ export interface SpanDetail {
   kind: string;
   status: { code: number; message?: string };
   view: {
-    kind: string;
     model?: string;
     toolName?: string;
     input?: unknown;
@@ -138,6 +144,7 @@ export interface SpanDetail {
 export interface Status {
   version: string;
   port: number;
+  home: string;
   stats: { runs: number; spans: number; findings: number; bytes: number };
   engine: {
     llm: { ok: boolean; model?: string; error?: string; busy: number };
@@ -148,6 +155,7 @@ export interface Status {
   tier: { tier: string; memoryGb: number; description: string; platform: string };
   steering: { enabled: boolean; hooks_connected: number };
   cloud: { endpoint: string; has_key: boolean };
+  classifier?: { laya: { state: string; message: string | null; progress: number | null; url: string | null }; jev_cloud: { enabled: boolean; has_key: boolean } };
   check_errors: { path: string; id?: string; message: string }[];
   config: {
     llm: { baseUrl: string; model: string; enabled: boolean };
@@ -155,7 +163,6 @@ export interface Status {
     budgets: Record<string, number>;
     retention: { days: number; maxGb: number };
   };
-  home: string;
 }
 
 export interface CheckRow {
@@ -187,6 +194,13 @@ export interface Push {
   error?: string;
 }
 
+export interface ForwardPreview {
+  span_count: number;
+  redactions: { kind: string; count: number; samples: { where: string; sample: string }[] }[];
+  has_key: boolean;
+  endpoint: string;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -205,78 +219,15 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   }
   const res = await fetch(path, { ...init, headers, body });
   const text = await res.text();
-  let data: unknown = undefined;
+  let data: unknown;
   try {
     data = text ? JSON.parse(text) : undefined;
   } catch {
     data = text;
   }
-  if (!res.ok) throw new ApiError((data as { error?: string })?.error ?? `HTTP ${res.status}`, res.status);
+  if (!res.ok) throw new ApiError((data as { error?: string })?.error ?? `Bolts returned HTTP ${res.status}`, res.status);
   return data as T;
 }
 
 export const post = <T>(path: string, json?: unknown) => api<T>(path, { method: "POST", json: json ?? {} });
-
-/** Subscribes to Bolts' live event stream; reconnects on its own. */
-export function useEvents(onEvent: (event: string, data: Record<string, unknown>) => void): boolean {
-  const handler = useRef(onEvent);
-  handler.current = onEvent;
-  const [connected, setConnected] = useState(false);
-  useEffect(() => {
-    let es: EventSource | undefined;
-    let closed = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const open = () => {
-      es = new EventSource("/api/events");
-      es.onopen = () => setConnected(true);
-      es.onerror = () => {
-        setConnected(false);
-        es?.close();
-        if (!closed) retry = setTimeout(open, 2000);
-      };
-      for (const name of ["trace", "finding", "note", "explanation", "summary", "plan", "settings", "activity"]) {
-        es.addEventListener(name, (e) => {
-          try {
-            handler.current(name, JSON.parse((e as MessageEvent).data));
-          } catch {
-            /* ignore malformed */
-          }
-        });
-      }
-    };
-    open();
-    return () => {
-      closed = true;
-      clearTimeout(retry);
-      es?.close();
-    };
-  }, []);
-  return connected;
-}
-
-/** Fetches on mount and whenever `deps` change; `reload` refetches. */
-export function useFetch<T>(path: string | null, deps: unknown[] = []): { data: T | undefined; error: string | undefined; loading: boolean; reload: () => void } {
-  const [data, setData] = useState<T>();
-  const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(false);
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    if (!path) return;
-    let cancelled = false;
-    setLoading(true);
-    api<T>(path)
-      .then((d) => {
-        if (!cancelled) {
-          setData(d);
-          setError(undefined);
-        }
-      })
-      .catch((e) => !cancelled && setError((e as Error).message))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, n, ...deps]);
-  return { data, error, loading, reload: () => setN((x) => x + 1) };
-}
+export const del = <T>(path: string) => api<T>(path, { method: "DELETE" });
