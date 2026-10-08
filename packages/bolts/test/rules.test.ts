@@ -79,3 +79,18 @@ describe("rules", () => {
     expect(heuristicToolLabel({ ...base, status: "ok", output: { message: "Order not found" } })).toBeUndefined();
   });
 });
+
+describe("final answer", () => {
+  it("treats an empty last LLM reply as no answer", async () => {
+    const st = store();
+    const t = hex(16);
+    const root = hex(8);
+    st.ingest([
+      batch([
+        llmSpan(t, root, { user: "refund 1001", out: "" }),
+        span({ traceId: t, spanId: root, name: "refund", kind: "workflow", attrs: [s("neatlogs.workflow.output", "null")] }),
+      ]),
+    ]);
+    expect(evaluateRule(rule("empty-final-answer"), loadTrace(st, t), true)?.firing).toBe(true);
+  });
+});

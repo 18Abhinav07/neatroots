@@ -36,16 +36,47 @@ function statusOf(row: SpanRow): SpanInfo["status"] {
   return row.status_code === 2 ? "error" : row.status_code === 1 ? "ok" : "unset";
 }
 
+/** Parsed spans per trace, reused across loads; a span is re-parsed only when its seq changes. */
+const parsed = new WeakMap<Store, Map<string, Map<string, SpanInfo>>>();
+const MAX_CACHED_TRACES = 64;
+
+function traceCache(store: Store, traceId: string): Map<string, SpanInfo> {
+  let byTrace = parsed.get(store);
+  if (!byTrace) {
+    byTrace = new Map();
+    parsed.set(store, byTrace);
+  }
+  let spans = byTrace.get(traceId);
+  if (spans) {
+    // Refresh recency for the LRU.
+    byTrace.delete(traceId);
+    byTrace.set(traceId, spans);
+    return spans;
+  }
+  spans = new Map();
+  byTrace.set(traceId, spans);
+  if (byTrace.size > MAX_CACHED_TRACES) byTrace.delete(byTrace.keys().next().value as string);
+  return spans;
+}
+
 export function loadTrace(store: Store, traceId: string): TraceSnapshot {
   const rows = store.getSpans(traceId, false);
+  const cache = traceCache(store, traceId);
+  const live = new Set<string>();
   const spans: SpanInfo[] = [];
   for (const row of rows) {
     // Bolts' own guidance records are not part of the agent's behavior.
     if (row.name === "bolts.guidance") continue;
+    live.add(row.span_id);
+    const hit = cache.get(row.span_id);
+    if (hit && hit.seq === row.seq) {
+      spans.push(hit);
+      continue;
+    }
     const full = store.getOtlpSpan(traceId, row.span_id);
     if (!full) continue;
     const v = buildView(full.span, full.resource.attributes);
-    spans.push({
+    const info: SpanInfo = {
       id: row.span_id,
       ref: row.span_id.slice(0, 6),
       parentId: row.parent_span_id,
@@ -64,8 +95,11 @@ export function loadTrace(store: Store, traceId: string): TraceSnapshot {
       toolCalls: v.toolCalls,
       tools: v.tools,
       seq: row.seq,
-    });
+    };
+    cache.set(row.span_id, info);
+    spans.push(info);
   }
+  for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
   spans.sort((a, b) => a.startMs - b.startMs || a.seq - b.seq);
   return { traceId, run: store.getRun(traceId), spans };
 }
@@ -113,14 +147,27 @@ export function runGoal(t: TraceSnapshot): { system?: string; user?: string; roo
   return goal;
 }
 
-/** The run's final answer: the root output, or the last LLM reply. */
+function replyText(output: Plain | undefined): string | undefined {
+  if (output === undefined || output === null) return undefined;
+  if (Array.isArray(output)) {
+    const parts = (output as Record<string, Plain>[])
+      .map((m) => (m && typeof m === "object" ? textOf(m.content) : textOf(m as Plain)))
+      .filter((x): x is string => !!x && x !== "null" && x.trim() !== "");
+    return parts.length ? parts.join("\n") : undefined;
+  }
+  const s = textOf(output);
+  return s && s !== "null" && s.trim() !== "" && s !== '""' ? s : undefined;
+}
+
+/** The run's final answer: the root output, or the text of the last LLM reply. Undefined when empty. */
 export function finalOutput(t: TraceSnapshot): string | undefined {
   const root = t.spans.find((s) => !s.parentId);
   const rootOut = textOf(root?.output);
   if (rootOut && rootOut !== '""' && rootOut !== "null") return rootOut;
   const llms = t.spans.filter((s) => s.kind === "LLM" && s.output !== undefined);
   const last = llms[llms.length - 1];
-  return last ? preview(last.output, 4000) : undefined;
+  const text = last ? replyText(last.output) : undefined;
+  return text ? (text.length > 4000 ? text.slice(0, 3999) + "…" : text) : undefined;
 }
 
 export function toolsOffered(t: TraceSnapshot): string[] {
