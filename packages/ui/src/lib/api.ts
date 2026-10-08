@@ -155,7 +155,11 @@ export interface Status {
   tier: { tier: string; memoryGb: number; description: string; platform: string };
   steering: { enabled: boolean; hooks_connected: number };
   cloud: { endpoint: string; has_key: boolean };
-  classifier?: { laya: { state: string; message: string | null; progress: number | null; url: string | null }; jev_cloud: { enabled: boolean; has_key: boolean } };
+  classifier?: {
+    laya: { state: string; message: string | null; progress: number | null; url: string | null };
+    trust: { question: string; n: number; agreement: number | null; trusted: boolean }[];
+    jev_cloud: { enabled: boolean; has_key: boolean };
+  };
   check_errors: { path: string; id?: string; message: string }[];
   config: {
     llm: { baseUrl: string; model: string; enabled: boolean };

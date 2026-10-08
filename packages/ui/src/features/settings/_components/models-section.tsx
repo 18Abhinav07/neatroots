@@ -19,6 +19,29 @@ const LAYA_STATE: Record<string, { tone: Tone; label: string }> = {
   external: { tone: "success", label: "External server" },
 };
 
+function LayaTrust({ trust }: { trust: { question: string; n: number; agreement: number | null; trusted: boolean }[] }) {
+  if (!trust.length) return <p className="text-caption text-foreground-subtle">Laya is compared with the local LLM on every answer; nothing measured yet.</p>;
+  const trusted = trust.filter((t) => t.trusted).length;
+  return (
+    <details className="text-caption text-muted-foreground">
+      <summary className="cursor-pointer">
+        Laya answers {trusted} of {trust.length} questions on its own
+      </summary>
+      <ul className="mt-2 flex flex-col gap-1">
+        {trust.slice(0, 12).map((t) => (
+          <li key={t.question} className="flex items-center justify-between gap-3 tabular-nums">
+            <span className="truncate font-mono text-3xs">{t.question}</span>
+            <span className={t.trusted ? "text-success-fg" : "text-foreground-subtle"}>
+              {t.agreement === null ? "—" : `${Math.round(t.agreement * 100)}%`} of {t.n}
+              {t.trusted ? " · Laya" : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export function ModelsSection({ status }: { status: Status }) {
   const save = useSaveSettings();
   const laya = useLayaAction();
@@ -41,7 +64,9 @@ export function ModelsSection({ status }: { status: Status }) {
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col gap-0.5">
               <h3 className="text-title">Decision model</h3>
-              <p className="text-caption text-muted-foreground">Answers every typed question with a probability. Laya runs on this machine; Jev cloud is opt-in.</p>
+              <p className="text-caption text-muted-foreground">
+                Answers every typed question with a probability. Laya runs on this machine and takes over a question once it agrees with the local LLM on at least 90% of 30 answers. Jev cloud is opt-in.
+              </p>
             </div>
           </div>
           <div className="flex flex-col gap-2 rounded-md border border-border px-3 py-2.5">
@@ -59,6 +84,7 @@ export function ModelsSection({ status }: { status: Status }) {
                 {layaState.progress !== null && layaState.progress !== undefined && <span className="tabular-nums">· {Math.round(layaState.progress * 100)}%</span>}
               </p>
             )}
+            <LayaTrust trust={status.classifier?.trust ?? []} />
             <div className="flex flex-wrap gap-2">
               {(layaState?.state === "not_installed" || layaState?.state === "failed" || layaState?.state === "disabled") && (
                 <Button size="sm" variant="outline" pending={laya.isPending} onClick={() => laya.mutate("install")}>
@@ -96,7 +122,7 @@ export function ModelsSection({ status }: { status: Status }) {
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Which decision model answers" htmlFor="cls-backend">
               <Select id="cls-backend" value={backend} onChange={(e) => setBackend(e.target.value)}>
-                <option value="auto">Automatic: Laya, then Jev cloud if on, then the LLM</option>
+                <option value="auto">Automatic: Jev cloud if on, else the LLM; Laya takes proven questions</option>
                 <option value="laya">Laya only</option>
                 <option value="jev-cloud">Jev cloud only</option>
                 <option value="jev">A Jev-compatible server at the URL below</option>

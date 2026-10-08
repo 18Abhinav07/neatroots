@@ -43,6 +43,7 @@ export async function makeBolts(opts: { llmUrl?: string; serve?: boolean; noEngi
   cfg.llm.enabled = !!opts.llmUrl;
   cfg.classifier.backend = "llm";
   cfg.classifier.baseUrl = "http://127.0.0.1:9";
+  cfg.classifier.laya.enabled = false;
   opts.config?.(cfg);
   const bolts = new Bolts({ home, config: cfg, noEngine: opts.noEngine });
   let server: ServerType | undefined;

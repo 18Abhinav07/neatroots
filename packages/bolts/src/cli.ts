@@ -6,12 +6,13 @@ import { Command } from "commander";
 import { Bolts } from "./core.js";
 import { createApp, startServer } from "./server/app.js";
 import { VERSION } from "./version.js";
-import { loadConfig, saveConfig, DEFAULT_PORT, type SteeringMode } from "./config.js";
+import { boltsHome, loadConfig, saveConfig, DEFAULT_PORT, type SteeringMode } from "./config.js";
 import { runStdioBridge } from "./mcp/stdio.js";
 import { parseChecks } from "./checks/registry.js";
 import { hardwareTier, LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
-import { setCloudKey, deleteCloudKey, getCloudKey } from "./relay/keychain.js";
+import { setCloudKey, deleteCloudKey, getCloudKey, getSecret, setSecret, deleteSecret } from "./relay/keychain.js";
+import { LAYA_DOWNLOAD_MB, LayaManager } from "./models/laya.js";
 import { log } from "./util/log.js";
 
 const program = new Command();
@@ -71,9 +72,11 @@ program
   .description("Run Bolts: collector, checks, steering, app and MCP on one local port")
   .option("-p, --port <port>", "port to listen on (default 4100)")
   .option("--no-engine", "collect and show runs without running checks")
+  .option("--no-laya", "do not install or start Laya (the local decision model)")
   .action(async (opts) => {
     const bolts = new Bolts({ noEngine: opts.engine === false });
     if (opts.port) bolts.config.port = Number(opts.port);
+    if (opts.laya === false) bolts.config.classifier.laya.enabled = false;
     const app = createApp(bolts);
     try {
       await startServer(bolts, app);
@@ -85,6 +88,10 @@ program
       throw err;
     }
     bolts.startRetention();
+    if (bolts.config.classifier.laya.enabled && !bolts.laya.installed() && bolts.config.classifier.laya.autoInstall) {
+      log.info(`installing Laya, the local decision model, in the background (about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB to ${bolts.laya.dir}). Skip with --no-laya.`);
+    }
+    bolts.startModels();
     const status = bolts.engine ? await bolts.engine.status() : null;
     const tier = hardwareTier();
     log.info(`app: http://localhost:${bolts.config.port}`);
@@ -92,7 +99,7 @@ program
     log.info(`machine: ${tier.memoryGb} GB (${tier.tier} tier)`);
     if (status) {
       log.info(status.llm.ok ? `local LLM: ${status.llm.model} at ${bolts.config.llm.baseUrl}` : `local LLM: not available (${status.llm.error}). Rules still run; start Ollama or LM Studio for questions and explanations.`);
-      log.info(status.decision.backend ? `decision model: ${status.decision.backend}${status.decision.model ? ` (${status.decision.model})` : ""}` : "decision model: none");
+      log.info(status.decision.backend ? `decision model now: ${status.decision.backend}${status.decision.model ? ` (${status.decision.model})` : ""}; Laya takes over when it is ready` : "decision model: none yet");
     }
     if (bolts.checks.errors.length) log.warn(`${bolts.checks.errors.length} check file problem(s); see the Checks page`);
     const stop = () => {
@@ -229,9 +236,12 @@ program
     const llm = new LlmClient(cfg.llm);
     const probe = await llm.probe(true);
     line(probe.ok ? true : "warn", probe.ok ? `local LLM ${probe.model} at ${cfg.llm.baseUrl}` : `no local LLM at ${cfg.llm.baseUrl} (${probe.error}); questions, explanations and notes need one`);
-    const dm = new DecisionModel(cfg.classifier, llm);
+    const layaMgr = new LayaManager(boltsHome(), cfg.classifier);
+    const dm = new DecisionModel(cfg.classifier, llm, { laya: async () => layaMgr.token, jevCloud: () => getSecret("jev-api-key") });
+    const layaUp = await dm.laya.available();
+    line(layaUp ? true : "warn", layaUp ? `Laya answers on 127.0.0.1:${cfg.classifier.laya.port}` : layaMgr.installed() ? "Laya is installed but not running (bolts start runs it)" : "Laya is not installed yet (bolts start installs it; or bolts laya install)");
     const st = await dm.status();
-    line(st.backend ? true : "warn", st.backend ? `decision model: ${st.backend}${st.model ? ` (${st.model})` : ""}` : "no decision model (no Jev-compatible server and no LLM)");
+    line(st.backend ? true : "warn", st.backend ? `decisions answered by: ${st.backend}${st.model ? ` (${st.model})` : ""}` : "no decision model (no Laya, no Jev cloud, no LLM)");
     const tier = hardwareTier();
     line(true, `${tier.memoryGb} GB memory: ${tier.tier} tier, ${tier.description}`);
     if (up) {
@@ -445,10 +455,92 @@ program
     const llm = new LlmClient(cfg.llm);
     const probe = await llm.probe(true);
     console.log(probe.ok ? `LLM: ${probe.model} (installed: ${probe.models?.join(", ")})` : `LLM: none at ${cfg.llm.baseUrl} (${probe.error})`);
-    const dm = new DecisionModel(cfg.classifier, llm);
-    const jev = await dm.jev.available();
-    console.log(jev ? `decision server: Jev-compatible at ${cfg.classifier.baseUrl}` : `decision server: none at ${cfg.classifier.baseUrl}; the LLM stands in (pip install "laya[serve]" && laya-serve for a fast local classifier)`);
+    const laya = new LayaManager(boltsHome(), cfg.classifier);
+    const dm = new DecisionModel(cfg.classifier, llm, { laya: async () => laya.token, jevCloud: () => getSecret("jev-api-key") });
+    console.log(`Laya: ${(await dm.laya.available()) ? `running on 127.0.0.1:${cfg.classifier.laya.port}` : laya.installed() ? "installed, not running (bolts start runs it)" : `not installed (bolts laya install, about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB)`}`);
+    console.log(`Jev cloud: ${cfg.classifier.jevCloud.enabled ? "on" : "off"}${(await getSecret("jev-api-key")) ? ", key stored" : ", no key"}`);
+    const st = await dm.status();
+    console.log(`decisions now: ${st.backend ?? "none"}${st.model ? ` (${st.model})` : ""}`);
   });
+
+const laya = program.command("laya").description("Laya, the local decision model Bolts runs");
+
+laya
+  .command("install")
+  .description("Install Laya into ~/.bolts/laya and check that it starts")
+  .action(async () => {
+    const cfg = loadConfig();
+    cfg.classifier.laya.enabled = true;
+    saveConfig(cfg);
+    const m = new LayaManager(boltsHome(), cfg.classifier);
+    console.log(`Installing Laya ${"(about " + (LAYA_DOWNLOAD_MB / 1000).toFixed(1) + " GB)"} into ${m.dir}…`);
+    const t = setInterval(() => {
+      const s = m.state;
+      if (s.message) process.stdout.write(`\r  ${s.message}${s.progress !== null ? ` (${Math.round(s.progress * 100)}%)` : ""}`.padEnd(90));
+    }, 1000);
+    await m.ensure({ install: true });
+    clearInterval(t);
+    const s = m.state;
+    console.log(`\n${s.state === "running" ? "✓" : "✗"} Laya ${s.state}${s.message ? `: ${s.message}` : ""}`);
+    m.stop();
+    process.exitCode = s.state === "running" ? 0 : 1;
+  });
+
+laya
+  .command("status")
+  .action(async () => {
+    const cfg = loadConfig();
+    const m = new LayaManager(boltsHome(), cfg.classifier);
+    const dm = new DecisionModel(cfg.classifier, new LlmClient(cfg.llm), { laya: async () => m.token, jevCloud: async () => undefined });
+    console.log(`installed: ${m.installed() ? "yes" : "no"} · enabled: ${cfg.classifier.laya.enabled} · running: ${(await dm.laya.available()) ? `yes on 127.0.0.1:${cfg.classifier.laya.port}` : "no"}`);
+  });
+
+laya
+  .command("off")
+  .description("Stop using Laya (Bolts falls back to Jev cloud if on, else the local LLM)")
+  .action(() => {
+    const cfg = loadConfig();
+    cfg.classifier.laya.enabled = false;
+    saveConfig(cfg);
+    console.log("Laya is off. Restart Bolts to stop a running Laya.");
+  });
+
+const jev = program.command("jev").description("Jev cloud (TypeSafe), an opt-in hosted decision model");
+
+jev
+  .command("login")
+  .description("Store your TypeSafe API key (macOS Keychain)")
+  .action(async () => {
+    const key = process.stdin.isTTY ? await ask("Paste your TypeSafe API key: ", true) : fs.readFileSync(0, "utf8").trim();
+    if (!key) {
+      console.error("no key given");
+      process.exit(1);
+    }
+    const where = await setSecret("jev-api-key", key);
+    console.log(`✓ stored in the ${where === "keychain" ? "macOS Keychain" : "file ~/.bolts/jev-api-key"}. Turn it on with: bolts jev on`);
+  });
+
+jev.command("logout").action(async () => {
+  await deleteSecret("jev-api-key");
+  console.log("✓ removed");
+});
+
+for (const state of ["on", "off"] as const) {
+  jev
+    .command(state)
+    .description(state === "on" ? "Use Jev cloud for decisions (span content a question needs is sent to api.typesafe.ai)" : "Stop using Jev cloud")
+    .option("-p, --port <port>")
+    .action(async (opts) => {
+      const p = port(opts.port);
+      if (await running(p)) await api(p, "/api/settings", { method: "POST", body: JSON.stringify({ jev_cloud_enabled: state === "on" }) });
+      else {
+        const cfg = loadConfig();
+        cfg.classifier.jevCloud.enabled = state === "on";
+        saveConfig(cfg);
+      }
+      console.log(state === "on" ? "Jev cloud is on. Span content a question needs is sent to api.typesafe.ai; everything else stays local." : "Jev cloud is off.");
+    });
+}
 
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : err);

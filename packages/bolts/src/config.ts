@@ -26,13 +26,20 @@ export interface BoltsConfig {
     enabled: boolean;
   };
   classifier: {
-    /** "auto" tries a Jev-compatible server, then falls back to the LLM. */
-    backend: "auto" | "jev" | "llm";
-    /** Base URL of a Jev-compatible typed-decision server (POST /v1/systemone). */
+    /**
+     * auto: Laya on this machine, then a custom Jev-compatible server, then Jev cloud (only
+     * when enabled), then the local LLM as a stand-in. Or pin one of them.
+     */
+    backend: "auto" | "laya" | "jev" | "jev-cloud" | "llm";
+    /** A custom Jev-compatible typed-decision server (POST /v1/systemone). */
     baseUrl: string;
     model: string;
     apiKey?: string;
     timeoutSec: number;
+    /** Laya, installed and run by Bolts on 127.0.0.1. */
+    laya: { enabled: boolean; autoInstall: boolean; port: number };
+    /** TypeSafe's hosted Jev. Opt-in: span content a question needs is sent to it. */
+    jevCloud: { enabled: boolean; baseUrl: string; model: string };
   };
   embeddings: {
     /** Empty disables the vector index; full-text search is always on. */
@@ -83,8 +90,10 @@ export function defaultConfig(): BoltsConfig {
     classifier: {
       backend: "auto",
       baseUrl: "http://localhost:8000",
-      model: "laya",
-      timeoutSec: 10,
+      model: "typed-decisions",
+      timeoutSec: 15,
+      laya: { enabled: true, autoInstall: true, port: 4101 },
+      jevCloud: { enabled: false, baseUrl: "https://api.typesafe.ai", model: "jev-latest" },
     },
     embeddings: { model: "" },
     budgets: {

@@ -9,6 +9,8 @@ import { CheckRegistry } from "./checks/registry.js";
 import { SteeringHub } from "./steering/hub.js";
 import { Engine } from "./engine/engine.js";
 import { Relay } from "./relay/relay.js";
+import { LayaManager } from "./models/laya.js";
+import { getSecret } from "./relay/keychain.js";
 import { log } from "./util/log.js";
 
 export interface BoltsOptions {
@@ -31,6 +33,7 @@ export class Bolts {
   readonly steering: SteeringHub;
   readonly engine?: Engine;
   readonly relay: Relay;
+  readonly laya: LayaManager;
   private sweeper?: NodeJS.Timeout;
   /** The run and span the app has in focus, for the MCP get_current_run tool. */
   focus: { trace_id: string; span_id: string | null; at: number } | null = null;
@@ -42,7 +45,13 @@ export class Bolts {
     this.config = opts.config ?? loadConfig();
     this.store = new Store(path.join(this.home, "data"));
     this.llm = new LlmClient(this.config.llm);
-    this.decisions = new DecisionModel(this.config.classifier, this.llm);
+    this.laya = new LayaManager(this.home, this.config.classifier);
+    this.decisions = new DecisionModel(
+      this.config.classifier,
+      this.llm,
+      { laya: async () => this.laya.token, jevCloud: () => getSecret("jev-api-key") },
+      this.store.trustStore(),
+    );
     this.checks = new CheckRegistry(this.store, path.join(this.home, "checks"), () => this.config.checkDirs);
     this.steering = new SteeringHub(this);
     this.relay = new Relay(this);
@@ -74,8 +83,16 @@ export class Bolts {
     this.sweeper.unref();
   }
 
+  /** Installs (first run) and starts Laya in the background; checks use the LLM until it is ready. */
+  startModels(): void {
+    if (!this.config.classifier.laya.enabled) return;
+    if (this.config.classifier.backend !== "auto" && this.config.classifier.backend !== "laya") return;
+    void this.laya.ensure().then(() => this.decisions.reset());
+  }
+
   close(): void {
     clearInterval(this.sweeper);
+    this.laya.stop();
     this.store.close();
   }
 }

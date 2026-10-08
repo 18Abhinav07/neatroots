@@ -1159,6 +1159,26 @@ export class Store {
     };
   }
 
+  /** Laya-vs-LLM agreement per question, persisted so trust survives restarts. */
+  trustStore(): import("../models/decision.js").TrustStore {
+    let data: Record<string, { n: number; agree: number }> = json(this.getMeta("laya_trust"), {});
+    let timer: NodeJS.Timeout | undefined;
+    const persist = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => this.setMeta("laya_trust", JSON.stringify(data)), 1000);
+      timer.unref();
+    };
+    return {
+      get: (q) => data[q] ?? { n: 0, agree: 0 },
+      record: (q, agreed) => {
+        const cur = data[q] ?? { n: 0, agree: 0 };
+        data = { ...data, [q]: { n: cur.n + 1, agree: cur.agree + (agreed ? 1 : 0) } };
+        persist();
+      },
+      all: () => ({ ...data }),
+    };
+  }
+
   getMeta(key: string): string | undefined {
     return (this.db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as { value: string } | undefined)?.value;
   }

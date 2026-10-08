@@ -292,7 +292,7 @@ export class Engine {
       for (;;) {
         const queue = run.spanQueue.get(check.id) ?? [];
         if (!queue.length) break;
-        const slow = await this.decisions.isSlow();
+        const slow = await this.decisions.isSlow([toQuestion(check, params)]);
         let spanId: string;
         if (slow) {
           spanId = queue[queue.length - 1];

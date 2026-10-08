@@ -9,7 +9,7 @@ import { AnyCheck, isQuestion, type Check } from "../checks/types.js";
 import { parseChecks } from "../checks/registry.js";
 import { hardwareTier } from "../models/llm.js";
 import { projectSettings, type SteeringMode } from "../config.js";
-import { getCloudKey, setCloudKey, deleteCloudKey } from "../relay/keychain.js";
+import { getCloudKey, setCloudKey, deleteCloudKey, getSecret, setSecret, deleteSecret } from "../relay/keychain.js";
 import { draftCheckFromConcern, askRuns } from "../engine/assist.js";
 import { loadTrace } from "../engine/trace.js";
 import type { RunRow } from "../types.js";
@@ -146,6 +146,13 @@ export function mountApi(app: Hono, bolts: Bolts): void {
       tier: { ...tier, platform: `${os.platform()} ${os.arch()}` },
       steering: { enabled: bolts.config.steering.enabled, hooks_connected: bolts.steering.listeners },
       cloud: { endpoint: bolts.relay.endpoint(), has_key: !!(await getCloudKey()) },
+      classifier: {
+        laya: bolts.laya.state,
+        trust: Object.entries(bolts.decisions.trust.all())
+          .map(([question, t]) => ({ question, n: t.n, agreement: t.n ? t.agree / t.n : null, trusted: bolts.decisions.trusted([{ name: question, type: "yes_no", ask: "" }]) }))
+          .sort((a, b) => b.n - a.n),
+        jev_cloud: { enabled: bolts.config.classifier.jevCloud.enabled, has_key: !!(await getSecret("jev-api-key")) },
+      },
       check_errors: bolts.checks.errors,
       config: {
         llm: { baseUrl: bolts.config.llm.baseUrl, model: bolts.config.llm.model, enabled: bolts.config.llm.enabled },
@@ -333,7 +340,9 @@ export function mountApi(app: Hono, bolts: Bolts): void {
       steering_enabled?: boolean;
       llm_model?: string;
       llm_base_url?: string;
-      classifier_backend?: "auto" | "jev" | "llm";
+      classifier_backend?: "auto" | "laya" | "jev" | "jev-cloud" | "llm";
+      jev_cloud_enabled?: boolean;
+      laya_enabled?: boolean;
       classifier_url?: string;
       cloud_endpoint?: string;
       redact_patterns?: string[];
@@ -350,8 +359,18 @@ export function mountApi(app: Hono, bolts: Bolts): void {
     if (b.steering_enabled !== undefined) bolts.config.steering.enabled = !!b.steering_enabled;
     if (b.llm_model) bolts.config.llm.model = b.llm_model;
     if (b.llm_base_url) bolts.config.llm.baseUrl = b.llm_base_url;
-    if (b.classifier_backend) bolts.config.classifier.backend = b.classifier_backend;
+    if (b.classifier_backend) {
+      if (!["auto", "laya", "jev", "jev-cloud", "llm"].includes(b.classifier_backend)) return err(c, 400, "classifier_backend must be auto, laya, jev, jev-cloud or llm");
+      bolts.config.classifier.backend = b.classifier_backend;
+    }
     if (b.classifier_url) bolts.config.classifier.baseUrl = b.classifier_url;
+    if (b.jev_cloud_enabled !== undefined) bolts.config.classifier.jevCloud.enabled = !!b.jev_cloud_enabled;
+    if (b.laya_enabled !== undefined) {
+      bolts.config.classifier.laya.enabled = !!b.laya_enabled;
+      if (b.laya_enabled) bolts.startModels();
+      else bolts.laya.stop();
+    }
+    bolts.decisions.reset();
     if (b.cloud_endpoint) {
       if (!allowedEndpoint(b.cloud_endpoint)) return err(c, 400, "cloud endpoint must be an https://*.neatlogs.com URL (or localhost for testing)");
       bolts.config.cloud.endpoint = b.cloud_endpoint;
@@ -387,6 +406,37 @@ export function mountApi(app: Hono, bolts: Bolts): void {
 
   app.delete("/api/cloud/key", async (c) => {
     await deleteCloudKey();
+    return c.json({ ok: true });
+  });
+
+  // ------------------------------------------------------ decision models
+
+  app.post("/api/classifier/laya", async (c) => {
+    const b = await body<{ action?: string }>(c);
+    if (b.action === "install") {
+      bolts.config.classifier.laya.enabled = true;
+      bolts.saveConfig();
+      void bolts.laya.ensure({ install: true }).then(() => bolts.decisions.reset());
+    } else if (b.action === "restart") {
+      void bolts.laya.restart().then(() => bolts.decisions.reset());
+    } else if (b.action === "stop") {
+      bolts.laya.stop();
+      bolts.decisions.reset();
+    } else return err(c, 400, "action must be install, restart or stop");
+    return c.json({ ok: true, laya: bolts.laya.state });
+  });
+
+  app.post("/api/classifier/jev-key", async (c) => {
+    const b = await body<{ key?: string }>(c);
+    if (!b.key || b.key.length < 8) return err(c, 400, "paste the TypeSafe API key");
+    const where = await setSecret("jev-api-key", b.key.trim());
+    bolts.decisions.reset();
+    return c.json({ ok: true, stored_in: where });
+  });
+
+  app.delete("/api/classifier/jev-key", async (c) => {
+    await deleteSecret("jev-api-key");
+    bolts.decisions.reset();
     return c.json({ ok: true });
   });
 

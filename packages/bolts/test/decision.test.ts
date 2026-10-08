@@ -2,7 +2,6 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { distributionFromLogprobs, JevBackend, parseJevAnswer } from "../src/models/decision.js";
-import { defaultConfig } from "../src/config.js";
 import { parseJsonLoose } from "../src/models/llm.js";
 
 describe("decision model", () => {
@@ -42,10 +41,8 @@ describe("decision model", () => {
       });
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
-    const cfg = defaultConfig().classifier;
-    cfg.baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    cfg.apiKey = "k";
-    const jev = new JevBackend(cfg);
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const jev = new JevBackend({ name: "laya", baseUrl: () => base, model: () => "typed-decisions", apiKey: async () => "k", timeoutSec: 5, probe: true });
     expect(await jev.available()).toBe(true);
     const r = await jev.decide("state text", [
       { name: "yn", type: "yes_no", ask: "Bad?" },
@@ -57,6 +54,8 @@ describe("decision model", () => {
     expect(seen.body.questions.yn).toEqual({ type: "noul", instructions: "Bad?" });
     expect(seen.body.questions.sc.criteria).toEqual(["none", "low", "high"]);
     expect(r.model).toBe("laya-test");
+    expect(r.backend).toBe("laya");
+    expect(seen.body.model).toBe("typed-decisions");
     expect(r.answers.yn.probability).toBeCloseTo(0.9);
     expect(r.answers.ch.choice).toBe("x");
     expect(r.answers.sc.score).toBe(2);
@@ -67,5 +66,98 @@ describe("decision model", () => {
     expect(parseJsonLoose('```json\n{"a":1}\n```')).toEqual({ a: 1 });
     expect(parseJsonLoose('Sure! {"a": [1,2]} trailing')).toEqual({ a: [1, 2] });
     expect(parseJsonLoose("nope")).toBeUndefined();
+  });
+});
+
+describe("decision routing", () => {
+  async function jevServer(name: string, seen: string[]) {
+    const server = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        seen.push(`${name}:${req.headers.authorization ?? ""}`);
+        const b = JSON.parse(body || "{}");
+        const answers = Object.fromEntries(Object.keys(b.questions ?? {}).map((k) => [k, { type: "noul", noul: 0.7 }]));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ model: `${name}-model`, answers }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    return { server, port: (server.address() as AddressInfo).port };
+  }
+
+  it("prefers Laya, uses Jev cloud only when switched on, and never sends to the cloud otherwise", async () => {
+    const { defaultConfig } = await import("../src/config.js");
+    const { LlmClient } = await import("../src/models/llm.js");
+    const { DecisionModel } = await import("../src/models/decision.js");
+    const seen: string[] = [];
+    const laya = await jevServer("laya", seen);
+    const cloud = await jevServer("cloud", seen);
+    const cfg = defaultConfig();
+    cfg.llm.enabled = false;
+    cfg.classifier.laya.port = laya.port;
+    cfg.classifier.baseUrl = "";
+    cfg.classifier.jevCloud.baseUrl = `http://127.0.0.1:${cloud.port}`;
+    const dm = new DecisionModel(cfg.classifier, new LlmClient(cfg.llm), { laya: async () => "laya-token", jevCloud: async () => "cloud-key" });
+    const q = [{ name: "q", type: "yes_no" as const, ask: "Bad?" }];
+    expect((await dm.decide("s1", q)).backend).toBe("laya");
+    expect(seen.at(-1)).toBe("laya:Bearer laya-token");
+    // Laya down, cloud off: nothing goes to the cloud.
+    laya.server.close();
+    dm.reset();
+    await expect(dm.decide("s2", q)).rejects.toThrow();
+    expect(seen.some((s) => s.startsWith("cloud"))).toBe(false);
+    // Cloud switched on: it answers.
+    cfg.classifier.jevCloud.enabled = true;
+    dm.reset();
+    const r = await dm.decide("s3", q);
+    expect(r.backend).toBe("jev-cloud");
+    expect(seen.at(-1)).toBe("cloud:Bearer cloud-key");
+    cloud.server.close();
+  });
+});
+
+describe("Laya trust", () => {
+  it("shadows the LLM, records agreement, and promotes a question to Laya once trusted", async () => {
+    const { defaultConfig } = await import("../src/config.js");
+    const { LlmClient } = await import("../src/models/llm.js");
+    const { DecisionModel, memoryTrust, TRUST_MIN_SAMPLES } = await import("../src/models/decision.js");
+    const { mockLlm } = await import("./helpers.js");
+    const llm = await mockLlm({ yesWhen: ["bad"] });
+    let layaCalls = 0;
+    const laya = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        layaCalls++;
+        const b = JSON.parse(body || "{}");
+        const answers = Object.fromEntries(Object.keys(b.questions ?? {}).map((k) => [k, { type: "noul", noul: 0.9 }]));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ model: "typed-decisions", answers }));
+      });
+    });
+    await new Promise<void>((r) => laya.listen(0, "127.0.0.1", () => r()));
+    const cfg = defaultConfig();
+    cfg.llm.baseUrl = llm.url;
+    cfg.llm.model = "mock-model";
+    cfg.classifier.baseUrl = "";
+    cfg.classifier.laya.port = (laya.address() as AddressInfo).port;
+    const trust = memoryTrust();
+    const dm = new DecisionModel(cfg.classifier, new LlmClient(cfg.llm), { laya: async () => "t", jevCloud: async () => undefined }, trust);
+    const q = [{ name: "bad-check", type: "yes_no" as const, ask: "Is this bad?" }];
+    const first = await dm.decide("state one", q);
+    expect(first.backend).toBe("llm");
+    for (let i = 0; i < 50 && trust.get("bad-check").n < 1; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(trust.get("bad-check")).toEqual({ n: 1, agree: 1 });
+    for (let i = 1; i < TRUST_MIN_SAMPLES; i++) trust.record("bad-check", true);
+    expect(dm.trusted(q)).toBe(true);
+    const before = layaCalls;
+    const promoted = await dm.decide("state two", q);
+    expect(promoted.backend).toBe("laya");
+    expect(layaCalls).toBe(before + 1);
+    // An untrusted question still goes to the LLM.
+    expect((await dm.decide("state three", [{ name: "other", type: "yes_no", ask: "Is this bad?" }])).backend).toBe("llm");
+    laya.close();
+    await llm.close();
   });
 });

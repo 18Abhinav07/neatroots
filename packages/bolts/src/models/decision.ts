@@ -88,33 +88,62 @@ function answerFromDistribution(q: DecisionQuestion, dist: Record<string, number
 
 // ------------------------------------------------------------ Jev-compatible
 
+export interface JevEndpoint {
+  /** Shown in status and stored on each decision: laya, jev, jev-cloud. */
+  name: string;
+  baseUrl: () => string;
+  model: () => string;
+  apiKey: () => Promise<string | undefined>;
+  timeoutSec: number;
+  /** Cloud endpoints are not probed with a test request on every check. */
+  probe: boolean;
+}
+
+/** Any server speaking the Jev typed-decision API: Laya (local), Clef, Jev, Jev cloud. */
 export class JevBackend implements DecisionBackend {
-  readonly name = "jev";
   private lastCheck = 0;
   private ok = false;
 
-  constructor(private readonly cfg: BoltsConfig["classifier"]) {}
+  constructor(private readonly ep: JevEndpoint) {}
 
-  private headers(): Record<string, string> {
+  get name(): string {
+    return this.ep.name;
+  }
+
+  get modelName(): string {
+    return this.ep.model();
+  }
+
+  private async headers(): Promise<Record<string, string>> {
     const h: Record<string, string> = { "content-type": "application/json" };
-    if (this.cfg.apiKey) h.authorization = `Bearer ${this.cfg.apiKey}`;
+    const key = await this.ep.apiKey();
+    if (key) h.authorization = `Bearer ${key}`;
     return h;
   }
 
   private url(path: string): string {
-    return this.cfg.baseUrl.replace(/\/+$/, "") + path;
+    return this.ep.baseUrl().replace(/\/+$/, "") + path;
+  }
+
+  /** Forget the cached liveness answer (after a restart or a settings change). */
+  reset(): void {
+    this.lastCheck = 0;
   }
 
   async available(): Promise<boolean> {
     if (Date.now() - this.lastCheck < 30_000) return this.ok;
     this.lastCheck = Date.now();
+    if (!this.ep.probe) {
+      this.ok = !!(await this.ep.apiKey());
+      return this.ok;
+    }
     try {
       // A tiny decision is the most reliable liveness check across Jev-compatible servers.
       const res = await fetch(this.url("/v1/systemone"), {
         method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify({ model: this.cfg.model, state: "ping", questions: { ping: { type: "noul", instructions: "Is this a ping?" } } }),
-        signal: AbortSignal.timeout(2500),
+        headers: await this.headers(),
+        body: JSON.stringify({ model: this.ep.model(), state: "ping", questions: { ping: { type: "noul", instructions: "Is this a ping?" } } }),
+        signal: AbortSignal.timeout(5000),
       });
       this.ok = res.ok;
     } catch {
@@ -125,7 +154,7 @@ export class JevBackend implements DecisionBackend {
 
   async decide(state: string, questions: DecisionQuestion[]): Promise<DecisionResult> {
     const body = {
-      model: this.cfg.model,
+      model: this.ep.model(),
       state,
       questions: Object.fromEntries(
         questions.map((q) => {
@@ -136,15 +165,21 @@ export class JevBackend implements DecisionBackend {
       ),
     };
     const started = Date.now();
-    const res = await fetch(this.url("/v1/systemone"), {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.cfg.timeoutSec * 1000),
-    });
-    if (!res.ok) {
+    let res: Response;
+    try {
+      res = await fetch(this.url("/v1/systemone"), {
+        method: "POST",
+        headers: await this.headers(),
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.ep.timeoutSec * 1000),
+      });
+    } catch (err) {
       this.ok = false;
-      throw new DecisionUnavailableError(`decision server HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      throw new DecisionUnavailableError(`${this.ep.name} unreachable: ${(err as Error).message}`);
+    }
+    if (!res.ok) {
+      if (res.status >= 500 || res.status === 401 || res.status === 429) this.ok = false;
+      throw new Error(`${this.ep.name} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     }
     const data = (await res.json()) as { model?: string; answers?: Record<string, Record<string, unknown>> };
     const answers: Record<string, DecisionAnswer> = {};
@@ -152,7 +187,7 @@ export class JevBackend implements DecisionBackend {
       const a = data.answers?.[q.name] ?? {};
       answers[q.name] = parseJevAnswer(q, a);
     }
-    return { answers, backend: this.name, model: data.model ?? this.cfg.model, latencyMs: Date.now() - started };
+    return { answers, backend: this.ep.name, model: data.model ?? this.ep.model(), latencyMs: Date.now() - started };
   }
 }
 
@@ -273,58 +308,160 @@ export class LlmDecisionBackend implements DecisionBackend {
 
 // ----------------------------------------------------------------- router
 
-/** Picks the configured backend; in "auto" a Jev-compatible server wins, the LLM stands in otherwise. */
+/** Per-question agreement between Laya and the LLM, measured in shadow mode. */
+export interface TrustStore {
+  get(question: string): { n: number; agree: number };
+  record(question: string, agreed: boolean): void;
+  all(): Record<string, { n: number; agree: number }>;
+}
+
+export function memoryTrust(): TrustStore {
+  const m: Record<string, { n: number; agree: number }> = {};
+  return {
+    get: (q) => m[q] ?? { n: 0, agree: 0 },
+    record: (q, a) => {
+      const cur = m[q] ?? { n: 0, agree: 0 };
+      m[q] = { n: cur.n + 1, agree: cur.agree + (a ? 1 : 0) };
+    },
+    all: () => ({ ...m }),
+  };
+}
+
+/** Laya answers a question on its own once it agrees with the LLM this often, on this many answers. */
+export const TRUST_MIN_SAMPLES = 30;
+export const TRUST_MIN_AGREEMENT = 0.9;
+
+function sameVerdict(a: DecisionAnswer | undefined, b: DecisionAnswer | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.type === "yes_no") return a.probability >= 0.5 === b.probability >= 0.5;
+  if (a.type === "choice") return a.choice === b.choice;
+  return Math.abs((a.score ?? 0) - (b.score ?? 0)) < 1;
+}
+
+/**
+ * Picks the decision backend.
+ *
+ * auto: Jev cloud when the user turned it on; otherwise the local LLM, with Laya asked in
+ * shadow on every LLM answer. A question moves to Laya once Laya has agreed with the LLM on
+ * at least 90% of 30 answers, so the fast path is earned on the user's own runs. With no
+ * LLM, Laya answers alone. A pinned backend is used alone.
+ */
 export class DecisionModel {
+  readonly laya: JevBackend;
   readonly jev: JevBackend;
+  readonly jevCloud: JevBackend;
   readonly llmBackend: LlmDecisionBackend;
-  /** Identical state + questions get the same answer; avoids re-asking a slow local model. */
+  /** Identical state + questions get the same answer; avoids re-asking a slow model. */
   private cache = new Map<string, DecisionResult>();
 
   constructor(
     private readonly cfg: BoltsConfig["classifier"],
     private readonly llm: LlmClient,
+    secrets: { laya: () => Promise<string | undefined>; jevCloud: () => Promise<string | undefined> } = { laya: async () => undefined, jevCloud: async () => undefined },
+    readonly trust: TrustStore = memoryTrust(),
   ) {
-    this.jev = new JevBackend(cfg);
+    this.laya = new JevBackend({
+      name: "laya",
+      baseUrl: () => `http://127.0.0.1:${cfg.laya.port}`,
+      model: () => "typed-decisions",
+      apiKey: secrets.laya,
+      timeoutSec: cfg.timeoutSec,
+      probe: true,
+    });
+    this.jev = new JevBackend({ name: "jev", baseUrl: () => cfg.baseUrl, model: () => cfg.model, apiKey: async () => cfg.apiKey, timeoutSec: cfg.timeoutSec, probe: true });
+    this.jevCloud = new JevBackend({
+      name: "jev-cloud",
+      baseUrl: () => cfg.jevCloud.baseUrl,
+      model: () => cfg.jevCloud.model,
+      apiKey: secrets.jevCloud,
+      timeoutSec: Math.max(cfg.timeoutSec, 20),
+      probe: false,
+    });
     this.llmBackend = new LlmDecisionBackend(llm);
   }
 
-  async backend(): Promise<DecisionBackend | undefined> {
-    if (this.cfg.backend === "jev") return (await this.jev.available()) ? this.jev : undefined;
-    if (this.cfg.backend === "llm") return (await this.llmBackend.available()) ? this.llmBackend : undefined;
-    if (await this.jev.available()) return this.jev;
-    if (await this.llmBackend.available()) return this.llmBackend;
+  /** Whether Laya has earned every one of these questions. */
+  trusted(questions: DecisionQuestion[]): boolean {
+    return questions.every((q) => {
+      const t = this.trust.get(q.name);
+      return t.n >= TRUST_MIN_SAMPLES && t.agree / t.n >= TRUST_MIN_AGREEMENT;
+    });
+  }
+
+  private async candidates(questions: DecisionQuestion[]): Promise<DecisionBackend[]> {
+    const b = this.cfg.backend;
+    if (b === "laya") return [this.laya];
+    if (b === "jev") return [this.jev];
+    if (b === "jev-cloud") return this.cfg.jevCloud.enabled ? [this.jevCloud] : [];
+    if (b === "llm") return [this.llmBackend];
+    const list: DecisionBackend[] = [];
+    if (this.cfg.jevCloud.enabled) list.push(this.jevCloud);
+    if (this.cfg.baseUrl && !this.cfg.baseUrl.includes(`:${this.cfg.laya.port}`)) list.push(this.jev);
+    if (this.cfg.laya.enabled && this.trusted(questions)) list.push(this.laya);
+    list.push(this.llmBackend);
+    if (this.cfg.laya.enabled) list.push(this.laya);
+    return list;
+  }
+
+  async backend(questions: DecisionQuestion[] = [{ name: "_", type: "yes_no", ask: "" }]): Promise<DecisionBackend | undefined> {
+    for (const c of await this.candidates(questions)) if (await c.available()) return c;
     return undefined;
   }
 
   async status(): Promise<{ backend: string | null; model: string | null }> {
     const b = await this.backend();
     if (!b) return { backend: null, model: null };
-    return { backend: b.name, model: b.name === "jev" ? this.cfg.model : (this.llm.model ?? null) };
+    return { backend: b.name, model: b instanceof JevBackend ? b.modelName : (this.llm.model ?? null) };
   }
 
-  /** True when decisions are slow (the LLM stands in), so callers should ask fewer questions. */
-  async isSlow(): Promise<boolean> {
-    const b = await this.backend();
+  /** True when decisions for these questions are slow (the LLM answers), so callers should ask fewer. */
+  async isSlow(questions?: DecisionQuestion[]): Promise<boolean> {
+    const b = await this.backend(questions);
     return !b || b.name === "llm";
+  }
+
+  reset(): void {
+    this.laya.reset();
+    this.jev.reset();
+    this.jevCloud.reset();
+  }
+
+  /** Asks Laya the same questions after an LLM answer and records whether it agreed. */
+  private shadow(state: string, questions: DecisionQuestion[], reference: DecisionResult): void {
+    if (!this.cfg.laya.enabled || this.cfg.backend !== "auto") return;
+    void (async () => {
+      if (!(await this.laya.available())) return;
+      try {
+        const r = await this.laya.decide(state, questions);
+        for (const q of questions) this.trust.record(q.name, sameVerdict(reference.answers[q.name], r.answers[q.name]));
+      } catch {
+        /* shadow failures do not matter */
+      }
+    })();
   }
 
   async decide(state: string, questions: DecisionQuestion[], opts: DecideOptions = {}): Promise<DecisionResult> {
     const key = createHash("sha256").update(state).update(JSON.stringify(questions)).digest("hex");
     const hit = this.cache.get(key);
     if (hit) return { ...hit, latencyMs: 0 };
-    const b = await this.backend();
-    if (!b) throw new DecisionUnavailableError("no decision model available: start a Jev-compatible server or a local LLM");
-    let result: DecisionResult;
-    try {
-      result = await b.decide(state, questions, opts);
-    } catch (err) {
-      if (b === this.jev && this.cfg.backend === "auto" && (await this.llmBackend.available())) {
-        log.warn(`decision server failed, using the local LLM instead: ${(err as Error).message}`);
-        result = await this.llmBackend.decide(state, questions, opts);
-      } else throw err;
+    const candidates = await this.candidates(questions);
+    let lastErr: Error | undefined;
+    for (const b of candidates) {
+      if (!(await b.available())) continue;
+      try {
+        const result = await b.decide(state, questions, opts);
+        this.cache.set(key, result);
+        if (this.cache.size > 1000) this.cache.delete(this.cache.keys().next().value as string);
+        if (b === this.llmBackend) this.shadow(state, questions, result);
+        return result;
+      } catch (err) {
+        lastErr = err as Error;
+        // In auto, fall through to the next backend; a pinned backend fails loudly.
+        if (this.cfg.backend !== "auto") throw err;
+        log.warn(`${b.name} failed, trying the next decision model: ${lastErr.message}`);
+      }
     }
-    this.cache.set(key, result);
-    if (this.cache.size > 1000) this.cache.delete(this.cache.keys().next().value as string);
-    return result;
+    if (lastErr) throw lastErr;
+    throw new DecisionUnavailableError("no decision model available: no local LLM, Laya is not running and Jev cloud is off");
   }
 }
