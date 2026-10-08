@@ -43,11 +43,11 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
   const total = end - start;
   return (
     <div role="tree" aria-label="Trace spans" className="text-body">
-      <div className="sticky top-0 z-[var(--z-sticky)] grid grid-cols-[minmax(150px,46%)_1fr_60px] items-center border-b border-border bg-card px-4 py-1.5 text-label text-muted-foreground">
+      <div className="sticky top-0 z-[var(--z-sticky)] grid grid-cols-[minmax(150px,46%)_1fr_60px] items-center border-b border-border/60 bg-card px-4 py-2 text-eyebrow text-muted-foreground">
         <span>Span</span>
         <div className="relative mx-3 h-3">
           {[0, 1].map((t) => (
-            <span key={t} className={cn("absolute font-mono text-3xs text-foreground-subtle tabular-nums", t === 0 ? "left-0" : "right-0")}>
+            <span key={t} className={cn("absolute font-mono text-3xs text-foreground-subtle normal-case tabular-nums", t === 0 ? "left-0" : "right-0")}>
               {t === 0 ? "0" : dur(total)}
             </span>
           ))}
@@ -77,7 +77,15 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
             )}
           >
             <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 12 }}>
-              {guidance ? <NeatBadge variant="purple">Bolts</NeatBadge> : <NeatBadge variant={kind.variant}>{kind.label}</NeatBadge>}
+              {guidance ? (
+                <NeatBadge variant="purple" size="micro">
+                  Bolts
+                </NeatBadge>
+              ) : (
+                <NeatBadge variant={kind.variant} size="micro">
+                  {kind.label}
+                </NeatBadge>
+              )}
               <span className={cn("truncate", guidance ? "text-brand-violet" : failed ? "text-danger-fg" : depth > 1 ? "text-muted-foreground" : "text-foreground")}>
                 {guidance ? `Note sent to the agent: ${s.input_preview ?? ""}` : (s.tool_name ?? s.name)}
               </span>

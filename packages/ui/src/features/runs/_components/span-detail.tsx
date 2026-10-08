@@ -55,7 +55,9 @@ export function SpanDetail({ traceId, spanId, findings, annotations }: { traceId
     <Panel
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <NeatBadge variant={kind.variant}>{kind.label}</NeatBadge>
+          <NeatBadge variant={kind.variant} size="micro">
+            {kind.label}
+          </NeatBadge>
           <span className="truncate">{v.toolName ?? d.name}</span>
           {d.status.code === 2 && <StatusPill tone="danger">Failed</StatusPill>}
         </span>
@@ -84,8 +86,9 @@ export function SpanDetail({ traceId, spanId, findings, annotations }: { traceId
         {v.error && <pre className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap text-danger-fg">{v.error}</pre>}
         <SegmentedTabs
           label="Span view"
+          size="compact"
           value={tab}
-          onChange={setTab}
+          onValueChange={setTab}
           items={[
             { value: "io", label: "Input & output" },
             { value: "attrs", label: "Attributes" },

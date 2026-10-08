@@ -34,11 +34,7 @@ export function ConfirmDialog({
     if (!open && d.open) d.close();
   }, [open]);
   return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      className="m-auto w-full max-w-md rounded-xl border border-border bg-popover p-0 text-foreground elevation-modal backdrop:bg-black/40"
-    >
+    <dialog ref={ref} onClose={onClose} className="m-auto w-full max-w-md rounded-xl border border-border bg-popover p-0 text-foreground elevation-modal backdrop:bg-black/40">
       <div className="flex flex-col gap-4 p-5">
         <div className="flex flex-col gap-1.5">
           <h2 className="text-heading">{title}</h2>

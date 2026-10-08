@@ -2,7 +2,6 @@ import { Alert02Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useState, type ReactNode } from "react";
 import { Button } from "../../../components/ui/button";
 import { Icon } from "../../../components/ui/icon";
-import { SectionLabel } from "../../../components/ui/panel";
 import type { Insights } from "../../../lib/api";
 import { cn } from "../../../lib/cn";
 
@@ -143,29 +142,29 @@ function Column({ title, groups, tone, empty }: { title: string; groups: Group[]
   const [all, setAll] = useState(false);
   const total = groups.reduce((a, g) => a + g.items.length, 0);
   const LIMIT = 4;
+  const hidden = groups.reduce((a, g) => a + Math.max(0, g.items.length - LIMIT), 0);
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card px-4 py-3 elevation-card">
-      <h2 className="flex items-baseline gap-2 text-title text-foreground">
+    <section className="flex min-w-0 flex-col gap-3">
+      <h2 className="text-eyebrow text-muted-foreground">
         {title}
-        {total > 0 && <span className="text-caption text-foreground-subtle tabular-nums">{total}</span>}
+        {total > 0 && <span className="ml-1.5 text-foreground-subtle tabular-nums">· {total}</span>}
       </h2>
       {total === 0 ? (
-        <p className="text-body text-muted-foreground">{empty}</p>
+        <p className="rounded-lg border border-border px-4 py-3 text-body text-muted-foreground">{empty}</p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4 rounded-lg border border-border px-4 py-3">
           {groups.map((g) => (
             <div key={g.label} className="flex flex-col">
-              <SectionLabel className="mb-0.5">{g.label}</SectionLabel>
+              <span className="mb-1 text-caption text-muted-foreground">{g.label}</span>
               {(all ? g.items : g.items.slice(0, LIMIT)).map((it) => (
                 <Row key={it.key} item={it} tone={tone} />
               ))}
-              {!all && g.items.length > LIMIT && <span className="py-1 text-caption text-foreground-subtle">+{g.items.length - LIMIT} more</span>}
             </div>
           ))}
-          {groups.some((g) => g.items.length > LIMIT) && (
+          {hidden > 0 && (
             <div>
-              <Button size="sm" variant="ghost" onClick={() => setAll(!all)}>
-                {all ? "Show fewer" : "Show all"}
+              <Button size="sm" variant="muted" className="-ml-2" onClick={() => setAll(!all)}>
+                {all ? "Show fewer" : `Show ${hidden} more`}
               </Button>
             </div>
           )}

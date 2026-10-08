@@ -6,18 +6,18 @@ export function ProjectsTable({ data }: { data: Insights }) {
   if (!data.projects.length) return null;
   return (
     <section aria-labelledby="projects" className="flex flex-col gap-3">
-      <h2 id="projects" className="text-title text-foreground">
+      <h2 id="projects" className="text-eyebrow text-muted-foreground">
         Projects
       </h2>
-      <div className="overflow-x-auto rounded-lg border border-border bg-card elevation-card">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-body">
           <thead>
-            <tr className="border-b border-border text-left text-label text-muted-foreground">
-              <th className="px-4 py-2 font-normal">Project</th>
+            <tr className="border-b border-border/60 text-left text-eyebrow text-muted-foreground">
+              <th className="px-4 py-2.5 font-normal">Project</th>
               <th className="px-4 py-2 text-right font-normal">Runs</th>
-              <th className="px-4 py-2 font-normal">With problems</th>
+              <th className="px-4 py-2.5 font-normal">With problems</th>
               <th className="px-4 py-2 text-right font-normal">Failed</th>
-              <th className="px-4 py-2 font-normal">Most common problem</th>
+              <th className="px-4 py-2.5 font-normal">Most common problem</th>
               <th className="px-4 py-2 text-right font-normal">Last run</th>
             </tr>
           </thead>
@@ -25,7 +25,7 @@ export function ProjectsTable({ data }: { data: Insights }) {
             {data.projects.map((p) => {
               const share = p.runs ? p.with_problems / p.runs : 0;
               return (
-                <tr key={p.name} className="border-b border-border last:border-0 hover:bg-surface-subtle">
+                <tr key={p.name} className="border-b border-border/60 last:border-0 hover:bg-surface-subtle">
                   <td className="px-4 py-2">
                     <a href={`#/runs?project=${encodeURIComponent(p.name)}`} className="focus-ring rounded-sm text-foreground underline-offset-4 hover:underline">
                       {p.name}

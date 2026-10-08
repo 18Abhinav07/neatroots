@@ -22,11 +22,11 @@ export function ProjectsSection({ hooks }: { hooks: number }) {
       ) : (
         <table className="w-full text-body">
           <thead>
-            <tr className="border-b border-border text-left text-label text-muted-foreground">
-              <th className="px-4 py-2 font-medium">Project</th>
-              <th className="px-4 py-2 font-medium">Runs</th>
-              <th className="px-4 py-2 font-medium">Steering</th>
-              <th className="px-4 py-2 font-medium">Forward to Cloud</th>
+            <tr className="border-b border-border text-left text-eyebrow text-muted-foreground">
+              <th className="px-4 py-2 font-normal">Project</th>
+              <th className="px-4 py-2 font-normal">Runs</th>
+              <th className="px-4 py-2 font-normal">Steering</th>
+              <th className="px-4 py-2 font-normal">Forward to Cloud</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -63,7 +63,12 @@ export function ProjectsSection({ hooks }: { hooks: number }) {
                     <Switch
                       label={`Forward ${p.project} runs to Neatlogs Cloud`}
                       checked={p.settings.forward}
-                      onChange={(v) => save.mutate({ body: { project: p.project, forward: v }, message: v ? `Finished ${p.project} runs will be sent to Neatlogs Cloud` : `Forwarding for ${p.project} is off` })}
+                      onChange={(v) =>
+                        save.mutate({
+                          body: { project: p.project, forward: v },
+                          message: v ? `Finished ${p.project} runs will be sent to Neatlogs Cloud` : `Forwarding for ${p.project} is off`,
+                        })
+                      }
                     />
                     {p.settings.forward ? "Each finished run" : "Off"}
                   </label>
@@ -74,8 +79,8 @@ export function ProjectsSection({ hooks }: { hooks: number }) {
         </table>
       )}
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        Steering needs the hook in your agent: <span className="font-mono">pip install bolts-steer</span> then <span className="font-mono">bolts_steer.wrap(OpenAI())</span>, or{" "}
-        <span className="font-mono">@neatlogs/bolts-steer</span> for TypeScript. Hooks connected now: <span className="tabular-nums">{hooks}</span>.
+        Steering needs the hook in your agent: <span className="font-mono">pip install ~/.bolts/src/python/bolts-steer</span> then <span className="font-mono">bolts_steer.wrap(OpenAI())</span>, or{" "}
+        <span className="font-mono">npm install ~/.bolts/src/packages/steer-ts</span> for TypeScript. Hooks connected now: <span className="tabular-nums">{hooks}</span>.
       </p>
     </Panel>
   );

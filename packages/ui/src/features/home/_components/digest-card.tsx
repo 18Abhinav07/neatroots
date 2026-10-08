@@ -32,8 +32,8 @@ export function DigestCard({ data, llmOk }: { data: Insights; llmOk: boolean | u
   return (
     <section aria-labelledby="digest" className="flex flex-col gap-3 rounded-lg bg-surface-subtle px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="digest" className="inline-flex items-center gap-1.5 text-title text-foreground">
-          <Icon icon={AiBrain01Icon} size="sm" className="text-brand-violet" />
+        <h2 id="digest" className="inline-flex items-center gap-1.5 text-eyebrow text-muted-foreground">
+          <Icon icon={AiBrain01Icon} size="xs" className="text-brand-violet" />
           What stands out
         </h2>
         <span className="flex items-center gap-2 text-caption text-foreground-subtle">
@@ -58,7 +58,7 @@ export function DigestCard({ data, llmOk }: { data: Insights; llmOk: boolean | u
             if (!items.length) return null;
             return (
               <div key={tone} className="flex flex-col gap-2">
-                <span className="text-label text-muted-foreground">{tone === "bad" ? "Not working" : "Working"}</span>
+                <span className="text-caption text-muted-foreground">{tone === "bad" ? "Not working" : "Working"}</span>
                 <ul className="flex flex-col gap-2">
                   {items.map((x, i) => (
                     <li key={i} className="flex items-start gap-2.5 text-body text-foreground">

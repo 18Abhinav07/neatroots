@@ -18,11 +18,7 @@ export function ForwardDialog({
     <ConfirmDialog
       open={!!preview}
       title="Send this run to Neatlogs Cloud?"
-      description={
-        preview
-          ? `${preview.span_count} spans go to ${preview.endpoint} with your API key. Redactions below are applied first; the send is logged in Settings.`
-          : ""
-      }
+      description={preview ? `${preview.span_count} spans go to ${preview.endpoint} with your API key. Redactions below are applied first; the send is logged in Settings.` : ""}
       confirmLabel="Send run to Cloud"
       pending={pending}
       onClose={onClose}

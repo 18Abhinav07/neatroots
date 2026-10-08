@@ -49,15 +49,15 @@ export function Problems({
 
   return (
     <section aria-labelledby="problems" className="flex flex-col gap-3">
-      <div className="flex items-baseline gap-3">
-        <h2 id="problems" className="text-title text-foreground">
-          {open.length ? `${open.length} problem${open.length > 1 ? "s" : ""}` : "Problems"}
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="problems" className="text-eyebrow text-muted-foreground">
+          {open.length ? `Problems · ${open.length}` : "Problems"}
         </h2>
         {checked && <span className="text-caption text-foreground-subtle">{checked}</span>}
       </div>
 
       {explanation && (
-        <div className="flex flex-col gap-2 rounded-lg bg-surface-subtle px-4 py-3">
+        <div className="flex flex-col gap-2.5 rounded-lg bg-surface-subtle px-4 py-3">
           <span className="inline-flex items-center gap-1.5 text-label text-muted-foreground">
             <Icon icon={AiBrain01Icon} size="xs" className="text-brand-violet" />
             Likely cause
@@ -73,7 +73,7 @@ export function Problems({
           {running ? "Nothing found yet. Bolts checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
         </p>
       ) : (
-        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card elevation-card">
+        <ul className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">
           {live.map((f) => (
             <ProblemRow
               key={f.id}
@@ -147,14 +147,16 @@ function ProblemRow({
         type="button"
         aria-expanded={expanded}
         onClick={onToggle}
-        className="focus-ring flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left transition-colors motion-fast hover:bg-surface-subtle"
+        className="focus-ring flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors motion-fast hover:bg-surface-subtle"
       >
         <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className={open ? "text-body-strong text-foreground" : "text-body-medium text-muted-foreground"}>{f.title}</span>
-          {preview && !expanded && <span className="line-clamp-2 text-caption text-muted-foreground">{preview}</span>}
+          <span className={open ? "text-body-medium text-foreground" : "text-body text-muted-foreground"}>{f.title}</span>
+          {preview && !expanded && <span className="truncate text-caption text-muted-foreground">{preview}</span>}
         </span>
-        <StatusPill tone={state.tone}>{state.label}</StatusPill>
-        <Icon icon={ArrowDown01Icon} size="xs" className={cn("mt-1 shrink-0 text-foreground-subtle transition-transform motion-fast", expanded && "rotate-180")} />
+        <StatusPill tone={state.tone} size="sm">
+          {state.label}
+        </StatusPill>
+        <Icon icon={ArrowDown01Icon} size="xs" className={cn("shrink-0 text-foreground-subtle transition-transform motion-fast", expanded && "rotate-180")} />
       </button>
       {expanded && (
         <div className="flex flex-col gap-3 px-4 pb-4">

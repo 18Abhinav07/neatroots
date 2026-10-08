@@ -52,7 +52,7 @@ export function Kpis({ data }: { data: Insights }) {
     },
   ];
   return (
-    <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card elevation-card lg:grid-cols-4">
+    <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border lg:grid-cols-4">
       {tiles.map((x, i) => (
         <div
           key={x.label}
@@ -63,7 +63,7 @@ export function Kpis({ data }: { data: Insights }) {
             i >= 2 && "max-lg:border-t max-lg:border-border",
           )}
         >
-          <span className="text-label text-muted-foreground">{x.label}</span>
+          <span className="text-eyebrow text-muted-foreground">{x.label}</span>
           <span className="flex items-center gap-2">
             <span className="text-heading text-foreground tabular-nums">{x.value}</span>
             {x.delta}
@@ -89,7 +89,7 @@ export function Activity({ data }: { data: Insights }) {
   return (
     <section aria-labelledby="activity" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="activity" className="text-title text-foreground">
+        <h2 id="activity" className="text-eyebrow text-muted-foreground">
           Runs over time
         </h2>
         <span className="flex items-center gap-3 text-caption text-muted-foreground">

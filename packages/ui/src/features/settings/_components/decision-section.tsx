@@ -66,7 +66,7 @@ export function DecisionSection({ status }: { status: Status }) {
           <p className="text-body text-muted-foreground">
             Answers each check's yes/no question with a probability. Until Laya has earned a question (90% agreement with the LLM over 30 answers), the LLM answers it.
           </p>
-          <div className="flex flex-col gap-2 rounded-md border border-border px-3 py-2.5">
+          <div className="flex flex-col gap-2 border-t border-border/60 pt-4">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2">
                 <span className="text-body-strong">Laya</span>
@@ -84,18 +84,18 @@ export function DecisionSection({ status }: { status: Status }) {
             <LayaTrust trust={status.classifier?.trust ?? []} />
             <div className="flex flex-wrap gap-2">
               {(layaState?.state === "not_installed" || layaState?.state === "failed" || layaState?.state === "disabled") && (
-                <Button size="sm" variant="outline" pending={laya.isPending} onClick={() => laya.mutate("install")}>
+                <Button size="sm" variant="secondary" pending={laya.isPending} onClick={() => laya.mutate("install")}>
                   Install Laya
                 </Button>
               )}
               {(layaState?.state === "running" || layaState?.state === "stopped") && (
-                <Button size="sm" variant="ghost" pending={laya.isPending} onClick={() => laya.mutate("restart")}>
+                <Button size="sm" variant="muted" className="-ml-2" pending={laya.isPending} onClick={() => laya.mutate("restart")}>
                   Restart Laya
                 </Button>
               )}
             </div>
           </div>
-          <div className="flex flex-col gap-2 rounded-md border border-border px-3 py-2.5">
+          <div className="flex flex-col gap-2 border-t border-border/60 pt-4">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2">
                 <span className="text-body-strong">Jev cloud</span>

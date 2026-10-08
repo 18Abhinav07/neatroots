@@ -33,7 +33,8 @@ export function PushBanner() {
         {pv && (
           <span className="text-muted-foreground">
             {" "}
-            {pv.span_count} spans · {pv.redactions.length ? pv.redactions.map((r) => `${r.count} ${r.kind.replace("_", " ")} redacted`).join(", ") : "nothing to redact"} → {pv.endpoint}
+            {pv.span_count} spans · {pv.redactions.length ? pv.redactions.map((r) => `${r.count} ${r.kind.replace("_", " ")} redacted`).join(", ") : "nothing to redact"} →{" "}
+            {pv.endpoint}
           </span>
         )}
         {pv && !pv.has_key && <span className="text-danger-fg"> · Add an API key in Settings first.</span>}

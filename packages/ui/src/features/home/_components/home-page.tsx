@@ -1,4 +1,5 @@
-import { Calendar03Icon } from "@hugeicons/core-free-icons";
+import { Calendar03Icon, Home01Icon } from "@hugeicons/core-free-icons";
+import { PageHeader } from "../../../components/ui/page-header";
 import { useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia } from "../../../components/ui/empty";
@@ -39,53 +40,55 @@ export function HomePage({ status }: { status?: Status }) {
   const everReceived = (status?.stats.runs ?? 0) > 0;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-8 py-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1.5">
-          <h1 className="text-display">Home</h1>
-          <p className="text-body text-muted-foreground">How your agents have been doing, from every run Bolts has checked.</p>
-        </div>
-        {everReceived && (
-          <SegmentedTabs
-            label="Period"
-            value={win}
-            onChange={choose}
-            items={[
-              { value: "24h", label: "24 hours" },
-              { value: "7d", label: "7 days" },
-              { value: "30d", label: "30 days" },
-            ]}
-          />
+    <div className="flex flex-col pb-12">
+      <PageHeader
+        icon={Home01Icon}
+        title="Home"
+        actions={
+          everReceived && (
+            <SegmentedTabs
+              label="Period"
+              size="compact"
+              value={win}
+              onValueChange={choose}
+              items={[
+                { value: "24h", label: "24 hours" },
+                { value: "7d", label: "7 days" },
+                { value: "30d", label: "30 days" },
+              ]}
+            />
+          )
+        }
+      />
+      <div className="flex flex-col gap-8 px-6 pt-2">
+        {status && <SetupGuide status={status} projects={projects?.projects ?? []} />}
+
+        {error && <p className="text-body text-muted-foreground">Couldn't load insights: {(error as Error).message}</p>}
+
+        {everReceived && data && data.totals.runs === 0 && (
+          <Empty className="py-10">
+            <EmptyMedia icon={Calendar03Icon} />
+            <EmptyHeader title={`No runs in the last ${PERIOD[win]}`} description="Insights cover runs that started in this period. Older runs are still on the Runs page." />
+            {win !== "30d" && (
+              <EmptyContent>
+                <Button variant="outline" size="sm" onClick={() => choose("30d")}>
+                  Show the last 30 days
+                </Button>
+              </EmptyContent>
+            )}
+          </Empty>
         )}
-      </header>
 
-      {status && <SetupGuide status={status} projects={projects?.projects ?? []} />}
-
-      {error && <p className="text-body text-muted-foreground">Couldn't load insights: {(error as Error).message}</p>}
-
-      {everReceived && data && data.totals.runs === 0 && (
-        <Empty className="py-10">
-          <EmptyMedia icon={Calendar03Icon} />
-          <EmptyHeader title={`No runs in the last ${PERIOD[win]}`} description="Insights cover runs that started in this period. Older runs are still on the Runs page." />
-          {win !== "30d" && (
-            <EmptyContent>
-              <Button variant="outline" size="sm" onClick={() => choose("30d")}>
-                Show the last 30 days
-              </Button>
-            </EmptyContent>
-          )}
-        </Empty>
-      )}
-
-      {data && data.totals.runs > 0 && (
-        <>
-          <Kpis data={data} />
-          <DigestCard data={data} llmOk={status ? !!status.engine?.llm.ok : undefined} />
-          <Health data={data} />
-          <Activity data={data} />
-          <ProjectsTable data={data} />
-        </>
-      )}
+        {data && data.totals.runs > 0 && (
+          <>
+            <Kpis data={data} />
+            <DigestCard data={data} llmOk={status ? !!status.engine?.llm.ok : undefined} />
+            <Health data={data} />
+            <Activity data={data} />
+            <ProjectsTable data={data} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

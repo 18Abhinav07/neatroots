@@ -154,10 +154,10 @@ export function SetupGuide({ status, projects }: { status: Status; projects: Pro
   }
 
   return (
-    <section aria-labelledby="setup" className="flex flex-col gap-4 rounded-lg border border-border bg-card px-5 py-4 elevation-card">
+    <section aria-labelledby="setup" className="flex flex-col gap-4 rounded-lg border border-border px-5 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h2 id="setup" className="text-title text-foreground">
+          <h2 id="setup" className="text-body-medium text-foreground">
             How to use Bolts
           </h2>
           <p className="max-w-2xl text-body text-muted-foreground">
@@ -207,7 +207,7 @@ export function SetupGuide({ status, projects }: { status: Status; projects: Pro
         })}
       </ol>
       <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-        <span className="text-label text-muted-foreground">Day to day</span>
+        <span className="text-eyebrow text-muted-foreground">Day to day</span>
         <ol className="flex flex-col gap-1">
           {DAILY.map((d, i) => (
             <li key={i} className="flex gap-2 text-body text-muted-foreground">

@@ -11,8 +11,8 @@ export function SteeringNotes({ notes }: { notes: Note[] }) {
   const delivered = notes.filter((n) => n.status === "delivered").length;
   return (
     <section aria-labelledby="notes" className="flex flex-col gap-3">
-      <div className="flex items-baseline gap-3">
-        <h2 id="notes" className="text-title text-foreground">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 id="notes" className="text-eyebrow text-muted-foreground">
           Notes to the agent
         </h2>
         <span className="text-caption text-foreground-subtle">

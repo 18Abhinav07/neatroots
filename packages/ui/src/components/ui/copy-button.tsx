@@ -16,7 +16,10 @@ export function CopyButton({ text, label = "Copy", className }: { text: string; 
           setTimeout(() => setDone(false), 1200);
         });
       }}
-      className={cn("focus-ring inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-surface-strong hover:text-foreground", className)}
+      className={cn(
+        "focus-ring inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-surface-strong hover:text-foreground",
+        className,
+      )}
     >
       <Icon icon={done ? CheckmarkCircle02Icon : Copy01Icon} size="xxs" className={done ? "text-success-fg" : undefined} />
     </button>

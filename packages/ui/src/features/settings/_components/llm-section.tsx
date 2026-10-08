@@ -35,7 +35,8 @@ export function LlmSection({ status }: { status: Status }) {
         <SegmentedTabs
           label="Where the LLM runs"
           value={where}
-          onChange={setWhere}
+          onValueChange={setWhere}
+          size="compact"
           items={[
             { value: "local", label: "This machine" },
             { value: "hosted", label: "Hosted provider" },
