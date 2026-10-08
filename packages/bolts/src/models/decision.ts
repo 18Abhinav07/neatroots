@@ -275,6 +275,11 @@ export class LlmDecisionBackend implements DecisionBackend {
       if (q.type === "score") {
         prompt += "Levels:\n" + (q.levels ?? []).map((l, i) => `${i}: ${l}`).join("\n") + "\nAnswer with the level number.";
       }
+      // Hosted models that give no logprobs state their confidence instead.
+      const askConfidence = !this.llm.logprobs;
+      if (askConfidence) prompt += `\nAlso give "confidence": how likely your answer is right, from 0 to 1.`;
+      const properties: Record<string, unknown> = { answer: { type: "string", enum: labels } };
+      if (askConfidence) properties.confidence = { type: "number" };
       try {
         const r = await this.llm.chat(
           [
@@ -282,8 +287,8 @@ export class LlmDecisionBackend implements DecisionBackend {
             { role: "user", content: prompt },
           ],
           {
-            schema: { name: "answer", schema: { type: "object", properties: { answer: { type: "string", enum: labels } }, required: ["answer"] } },
-            maxTokens: 24,
+            schema: { name: "answer", schema: { type: "object", properties, required: askConfidence ? ["answer", "confidence"] : ["answer"] } },
+            maxTokens: askConfidence ? 48 : 24,
             logprobs: true,
             topLogprobs: 10,
             timeoutSec: 60,
@@ -291,11 +296,14 @@ export class LlmDecisionBackend implements DecisionBackend {
           },
         );
         model = r.model;
-        const chosen = String((r.json as { answer?: string } | undefined)?.answer ?? "");
+        const parsed = (r.json as { answer?: string; confidence?: number } | undefined) ?? {};
+        const chosen = String(parsed.answer ?? "");
+        const stated = typeof parsed.confidence === "number" && parsed.confidence >= 0 && parsed.confidence <= 1 ? parsed.confidence : undefined;
+        const conf = stated ?? 0.85;
         const dist =
           (r.logprobs && distributionFromLogprobs(labels, r.logprobs, chosen)) ??
-          // No logprobs from this server: a constrained answer becomes a fixed-confidence probability.
-          Object.fromEntries(labels.map((l) => [l, l === chosen ? 0.85 : labels.length > 1 ? 0.15 / (labels.length - 1) : 0]));
+          // No logprobs: the stated confidence, or a fixed one, becomes the probability of the chosen label.
+          Object.fromEntries(labels.map((l) => [l, l === chosen ? conf : labels.length > 1 ? (1 - conf) / (labels.length - 1) : 0]));
         answers[q.name] = answerFromDistribution(q, dist);
       } catch (err) {
         if (err instanceof LlmUnavailableError) throw new DecisionUnavailableError(err.message);

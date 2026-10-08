@@ -1,69 +1,24 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import readline from "node:readline";
 import { Command } from "commander";
 import { Bolts } from "./core.js";
 import { createApp, startServer } from "./server/app.js";
 import { VERSION } from "./version.js";
-import { boltsHome, loadConfig, saveConfig, DEFAULT_PORT, type SteeringMode } from "./config.js";
+import { boltsHome, loadConfig, saveConfig, type SteeringMode } from "./config.js";
 import { runStdioBridge } from "./mcp/stdio.js";
+import { api, ask, port, running } from "./cli/util.js";
+import { registerModelCommands } from "./cli/models.js";
+import { registerServiceCommands } from "./cli/service.js";
 import { parseChecks } from "./checks/registry.js";
 import { hardwareTier, LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
-import { setCloudKey, deleteCloudKey, getCloudKey, getSecret, setSecret, deleteSecret } from "./relay/keychain.js";
+import { setCloudKey, deleteCloudKey, getCloudKey, getSecret } from "./relay/keychain.js";
 import { LAYA_DOWNLOAD_MB, LayaManager } from "./models/laya.js";
 import { log } from "./util/log.js";
 
 const program = new Command();
 program.name("bolts").description("Neatlogs Bolts: local, private checks for AI agents while they run").version(VERSION);
-
-function port(opt?: string): number {
-  return opt ? Number(opt) : loadConfig().port || DEFAULT_PORT;
-}
-
-async function api<T = unknown>(p: number, route: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`http://localhost:${p}${route}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
-    signal: AbortSignal.timeout(180_000),
-  });
-  const text = await res.text();
-  let body: unknown;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = text;
-  }
-  if (!res.ok) throw new Error((body as { error?: string })?.error ?? `HTTP ${res.status}`);
-  return body as T;
-}
-
-async function running(p: number): Promise<boolean> {
-  try {
-    return (await fetch(`http://localhost:${p}/health`, { signal: AbortSignal.timeout(800) })).ok;
-  } catch {
-    return false;
-  }
-}
-
-function ask(question: string, hidden = false): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    if (hidden) {
-      const write = (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput;
-      (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-        if (s.includes(question)) write.call(rl, s);
-        else write.call(rl, "*".repeat(s.length ? 1 : 0));
-      };
-    }
-    rl.question(question, (answer) => {
-      rl.close();
-      if (hidden) process.stdout.write("\n");
-      resolve(answer.trim());
-    });
-  });
-}
 
 // ------------------------------------------------------------------- start
 
@@ -98,7 +53,8 @@ program
     log.info(`point your agent at it: NEATLOGS_ENDPOINT=http://localhost:${bolts.config.port} NEATLOGS_API_KEY=bolts-local`);
     log.info(`machine: ${tier.memoryGb} GB (${tier.tier} tier)`);
     if (status) {
-      log.info(status.llm.ok ? `local LLM: ${status.llm.model} at ${bolts.config.llm.baseUrl}` : `local LLM: not available (${status.llm.error}). Rules still run; start Ollama or LM Studio for questions and explanations.`);
+      const where = status.llm.where && status.llm.where !== "local" ? `${status.llm.where} (hosted, opt-in)` : `local at ${bolts.config.llm.baseUrl}`;
+      log.info(status.llm.ok ? `LLM: ${status.llm.model}, ${where}` : `LLM: not available (${status.llm.error}). Rules still run; start Ollama or LM Studio, or turn on a hosted model (bolts llm use), for questions and explanations.`);
       log.info(status.decision.backend ? `decision model now: ${status.decision.backend}${status.decision.model ? ` (${status.decision.model})` : ""}; Laya takes over when it is ready` : "decision model: none yet");
     }
     if (bolts.checks.errors.length) log.warn(`${bolts.checks.errors.length} check file problem(s); see the Checks page`);
@@ -209,7 +165,7 @@ program
     console.log(`  runs ${s.stats.runs} · spans ${s.stats.spans} · findings ${s.stats.findings} · ${(s.stats.bytes / 1024 / 1024).toFixed(1)} MB`);
     console.log(`  machine ${s.tier.memoryGb} GB (${s.tier.tier}) · ${s.tier.platform}`);
     if (s.engine) {
-      console.log(`  LLM ${s.engine.llm.ok ? s.engine.llm.model : `unavailable (${s.engine.llm.error})`}`);
+      console.log(`  LLM ${s.engine.llm.ok ? `${s.engine.llm.model} (${s.engine.llm.where === "local" ? "local" : `${s.engine.llm.where}, hosted`})` : `unavailable (${s.engine.llm.error})`}`);
       console.log(`  decisions ${s.engine.decision.backend ?? "unavailable"}${s.engine.decision.model ? ` (${s.engine.decision.model})` : ""}`);
       console.log(`  live runs ${s.engine.liveRuns} · pending checks ${s.engine.pendingJobs}`);
     }
@@ -234,8 +190,10 @@ program
     const up = await running(p);
     line(up, up ? `Bolts answers on http://localhost:${p}` : `Bolts is not running on port ${p} (bolts start)`);
     const llm = new LlmClient(cfg.llm, { secret: (n) => getSecret(n) });
-    const probe = await llm.probe(true);
-    line(probe.ok ? true : "warn", probe.ok ? `local LLM ${probe.model} at ${cfg.llm.baseUrl}` : `no local LLM at ${cfg.llm.baseUrl} (${probe.error}); questions, explanations and notes need one`);
+    const ls = await llm.status(true);
+    line(ls.local.ok ? true : "warn", ls.local.ok ? `local LLM ${ls.local.model} at ${cfg.llm.baseUrl}` : `no local LLM at ${cfg.llm.baseUrl} (${ls.local.error})`);
+    if (ls.external?.enabled) line(ls.external.ok ? true : false, ls.external.ok ? `hosted LLM ${ls.external.label} ${ls.external.model} (opt-in; run content is sent to it)` : `hosted LLM ${ls.external.label}: ${ls.external.error}`);
+    line(ls.active ? true : "warn", ls.active ? `LLM calls go to ${ls.active === "local" ? "the local LLM" : ls.external?.label}` : "no LLM: questions, explanations and notes need Ollama, LM Studio or a hosted model (bolts llm use)");
     const layaMgr = new LayaManager(boltsHome(), cfg.classifier);
     const dm = new DecisionModel(cfg.classifier, llm, { laya: async () => layaMgr.token, jevCloud: () => getSecret("jev-api-key") });
     const layaUp = await dm.laya.available();
@@ -443,104 +401,8 @@ checks
     process.exitCode = bad ? 1 : 0;
   });
 
-// ------------------------------------------------------------------ models
-
-program
-  .command("models")
-  .description("Show the hardware tier and which local models Bolts will use")
-  .action(async () => {
-    const cfg = loadConfig();
-    const tier = hardwareTier();
-    console.log(`${tier.memoryGb} GB memory → ${tier.tier} tier: ${tier.description}`);
-    const llm = new LlmClient(cfg.llm, { secret: (n) => getSecret(n) });
-    const probe = await llm.probe(true);
-    console.log(probe.ok ? `LLM: ${probe.model} (installed: ${probe.models?.join(", ")})` : `LLM: none at ${cfg.llm.baseUrl} (${probe.error})`);
-    const laya = new LayaManager(boltsHome(), cfg.classifier);
-    const dm = new DecisionModel(cfg.classifier, llm, { laya: async () => laya.token, jevCloud: () => getSecret("jev-api-key") });
-    console.log(`Laya: ${(await dm.laya.available()) ? `running on 127.0.0.1:${cfg.classifier.laya.port}` : laya.installed() ? "installed, not running (bolts start runs it)" : `not installed (bolts laya install, about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB)`}`);
-    console.log(`Jev cloud: ${cfg.classifier.jevCloud.enabled ? "on" : "off"}${(await getSecret("jev-api-key")) ? ", key stored" : ", no key"}`);
-    const st = await dm.status();
-    console.log(`decisions now: ${st.backend ?? "none"}${st.model ? ` (${st.model})` : ""}`);
-  });
-
-const laya = program.command("laya").description("Laya, the local decision model Bolts runs");
-
-laya
-  .command("install")
-  .description("Install Laya into ~/.bolts/laya and check that it starts")
-  .action(async () => {
-    const cfg = loadConfig();
-    cfg.classifier.laya.enabled = true;
-    saveConfig(cfg);
-    const m = new LayaManager(boltsHome(), cfg.classifier);
-    console.log(`Installing Laya ${"(about " + (LAYA_DOWNLOAD_MB / 1000).toFixed(1) + " GB)"} into ${m.dir}…`);
-    const t = setInterval(() => {
-      const s = m.state;
-      if (s.message) process.stdout.write(`\r  ${s.message}${s.progress !== null ? ` (${Math.round(s.progress * 100)}%)` : ""}`.padEnd(90));
-    }, 1000);
-    await m.ensure({ install: true });
-    clearInterval(t);
-    const s = m.state;
-    console.log(`\n${s.state === "running" ? "✓" : "✗"} Laya ${s.state}${s.message ? `: ${s.message}` : ""}`);
-    m.stop();
-    process.exitCode = s.state === "running" ? 0 : 1;
-  });
-
-laya
-  .command("status")
-  .action(async () => {
-    const cfg = loadConfig();
-    const m = new LayaManager(boltsHome(), cfg.classifier);
-    const dm = new DecisionModel(cfg.classifier, new LlmClient(cfg.llm, { secret: (n) => getSecret(n) }), { laya: async () => m.token, jevCloud: async () => undefined });
-    console.log(`installed: ${m.installed() ? "yes" : "no"} · enabled: ${cfg.classifier.laya.enabled} · running: ${(await dm.laya.available()) ? `yes on 127.0.0.1:${cfg.classifier.laya.port}` : "no"}`);
-  });
-
-laya
-  .command("off")
-  .description("Stop using Laya (Bolts falls back to Jev cloud if on, else the local LLM)")
-  .action(() => {
-    const cfg = loadConfig();
-    cfg.classifier.laya.enabled = false;
-    saveConfig(cfg);
-    console.log("Laya is off. Restart Bolts to stop a running Laya.");
-  });
-
-const jev = program.command("jev").description("Jev cloud (TypeSafe), an opt-in hosted decision model");
-
-jev
-  .command("login")
-  .description("Store your TypeSafe API key (macOS Keychain)")
-  .action(async () => {
-    const key = process.stdin.isTTY ? await ask("Paste your TypeSafe API key: ", true) : fs.readFileSync(0, "utf8").trim();
-    if (!key) {
-      console.error("no key given");
-      process.exit(1);
-    }
-    const where = await setSecret("jev-api-key", key);
-    console.log(`✓ stored in the ${where === "keychain" ? "macOS Keychain" : "file ~/.bolts/jev-api-key"}. Turn it on with: bolts jev on`);
-  });
-
-jev.command("logout").action(async () => {
-  await deleteSecret("jev-api-key");
-  console.log("✓ removed");
-});
-
-for (const state of ["on", "off"] as const) {
-  jev
-    .command(state)
-    .description(state === "on" ? "Use Jev cloud for decisions (span content a question needs is sent to api.typesafe.ai)" : "Stop using Jev cloud")
-    .option("-p, --port <port>")
-    .action(async (opts) => {
-      const p = port(opts.port);
-      if (await running(p)) await api(p, "/api/settings", { method: "POST", body: JSON.stringify({ jev_cloud_enabled: state === "on" }) });
-      else {
-        const cfg = loadConfig();
-        cfg.classifier.jevCloud.enabled = state === "on";
-        saveConfig(cfg);
-      }
-      console.log(state === "on" ? "Jev cloud is on. Span content a question needs is sent to api.typesafe.ai; everything else stays local." : "Jev cloud is off.");
-    });
-}
+registerModelCommands(program);
+registerServiceCommands(program);
 
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : err);

@@ -76,7 +76,7 @@ interface LiveRun {
 }
 
 export interface EngineStatus {
-  llm: { ok: boolean; model?: string; error?: string; busy: number };
+  llm: { ok: boolean; where?: string; model?: string; error?: string; busy: number };
   decision: { backend: string | null; model: string | null };
   liveRuns: number;
   pendingJobs: number;
@@ -171,7 +171,7 @@ export class Engine {
   async status(): Promise<EngineStatus> {
     const probe = await this.llm.probe();
     return {
-      llm: { ok: probe.ok, model: probe.model, error: probe.error, busy: this.llm.busy },
+      llm: { ok: probe.ok, where: probe.where, model: probe.model, error: probe.error, busy: this.llm.busy },
       decision: await this.decisions.status(),
       liveRuns: [...this.live.values()].filter((r) => !r.ended).length,
       pendingJobs: this.pending(),

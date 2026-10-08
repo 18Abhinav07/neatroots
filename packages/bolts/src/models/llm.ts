@@ -41,6 +41,8 @@ export interface ChatOptions {
 
 export interface ProbeResult {
   ok: boolean;
+  /** "local" or the external provider id. */
+  where?: string;
   model?: string;
   models?: string[];
   error?: string;
@@ -470,7 +472,8 @@ export class LlmClient {
 
   /** Whether the active target reports token logprobs. */
   get logprobs(): boolean {
-    return this.externalEnabled && this.keyCache?.key ? (this.preset?.logprobs ?? false) && this.preset?.api === "openai" : true;
+    // Asking for a stated confidence is harmless when a call falls back to the local model.
+    return this.externalEnabled ? !!this.preset?.logprobs && this.preset.api === "openai" : true;
   }
 
   async externalKey(): Promise<string | undefined> {
@@ -533,7 +536,7 @@ export class LlmClient {
     if (!this.cfg.enabled) return { ok: false, error: "LLM disabled in config" };
     let first: ProbeResult | undefined;
     for (const t of await this.targets()) {
-      const r = await t.probe(force);
+      const r = { ...(await t.probe(force)), where: t.where };
       first ??= r;
       if (r.ok) return r;
     }

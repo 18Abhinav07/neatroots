@@ -1,48 +1,23 @@
 import os from "node:os";
-import type { Context, Hono } from "hono";
+import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import YAML from "yaml";
 import type { Bolts } from "../core.js";
 import { kvToPlain } from "../otlp/types.js";
 import { buildView } from "../semantics/view.js";
-import { AnyCheck, isQuestion, type Check } from "../checks/types.js";
-import { parseChecks } from "../checks/registry.js";
 import { hardwareTier } from "../models/llm.js";
 import { projectSettings, type SteeringMode } from "../config.js";
-import { getCloudKey, setCloudKey, deleteCloudKey, getSecret, setSecret, deleteSecret } from "../relay/keychain.js";
-import { draftCheckFromConcern, askRuns } from "../engine/assist.js";
+import { getCloudKey, setCloudKey, deleteCloudKey, getSecret } from "../relay/keychain.js";
+import { mountModelsApi } from "./api-models.js";
+import { mountChecksApi } from "./api-checks.js";
+import { err, body } from "./util.js";
+import { askRuns } from "../engine/assist.js";
 import { loadTrace } from "../engine/trace.js";
 import type { RunRow } from "../types.js";
 import { VERSION } from "../version.js";
 
+export { checkFromInput } from "./api-checks.js";
+
 const STEERING_MODES: SteeringMode[] = ["off", "advisory", "gate", "self-check"];
-
-function err(c: Context, status: number, message: string) {
-  return c.json({ error: message }, status as 400);
-}
-
-async function body<T = Record<string, unknown>>(c: Context): Promise<T> {
-  try {
-    return (await c.req.json()) as T;
-  } catch {
-    return {} as T;
-  }
-}
-
-/** Accepts a check as YAML text, a JSON object, or {yaml}. */
-export function checkFromInput(input: unknown): { check?: Check; error?: string } {
-  if (typeof input === "string" || (input && typeof (input as { yaml?: unknown }).yaml === "string")) {
-    const text = typeof input === "string" ? input : (input as { yaml: string }).yaml;
-    const { checks, errors } = parseChecks(text);
-    if (errors.length) return { error: errors.map((e) => e.message).join("; ") };
-    if (checks.length !== 1) return { error: "expected exactly one check" };
-    return { check: checks[0] };
-  }
-  const obj = (input as { check?: unknown })?.check ?? input;
-  const parsed = AnyCheck.safeParse(obj);
-  if (!parsed.success) return { error: parsed.error.issues.map((i) => `${i.path.join(".") || "check"}: ${i.message}`).join("; ") };
-  return { check: parsed.data as Check };
-}
 
 export function runSummary(bolts: Bolts, r: RunRow) {
   const summary = bolts.store.getSummary(r.trace_id);
@@ -131,6 +106,8 @@ function allowedEndpoint(u: string): boolean {
 
 export function mountApi(app: Hono, bolts: Bolts): void {
   const engine = bolts.engine;
+  mountModelsApi(app, bolts);
+  mountChecksApi(app, bolts);
 
   app.get("/api/status", async (c) => {
     const status = engine ? await engine.status() : null;
@@ -155,7 +132,7 @@ export function mountApi(app: Hono, bolts: Bolts): void {
       },
       check_errors: bolts.checks.errors,
       config: {
-        llm: { baseUrl: bolts.config.llm.baseUrl, model: bolts.config.llm.model, enabled: bolts.config.llm.enabled },
+        llm: { baseUrl: bolts.config.llm.baseUrl, model: bolts.config.llm.model, enabled: bolts.config.llm.enabled, external: bolts.config.llm.external },
         classifier: { backend: bolts.config.classifier.backend, baseUrl: bolts.config.classifier.baseUrl, model: bolts.config.classifier.model },
         budgets: bolts.config.budgets,
         retention: bolts.config.retention,
@@ -255,79 +232,6 @@ export function mountApi(app: Hono, bolts: Bolts): void {
     return c.json(a);
   });
 
-  // ---------------------------------------------------------------- checks
-
-  app.get("/api/checks", (c) =>
-    c.json({
-      checks: bolts.checks.all().map((lc) => ({
-        id: lc.check.id,
-        kind: lc.check.kind,
-        title: lc.check.title ?? (isQuestion(lc.check) ? lc.check.ask : lc.check.id),
-        source: lc.source,
-        path: lc.path,
-        enabled: lc.check.enabled !== false && (bolts.store.checkStats()[lc.check.id]?.enabled ?? 1) === 1,
-        precision: bolts.checks.precision(lc.check.id),
-        yaml: YAML.stringify(lc.check),
-        check: lc.check,
-      })),
-      errors: bolts.checks.errors,
-      library_dir: bolts.checks.libraryDir,
-      user_dir: `${bolts.home}/checks`,
-      project_dirs: bolts.config.checkDirs,
-    }),
-  );
-
-  app.post("/api/checks", async (c) => {
-    const ct = c.req.header("content-type") ?? "";
-    const raw = ct.includes("yaml") || ct.includes("text/plain") ? await c.req.text() : await body(c);
-    const { check, error } = checkFromInput(raw);
-    if (!check) return err(c, 400, error ?? "invalid check");
-    const dir = (raw as { dir?: string })?.dir;
-    if (dir && !bolts.config.checkDirs.includes(dir)) return err(c, 400, "dir must be a registered project checks directory");
-    const saved = bolts.checks.save(check, dir ? { dir } : "user");
-    return c.json({ ok: true, id: saved.check.id, path: saved.path, source: saved.source });
-  });
-
-  app.post("/api/checks/:id/enabled", async (c) => {
-    const b = await body<{ enabled?: boolean }>(c);
-    if (!bolts.checks.get(c.req.param("id"))) return err(c, 404, "check not found");
-    bolts.store.setCheckEnabled(c.req.param("id"), b.enabled !== false);
-    return c.json({ ok: true });
-  });
-
-  app.delete("/api/checks/:id", (c) => (bolts.checks.remove(c.req.param("id")) ? c.json({ ok: true }) : err(c, 400, "only user, project or planner checks can be deleted; disable library checks instead")));
-
-  app.post("/api/checks/draft", async (c) => {
-    const b = await body<{ concern?: string; workflow?: string; project?: string }>(c);
-    if (!b.concern || b.concern.length < 8) return err(c, 400, "describe the concern in a sentence");
-    try {
-      const check = await draftCheckFromConcern(bolts, b.concern, { workflow: b.workflow, project: b.project });
-      return c.json({ check, yaml: YAML.stringify(check) });
-    } catch (e) {
-      return err(c, 503, (e as Error).message);
-    }
-  });
-
-  app.post("/api/checks/preview", async (c) => {
-    if (!engine) return err(c, 503, "engine not running");
-    const b = await body<{ check?: unknown; yaml?: string; limit?: number; workflow?: string; project?: string }>(c);
-    const { check, error } = checkFromInput(b.yaml ? { yaml: b.yaml } : b.check);
-    if (!check) return err(c, 400, error ?? "invalid check");
-    try {
-      const r = await engine.previewCheck(check, { limit: b.limit ?? 50, workflow: b.workflow, project: b.project });
-      return c.json({ ...r, hit_rate: r.checked ? r.hits.length / r.checked : null });
-    } catch (e) {
-      return err(c, 503, (e as Error).message);
-    }
-  });
-
-  app.post("/api/checks/reload", (c) => {
-    bolts.checks.reload();
-    return c.json({ ok: true, errors: bolts.checks.errors });
-  });
-
-  app.get("/api/plans", (c) => c.json({ plans: bolts.store.listPlans(50) }));
-
   // ------------------------------------------------------------ settings
 
   app.get("/api/projects", (c) => c.json({ projects: projects(bolts) }));
@@ -406,37 +310,6 @@ export function mountApi(app: Hono, bolts: Bolts): void {
 
   app.delete("/api/cloud/key", async (c) => {
     await deleteCloudKey();
-    return c.json({ ok: true });
-  });
-
-  // ------------------------------------------------------ decision models
-
-  app.post("/api/classifier/laya", async (c) => {
-    const b = await body<{ action?: string }>(c);
-    if (b.action === "install") {
-      bolts.config.classifier.laya.enabled = true;
-      bolts.saveConfig();
-      void bolts.laya.ensure({ install: true }).then(() => bolts.decisions.reset());
-    } else if (b.action === "restart") {
-      void bolts.laya.restart().then(() => bolts.decisions.reset());
-    } else if (b.action === "stop") {
-      bolts.laya.stop();
-      bolts.decisions.reset();
-    } else return err(c, 400, "action must be install, restart or stop");
-    return c.json({ ok: true, laya: bolts.laya.state });
-  });
-
-  app.post("/api/classifier/jev-key", async (c) => {
-    const b = await body<{ key?: string }>(c);
-    if (!b.key || b.key.length < 8) return err(c, 400, "paste the TypeSafe API key");
-    const where = await setSecret("jev-api-key", b.key.trim());
-    bolts.decisions.reset();
-    return c.json({ ok: true, stored_in: where });
-  });
-
-  app.delete("/api/classifier/jev-key", async (c) => {
-    await deleteSecret("jev-api-key");
-    bolts.decisions.reset();
     return c.json({ ok: true });
   });
 
