@@ -112,6 +112,7 @@ export function flagged(c: QuestionCheck, r: DecisionResult): { flagged: boolean
  */
 export class Engine {
   private live = new Map<string, LiveRun>();
+  private workflowPlanning = new Map<string, Promise<PlanRow | undefined>>();
   private jobs = new Map<string, number>();
   private idleWaiters = new Map<string, (() => void)[]>();
   private decisionDown = false;
@@ -230,6 +231,11 @@ export class Engine {
       if (lc && isQuestion(lc.check) && lc.check.enabled !== false) out.set(id, { check: lc.check, params: { ...(lc.check.params ?? {}), ...(run.plan?.params[id] ?? {}) } });
     }
     for (const lc of this.registry.questions()) {
+      // Baseline library questions apply to every agent, whatever the planner picked.
+      if (lc.source === "library" && lc.check.baseline && this.appliesTo(lc.check, run)) {
+        out.set(lc.check.id, { check: lc.check as QuestionCheck, params: (lc.check as QuestionCheck).params ?? {} });
+        continue;
+      }
       if (lc.source === "library" || lc.source === "planner") continue;
       if (!this.appliesTo(lc.check, run)) continue;
       out.set(lc.check.id, { check: lc.check as QuestionCheck, params: (lc.check as QuestionCheck).params ?? {} });
@@ -715,10 +721,28 @@ export class Engine {
       if (!run.plan) run.plan = this.defaultPlan(run, tools, false);
       return;
     }
+    // One plan per workflow: runs that start while it is being made share it.
+    const inflight = this.workflowPlanning.get(run.workflow);
+    const shared =
+      inflight ??
+      this.plan(run, snap, tools)
+        .then(() => run.plan)
+        .catch((err: Error) => {
+          log.warn(`planning failed for ${run.workflow}: ${err.message}`);
+          return undefined;
+        });
+    if (!inflight) {
+      this.workflowPlanning.set(run.workflow, shared);
+      void shared.finally(() => this.workflowPlanning.delete(run.workflow));
+    }
     run.planning = this.track(
       run.traceId,
-      this.plan(run, snap, tools).then(() => {
+      shared.then((plan) => {
         run.planning = undefined;
+        if (plan && run.plan !== plan) {
+          run.plan = plan;
+          this.bolts.store.setRunPlan(run.traceId, plan.id);
+        }
         // Catch up on spans that arrived while planning.
         const latest = loadTrace(this.bolts.store, run.traceId);
         this.scheduleQuestions(run, latest, latest.spans);
@@ -748,7 +772,11 @@ export class Engine {
       return;
     }
     const goal = runGoal(snap);
-    const library = this.registry.library().map((lc) => `- ${lc.check.id}: ${(lc.check as QuestionCheck).ask}`).join("\n");
+    const library = this.registry
+      .library()
+      .filter((lc) => !lc.check.baseline)
+      .map((lc) => `- ${lc.check.id}: ${(lc.check as QuestionCheck).ask}`)
+      .join("\n");
     const toolLines = tools.length ? tools.map((t) => `- ${t}`).join("\n") : "(none seen yet)";
     const user = `Workflow: ${run.workflow}
 

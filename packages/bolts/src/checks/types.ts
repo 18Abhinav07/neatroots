@@ -40,6 +40,8 @@ const Base = {
   title: z.string().optional(),
   description: z.string().optional(),
   enabled: z.boolean().optional(),
+  /** Library questions that apply to every agent, not only when the planner picks them. */
+  baseline: z.boolean().optional(),
   applies_to: AppliesTo.optional(),
   /** Template for the note sent to the agent; {placeholders} come from the finding. */
   guidance: z.string().optional(),

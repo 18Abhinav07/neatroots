@@ -92,3 +92,22 @@ describe("engine", () => {
     expect(exp?.grounding).not.toBeNull();
   });
 });
+
+describe("planning", () => {
+  it("makes one plan per workflow when runs start together, and always includes baseline questions", async () => {
+    const llm = await mockLlm({ delayMs: 150 });
+    const tb = await makeBolts({ llmUrl: llm.url });
+    cleanup.push(async () => {
+      await tb.close();
+      await llm.close();
+    });
+    const runs = [startRun(tb), startRun(tb), startRun(tb)];
+    await until(() => runs.every((r) => tb.bolts.store.getRun(r.t)?.plan_id), 15000);
+    const plans = tb.bolts.store.listPlans();
+    expect(plans.filter((p) => p.workflow === "test-agent")).toHaveLength(1);
+    expect(new Set(runs.map((r) => tb.bolts.store.getRun(r.t)!.plan_id)).size).toBe(1);
+    const asked = tb.bolts.engine!.questionsFor({ project: "test-agent", workflow: "test-agent", plan: plans[0] }).map((q) => q.check.id);
+    expect(asked).toContain("ignored-tool-error");
+    expect(asked).toContain("followed-injected-instructions");
+  });
+});
