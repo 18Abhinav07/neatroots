@@ -24,6 +24,23 @@ export interface BoltsConfig {
     /** Seconds the LLM may take for one call. */
     timeoutSec: number;
     enabled: boolean;
+    /**
+     * An opt-in hosted LLM (Anthropic, OpenAI, OpenRouter, Gemini, any OpenAI-compatible URL)
+     * used instead of the local one. The run content each LLM task needs is sent to it.
+     */
+    external: {
+      enabled: boolean;
+      /** A provider id from models/providers.ts. */
+      provider: string;
+      model: string;
+      /** "" uses the provider's default URL. */
+      baseUrl: string;
+      /** What to strip before sending: secrets (keys, tokens), all (also emails, phones, your cloud patterns), or off. */
+      redact: "secrets" | "all" | "off";
+      /** Use the local LLM when the provider fails or has no key. */
+      fallbackToLocal: boolean;
+      timeoutSec: number;
+    };
   };
   classifier: {
     /**
@@ -86,6 +103,15 @@ export function defaultConfig(): BoltsConfig {
       model: "auto",
       timeoutSec: 120,
       enabled: true,
+      external: {
+        enabled: false,
+        provider: "anthropic",
+        model: "claude-opus-5-5",
+        baseUrl: "",
+        redact: "secrets",
+        fallbackToLocal: true,
+        timeoutSec: 120,
+      },
     },
     classifier: {
       backend: "auto",

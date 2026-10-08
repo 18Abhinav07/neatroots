@@ -30,7 +30,7 @@ export const PLANNER_SCHEMA = {
         type: "object",
         properties: {
           id: { type: "string" },
-          params: { type: "object", additionalProperties: { type: "string" } },
+          params: { type: "object", properties: { instruction: { type: "string" } } },
         },
         required: ["id"],
       },

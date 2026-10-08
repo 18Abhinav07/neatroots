@@ -233,7 +233,7 @@ program
     };
     const up = await running(p);
     line(up, up ? `Bolts answers on http://localhost:${p}` : `Bolts is not running on port ${p} (bolts start)`);
-    const llm = new LlmClient(cfg.llm);
+    const llm = new LlmClient(cfg.llm, { secret: (n) => getSecret(n) });
     const probe = await llm.probe(true);
     line(probe.ok ? true : "warn", probe.ok ? `local LLM ${probe.model} at ${cfg.llm.baseUrl}` : `no local LLM at ${cfg.llm.baseUrl} (${probe.error}); questions, explanations and notes need one`);
     const layaMgr = new LayaManager(boltsHome(), cfg.classifier);
@@ -452,7 +452,7 @@ program
     const cfg = loadConfig();
     const tier = hardwareTier();
     console.log(`${tier.memoryGb} GB memory → ${tier.tier} tier: ${tier.description}`);
-    const llm = new LlmClient(cfg.llm);
+    const llm = new LlmClient(cfg.llm, { secret: (n) => getSecret(n) });
     const probe = await llm.probe(true);
     console.log(probe.ok ? `LLM: ${probe.model} (installed: ${probe.models?.join(", ")})` : `LLM: none at ${cfg.llm.baseUrl} (${probe.error})`);
     const laya = new LayaManager(boltsHome(), cfg.classifier);
@@ -491,7 +491,7 @@ laya
   .action(async () => {
     const cfg = loadConfig();
     const m = new LayaManager(boltsHome(), cfg.classifier);
-    const dm = new DecisionModel(cfg.classifier, new LlmClient(cfg.llm), { laya: async () => m.token, jevCloud: async () => undefined });
+    const dm = new DecisionModel(cfg.classifier, new LlmClient(cfg.llm, { secret: (n) => getSecret(n) }), { laya: async () => m.token, jevCloud: async () => undefined });
     console.log(`installed: ${m.installed() ? "yes" : "no"} · enabled: ${cfg.classifier.laya.enabled} · running: ${(await dm.laya.available()) ? `yes on 127.0.0.1:${cfg.classifier.laya.port}` : "no"}`);
   });
 

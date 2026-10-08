@@ -3,13 +3,26 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { boltsHome } from "../config.js";
+import { providerById } from "../models/providers.js";
 
 const run = promisify(execFile);
 const SERVICE = "neatlogs-bolts";
 
-export type SecretName = "cloud-api-key" | "jev-api-key";
+/** llm-api-key-<provider> holds the key for one external LLM provider. */
+export type SecretName = "cloud-api-key" | "jev-api-key" | `llm-api-key-${string}`;
 
-const ENV: Record<SecretName, string> = { "cloud-api-key": "NEATLOGS_CLOUD_API_KEY", "jev-api-key": "TYPESAFE_API_KEY" };
+/** Environment variables that override a stored secret, first match wins. */
+function envNames(name: SecretName): string[] {
+  if (name === "cloud-api-key") return ["NEATLOGS_CLOUD_API_KEY"];
+  if (name === "jev-api-key") return ["TYPESAFE_API_KEY"];
+  const provider = name.slice("llm-api-key-".length);
+  return ["BOLTS_LLM_API_KEY", ...(providerById(provider)?.keyEnv ?? [])];
+}
+
+/** Where a secret would come from, without reading the Keychain value into logs. */
+export function secretEnvSource(name: SecretName): string | undefined {
+  return envNames(name).find((e) => process.env[e]);
+}
 
 function fallbackFile(name: SecretName): string {
   return path.join(boltsHome(), name);
@@ -20,8 +33,8 @@ function fallbackFile(name: SecretName): string {
  * file under ~/.bolts. They never enter the database or logs.
  */
 export async function getSecret(name: SecretName): Promise<string | undefined> {
-  const env = process.env[ENV[name]];
-  if (env) return env;
+  const env = secretEnvSource(name);
+  if (env) return process.env[env];
   if (process.platform === "darwin") {
     try {
       const { stdout } = await run("security", ["find-generic-password", "-s", SERVICE, "-a", name, "-w"]);

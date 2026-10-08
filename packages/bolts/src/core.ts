@@ -44,7 +44,7 @@ export class Bolts {
     this.home = opts.home ?? boltsHome();
     this.config = opts.config ?? loadConfig();
     this.store = new Store(path.join(this.home, "data"));
-    this.llm = new LlmClient(this.config.llm);
+    this.llm = new LlmClient(this.config.llm, { secret: (n) => getSecret(n), redactPatterns: () => this.config.cloud.redactPatterns });
     this.laya = new LayaManager(this.home, this.config.classifier);
     this.decisions = new DecisionModel(
       this.config.classifier,
