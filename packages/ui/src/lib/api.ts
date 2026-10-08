@@ -23,6 +23,8 @@ export interface Run {
   open_finding_count: number;
   pinned: number;
   summary: string | null;
+  /** Title of the most important open finding. */
+  top_finding: string | null;
   steering: string;
   termination_reason: string | null;
   plan_id: string | null;
@@ -147,7 +149,7 @@ export interface Status {
   home: string;
   stats: { runs: number; spans: number; findings: number; bytes: number };
   engine: {
-    llm: { ok: boolean; model?: string; error?: string; busy: number };
+    llm: { ok: boolean; where?: string; model?: string; error?: string; busy: number };
     decision: { backend: string | null; model: string | null };
     liveRuns: number;
     pendingJobs: number;
@@ -162,11 +164,36 @@ export interface Status {
   };
   check_errors: { path: string; id?: string; message: string }[];
   config: {
-    llm: { baseUrl: string; model: string; enabled: boolean };
+    llm: { baseUrl: string; model: string; enabled: boolean; external: ExternalLlmConfig };
     classifier: { backend: string; baseUrl: string; model: string };
     budgets: Record<string, number>;
     retention: { days: number; maxGb: number };
   };
+}
+
+export interface ExternalLlmConfig {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  baseUrl: string;
+  redact: "secrets" | "all" | "off";
+  fallbackToLocal: boolean;
+  timeoutSec: number;
+}
+
+export interface LlmProbe {
+  ok: boolean;
+  model?: string;
+  models?: string[];
+  error?: string;
+}
+
+export interface LlmInfo {
+  active: string | null;
+  local: LlmProbe & { baseUrl: string };
+  external: (LlmProbe & { enabled: boolean; provider: string; label: string; hasKey: boolean }) | null;
+  config: ExternalLlmConfig;
+  providers: { id: string; label: string; api: string; base_url: string; default_model: string; suggested: string[]; key_url: string; key: string | null }[];
 }
 
 export interface CheckRow {

@@ -15,9 +15,25 @@ const NAV: { href: string; page: string; label: string; icon: IconSvgElement }[]
   { href: "#/settings", page: "settings", label: "Settings", icon: Settings02Icon },
 ];
 
-export function Sidebar({ page, status, connected, theme, setTheme, onSettingsChanged }: { page: string; status?: Status; connected: boolean; theme: ThemeChoice; setTheme: (t: ThemeChoice) => void; onSettingsChanged: () => void }) {
+export function Sidebar({
+  page,
+  status,
+  connected,
+  theme,
+  setTheme,
+  onSettingsChanged,
+}: {
+  page: string;
+  status?: Status;
+  connected: boolean;
+  theme: ThemeChoice;
+  setTheme: (t: ThemeChoice) => void;
+  onSettingsChanged: () => void;
+}) {
   const engine = status?.engine;
-  const decision = engine?.decision.backend === "jev" ? `${status?.config.classifier.model ?? "classifier"}` : engine?.decision.backend === "llm" ? "LLM stand-in" : "none";
+  const hosted = engine?.llm.where && engine.llm.where !== "local";
+  const decisions: Record<string, string> = { laya: "Laya", jev: "Jev", "jev-cloud": "Jev cloud", llm: "the LLM" };
+  const models = !status ? "checking…" : engine?.llm.ok ? `${engine.llm.model}${hosted ? " (hosted)" : ""}` : "no LLM";
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar max-md:w-14">
       <div className="flex h-14 items-center gap-2.5 px-4">
@@ -49,19 +65,15 @@ export function Sidebar({ page, status, connected, theme, setTheme, onSettingsCh
             <StatusDot tone={connected ? "success" : "danger"} label={connected ? "Live updates connected" : "Reconnecting to Bolts"} />
             {connected ? "Live" : "Reconnecting…"}
           </span>
-          <span className="flex items-center gap-2 text-muted-foreground" title={engine?.llm.error ?? status?.config.llm.baseUrl}>
-            <StatusDot tone={engine?.llm.ok ? "success" : "warning"} label={engine?.llm.ok ? "Local LLM available" : "No local LLM"} />
-            <span className="min-w-0 truncate">
-              LLM <span className="font-mono text-foreground">{engine?.llm.ok ? engine.llm.model : "none"}</span>
-            </span>
-            {!!engine?.llm.busy && <Spinner size="xs" label="Local LLM is working" />}
-          </span>
-          <span className="flex items-center gap-2 text-muted-foreground">
-            <StatusDot tone={engine?.decision.backend === "jev" ? "success" : engine?.decision.backend ? "warning" : "danger"} label="Decision model" />
-            <span className="min-w-0 truncate">
-              Decisions <span className="font-mono text-foreground">{decision}</span>
-            </span>
-          </span>
+          <a
+            href="#/settings/models"
+            className="focus-ring -mx-1 flex items-center gap-2 rounded-sm px-1 text-muted-foreground hover:text-foreground"
+            title={engine?.llm.ok ? `Questions are answered by ${decisions[engine.decision.backend ?? ""] ?? "nothing yet"}` : (engine?.llm.error ?? "No LLM: rules still run")}
+          >
+            <StatusDot tone={!status ? "neutral" : engine?.llm.ok ? "success" : "warning"} label={engine?.llm.ok ? "LLM available" : "No LLM"} />
+            <span className="min-w-0 truncate font-mono text-foreground">{models}</span>
+            {!!engine?.llm.busy && <Spinner size="xs" label="The LLM is working" />}
+          </a>
         </div>
         {status && (
           <label className="flex items-center justify-between gap-2 text-caption text-muted-foreground">
@@ -93,7 +105,10 @@ export function Sidebar({ page, status, connected, theme, setTheme, onSettingsCh
               aria-label={label}
               title={label}
               onClick={() => setTheme(value)}
-              className={cn("focus-ring flex h-6 flex-1 cursor-pointer items-center justify-center rounded-sm", theme === value ? "bg-card text-foreground elevation-card" : "text-muted-foreground hover:text-foreground")}
+              className={cn(
+                "focus-ring flex h-6 flex-1 cursor-pointer items-center justify-center rounded-sm",
+                theme === value ? "bg-card text-foreground elevation-card" : "text-muted-foreground hover:text-foreground",
+              )}
             >
               <Icon icon={icon} size="xxs" />
             </button>

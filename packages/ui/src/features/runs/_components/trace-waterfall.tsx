@@ -43,12 +43,12 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
   const total = end - start;
   return (
     <div role="tree" aria-label="Trace spans" className="text-body">
-      <div className="sticky top-0 z-[var(--z-sticky)] grid grid-cols-[minmax(220px,40%)_1fr_72px] items-center border-b border-border bg-card px-4 py-1.5 text-label text-muted-foreground">
+      <div className="sticky top-0 z-[var(--z-sticky)] grid grid-cols-[minmax(150px,46%)_1fr_60px] items-center border-b border-border bg-card px-4 py-1.5 text-label text-muted-foreground">
         <span>Span</span>
         <div className="relative mx-3 h-3">
-          {[0, 0.5, 1].map((t) => (
-            <span key={t} className={cn("absolute font-mono text-3xs text-foreground-subtle tabular-nums", t === 0 ? "left-0" : t === 1 ? "right-0" : "left-1/2 -translate-x-1/2")}>
-              {t === 0 ? "0" : dur(total * t)}
+          {[0, 1].map((t) => (
+            <span key={t} className={cn("absolute font-mono text-3xs text-foreground-subtle tabular-nums", t === 0 ? "left-0" : "right-0")}>
+              {t === 0 ? "0" : dur(total)}
             </span>
           ))}
         </div>
@@ -72,11 +72,11 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
             onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect(s.span_id))}
             title={s.error ?? s.output_preview ?? undefined}
             className={cn(
-              "focus-ring grid h-8 cursor-pointer grid-cols-[minmax(220px,40%)_1fr_72px] items-center px-4 transition-colors motion-fast",
+              "focus-ring grid h-8 cursor-pointer grid-cols-[minmax(150px,46%)_1fr_60px] items-center px-4 transition-colors motion-fast",
               isSel ? "bg-surface-strong" : "hover:bg-surface-subtle",
             )}
           >
-            <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 14 }}>
+            <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 12 }}>
               {guidance ? <NeatBadge variant="purple">Bolts</NeatBadge> : <NeatBadge variant={kind.variant}>{kind.label}</NeatBadge>}
               <span className={cn("truncate", guidance ? "text-brand-violet" : failed ? "text-danger-fg" : depth > 1 ? "text-muted-foreground" : "text-foreground")}>
                 {guidance ? `Note sent to the agent: ${s.input_preview ?? ""}` : (s.tool_name ?? s.name)}
@@ -86,7 +86,10 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
             </div>
             <div className="relative mx-3 h-full">
               <div
-                className={cn("absolute top-1/2 h-2.5 min-w-[3px] -translate-y-1/2 rounded-sm", failed ? "bg-danger-fg" : isSel ? "bg-brand-violet" : guidance ? "bg-brand-violet/50" : "bg-chart-bar")}
+                className={cn(
+                  "absolute top-1/2 h-2.5 min-w-[3px] -translate-y-1/2 rounded-sm",
+                  failed ? "bg-danger-fg" : isSel ? "bg-brand-violet" : guidance ? "bg-brand-violet/50" : "bg-chart-bar",
+                )}
                 style={{ left: `${left}%`, width: `${width}%` }}
               />
             </div>

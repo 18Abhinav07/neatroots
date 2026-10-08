@@ -53,3 +53,27 @@ export const CHECK_SOURCE: Record<string, { variant: BadgeVariant; label: string
   planner: { variant: "purple", label: "Planner" },
   mcp: { variant: "amber", label: "Coding agent" },
 };
+
+const GOAL_KEYS = ["request", "question", "query", "input", "message", "prompt", "task", "goal", "text"];
+
+/** What the run was asked to do, in the user's words when the input shows them. */
+export function runGoal(r: { input_preview: string | null; summary: string | null }): string | null {
+  const raw = r.input_preview?.trim();
+  if (raw) {
+    try {
+      const v: unknown = JSON.parse(raw);
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const o = v as Record<string, unknown>;
+        const key = GOAL_KEYS.find((k) => typeof o[k] === "string" && (o[k] as string).trim());
+        if (key) return (o[key] as string).trim();
+      }
+    } catch {
+      // A truncated preview: look for a goal-like field, else show the text as is.
+      const m = raw.match(new RegExp(`"(?:${GOAL_KEYS.join("|")})"\\s*:\\s*"((?:[^"\\\\]|\\\\.){4,})`));
+      if (m) return m[1];
+      if (!raw.startsWith("{") && !raw.startsWith("[")) return raw;
+    }
+  }
+  return r.summary?.split("\n")[0] ?? null;
+}

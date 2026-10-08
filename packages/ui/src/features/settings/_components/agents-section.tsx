@@ -7,9 +7,11 @@ export function AgentsSection({ port }: { port: number }) {
   return (
     <Panel title="Coding agents (MCP)">
       <div className="flex flex-col gap-3 px-4 py-4">
-        <p className="text-body text-muted-foreground">Claude Code, Cursor, Codex and other MCP clients can read runs, get explanations and add checks. The local LLM does the heavy reading.</p>
+        <p className="text-body text-muted-foreground">
+          Claude Code, Cursor, Codex and other MCP clients can read runs, get explanations and add checks. The local LLM does the heavy reading.
+        </p>
         <span className="text-label text-muted-foreground">Claude Code</span>
-        <CodeLine text="claude mcp add --scope user bolts -- npx -y @neatlogs/bolts mcp" />
+        <CodeLine text="claude mcp add --scope user bolts -- bolts mcp" />
         <span className="text-label text-muted-foreground">Any MCP client (streamable HTTP)</span>
         <CodeLine text={`http://localhost:${port}/mcp`} />
       </div>

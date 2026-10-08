@@ -25,6 +25,7 @@ export function runSummary(bolts: Bolts, r: RunRow) {
     ...r,
     duration_ms: r.ended_ms && r.started_ms ? r.ended_ms - r.started_ms : null,
     summary: summary?.text ?? null,
+    top_finding: r.open_finding_count > 0 ? bolts.store.topOpenFinding(r.trace_id) : null,
     steering: bolts.steering.mode(r.project),
   };
 }

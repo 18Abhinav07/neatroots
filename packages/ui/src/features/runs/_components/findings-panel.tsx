@@ -1,10 +1,10 @@
-import { CheckListIcon } from "@hugeicons/core-free-icons";
+import { AiBrain01Icon, ArrowDown01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
+import { useState } from "react";
 import { Button } from "../../../components/ui/button";
-import { Empty, EmptyHeader, EmptyMedia } from "../../../components/ui/empty";
-import { NeatBadge } from "../../../components/ui/neat-badge";
-import { Panel } from "../../../components/ui/panel";
+import { Icon } from "../../../components/ui/icon";
 import { StatusPill } from "../../../components/ui/status-pill";
-import type { Finding, Plan } from "../../../lib/api";
+import type { Explanation, Finding, Plan } from "../../../lib/api";
+import { cn } from "../../../lib/cn";
 import { pct } from "../../../lib/format";
 import { FINDING_STATE } from "../_libs/labels";
 import { EvidenceChips } from "./evidence-chips";
@@ -12,10 +12,18 @@ import { ExplanationBlock } from "./insight-panels";
 
 const ORDER = { raised: 0, active: 1, resolved: 2, dismissed: 3, failed: 4 } as const;
 
-export function FindingsPanel({
+const isOpen = (f: Finding) => f.status === "raised" || f.status === "active";
+
+/**
+ * What broke in this run, most important first. Each problem shows its title and one line of
+ * cause; the fix, the evidence and the check's own numbers open on demand.
+ */
+export function Problems({
   findings,
   plan,
   running,
+  explanation,
+  names,
   onPick,
   onSetStatus,
   onInvestigate,
@@ -24,129 +32,168 @@ export function FindingsPanel({
   findings: Finding[];
   plan: Plan | null;
   running: boolean;
+  explanation: Explanation | null;
+  names: Map<string, string>;
   onPick: (id: string) => void;
   onSetStatus: (id: string, status: string) => void;
   onInvestigate: (id: string) => void;
   investigating?: string;
 }) {
-  const live = findings.filter((f) => f.status !== "failed").sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.probability ?? 1) - (a.probability ?? 1));
+  const live = findings
+    .filter((f) => f.status !== "failed")
+    .sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.triage_score ?? 0) - (a.triage_score ?? 0) || (b.probability ?? 1) - (a.probability ?? 1));
   const failed = findings.filter((f) => f.status === "failed");
+  const open = live.filter(isOpen);
+  const [expanded, setExpanded] = useState<string | undefined>(open[0]?.id);
+  const checked = plan ? `${plan.check_ids.length} questions${plan.created_by === "planner" ? " chosen for this agent" : ""}, plus rules on every span` : undefined;
+
   return (
-    <Panel
-      title="Findings"
-      meta={plan ? `${plan.check_ids.length} questions planned${plan.created_by === "planner" && plan.model ? ` by ${plan.model}` : " (defaults)"}` : undefined}
-    >
+    <section aria-labelledby="problems" className="flex flex-col gap-3">
+      <div className="flex items-baseline gap-3">
+        <h2 id="problems" className="text-title text-foreground">
+          {open.length ? `${open.length} problem${open.length > 1 ? "s" : ""}` : "Problems"}
+        </h2>
+        {checked && <span className="text-caption text-foreground-subtle">{checked}</span>}
+      </div>
+
+      {explanation && (
+        <div className="flex flex-col gap-2 rounded-lg bg-surface-subtle px-4 py-3">
+          <span className="inline-flex items-center gap-1.5 text-label text-muted-foreground">
+            <Icon icon={AiBrain01Icon} size="xs" className="text-brand-violet" />
+            Likely cause
+            <span className="text-foreground-subtle">· {explanation.model ?? "local LLM"}</span>
+          </span>
+          <ExplanationBlock exp={explanation} names={names} onPick={onPick} />
+        </div>
+      )}
+
       {live.length === 0 ? (
-        <Empty className="py-8">
-          <EmptyMedia icon={CheckListIcon} />
-          <EmptyHeader
-            title={running ? "No findings yet" : "No findings in this run"}
-            description={running ? "Bolts checks each span as it arrives." : "Every check that ran on this run passed."}
-          />
-        </Empty>
+        <p className="flex items-center gap-2 py-2 text-body text-muted-foreground">
+          <Icon icon={CheckmarkCircle02Icon} size="sm" className="text-success-fg" />
+          {running ? "Nothing found yet. Bolts checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
+        </p>
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card elevation-card">
           {live.map((f) => (
-            <FindingRow key={f.id} f={f} onPick={onPick} onSetStatus={onSetStatus} onInvestigate={onInvestigate} investigating={investigating === f.id} />
+            <ProblemRow
+              key={f.id}
+              f={f}
+              names={names}
+              expanded={expanded === f.id}
+              onToggle={() => setExpanded(expanded === f.id ? undefined : f.id)}
+              onPick={onPick}
+              onSetStatus={onSetStatus}
+              onInvestigate={onInvestigate}
+              investigating={investigating === f.id}
+            />
           ))}
         </ul>
       )}
+
       {failed.length > 0 && (
-        <details className="border-t border-border px-4 py-2.5">
-          <summary className="cursor-pointer text-caption text-muted-foreground">
+        <details className="text-caption text-muted-foreground">
+          <summary className="cursor-pointer">
             {failed.length} check{failed.length > 1 ? "s" : ""} could not run. A model error never counts as a pass.
           </summary>
           <ul className="mt-2 flex flex-col gap-1">
             {failed.map((f) => (
-              <li key={f.id} className="text-caption text-muted-foreground">
+              <li key={f.id}>
                 {f.title}: <span className="font-mono">{String(f.detail.error ?? "")}</span>
               </li>
             ))}
           </ul>
         </details>
       )}
-    </Panel>
+    </section>
   );
 }
 
-function FindingRow({
+function ProblemRow({
   f,
+  names,
+  expanded,
+  onToggle,
   onPick,
   onSetStatus,
   onInvestigate,
   investigating,
 }: {
   f: Finding;
+  names: Map<string, string>;
+  expanded: boolean;
+  onToggle: () => void;
   onPick: (id: string) => void;
   onSetStatus: (id: string, status: string) => void;
   onInvestigate: (id: string) => void;
   investigating: boolean;
 }) {
   const state = FINDING_STATE[f.status];
-  const open = f.status === "raised" || f.status === "active";
-  const params = Object.entries((f.detail.params ?? {}) as Record<string, string>).filter(([, v]) => v).slice(0, 4);
+  const open = isOpen(f);
+  const where = f.evidence_span_ids.map((id) => names.get(id)).filter(Boolean);
+  const preview = f.explanation?.cause ?? (where.length ? `Seen in ${[...new Set(where)].slice(0, 3).join(", ")}` : null);
+  const params = Object.entries((f.detail.params ?? {}) as Record<string, string>)
+    .filter(([, v]) => v)
+    .slice(0, 3);
+  const facts = [
+    f.check_kind === "rule" ? "Rule" : "Question",
+    f.probability !== null ? `${pct(f.probability)} likely` : null,
+    f.triage_score !== null ? `triage ${f.triage_score.toFixed(1)} of 4` : null,
+    f.precision.precision !== null && f.precision.hits >= 3 ? `${pct(f.precision.precision)} of its past findings kept` : null,
+  ].filter(Boolean);
+
   return (
-    <li className="flex flex-col gap-2.5 px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <span className={open ? "text-body-strong text-foreground" : "text-body-medium text-muted-foreground"}>{f.title}</span>
+    <li>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="focus-ring flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left transition-colors motion-fast hover:bg-surface-subtle"
+      >
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className={open ? "text-body-strong text-foreground" : "text-body-medium text-muted-foreground"}>{f.title}</span>
+          {preview && !expanded && <span className="line-clamp-2 text-caption text-muted-foreground">{preview}</span>}
+        </span>
         <StatusPill tone={state.tone}>{state.label}</StatusPill>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <NeatBadge variant={f.check_kind === "rule" ? "tag" : "blue"}>{f.check_kind === "rule" ? "Rule" : "Question"}</NeatBadge>
-        <span className="font-mono text-3xs text-foreground-subtle">{f.check_id}</span>
-        {f.probability !== null && (
-          <span className="inline-flex items-center gap-1.5 text-caption text-muted-foreground tabular-nums" title="Probability from the decision model">
-            <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-track">
-              <span className="block h-full rounded-full bg-track-strong" style={{ width: `${Math.round(f.probability * 100)}%` }} />
+        <Icon icon={ArrowDown01Icon} size="xs" className={cn("mt-1 shrink-0 text-foreground-subtle transition-transform motion-fast", expanded && "rotate-180")} />
+      </button>
+      {expanded && (
+        <div className="flex flex-col gap-3 px-4 pb-4">
+          {f.explanation ? <ExplanationBlock exp={f.explanation} names={names} onPick={onPick} /> : <EvidenceChips ids={f.evidence_span_ids} names={names} onPick={onPick} />}
+          {params.length > 0 && (
+            <dl className="flex flex-col gap-1">
+              {params.map(([k, v]) => (
+                <div key={k} className="flex min-w-0 gap-2 text-caption">
+                  <dt className="shrink-0 text-muted-foreground">{k}</dt>
+                  <dd className="min-w-0 break-words text-foreground">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-caption text-foreground-subtle" title={f.check_id}>
+              {facts.join(" · ")} · <span className="font-mono">{f.check_id}</span>
             </span>
-            {pct(f.probability)}
-          </span>
-        )}
-        {f.triage_score !== null && <span className="text-caption text-foreground-subtle tabular-nums">triage {f.triage_score.toFixed(1)} / 4</span>}
-        {f.precision.precision !== null && f.precision.hits >= 3 && (
-          <span className="text-caption text-foreground-subtle" title={`${f.precision.dismissed} of ${f.precision.hits} findings from this check were dismissed`}>
-            check precision {pct(f.precision.precision)}
-          </span>
-        )}
-      </div>
-      {params.length > 0 && (
-        <dl className="flex flex-wrap gap-x-4 gap-y-1">
-          {params.map(([k, v]) => (
-            <div key={k} className="flex min-w-0 gap-1.5 text-caption">
-              <dt className="text-muted-foreground">{k}</dt>
-              <dd className="truncate font-mono text-foreground" title={v}>
-                {String(v).slice(0, 90)}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      {f.explanation && (
-        <div className="rounded-md bg-surface-subtle px-3 py-2.5">
-          <ExplanationBlock exp={f.explanation} onPick={onPick} />
+            <span className="flex items-center gap-1">
+              {!f.explanation && open && (
+                <Button size="sm" variant="ghost" pending={investigating} pendingLabel="Investigating…" onClick={() => onInvestigate(f.id)}>
+                  Explain finding
+                </Button>
+              )}
+              {open ? (
+                <Button size="sm" variant="ghost" title="Not a problem. Counts against this check's precision." onClick={() => onSetStatus(f.id, "dismissed")}>
+                  Dismiss finding
+                </Button>
+              ) : (
+                f.status === "dismissed" && (
+                  <Button size="sm" variant="ghost" onClick={() => onSetStatus(f.id, "raised")}>
+                    Reopen finding
+                  </Button>
+                )
+              )}
+            </span>
+          </div>
         </div>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <EvidenceChips ids={f.evidence_span_ids} onPick={onPick} max={6} />
-        <div className="flex items-center gap-1">
-          {!f.explanation && open && (
-            <Button size="sm" variant="ghost" pending={investigating} pendingLabel="Investigating…" onClick={() => onInvestigate(f.id)}>
-              Investigate finding
-            </Button>
-          )}
-          {open ? (
-            <Button size="sm" variant="ghost" title="Not a problem. Counts against this check's precision." onClick={() => onSetStatus(f.id, "dismissed")}>
-              Dismiss finding
-            </Button>
-          ) : (
-            f.status === "dismissed" && (
-              <Button size="sm" variant="ghost" onClick={() => onSetStatus(f.id, "raised")}>
-                Reopen finding
-              </Button>
-            )
-          )}
-        </div>
-      </div>
     </li>
   );
 }

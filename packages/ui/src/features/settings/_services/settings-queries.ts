@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, del, post, type ProjectRow } from "../../../lib/api";
+import { api, del, post, type LlmInfo, type ProjectRow } from "../../../lib/api";
 import { appKeys } from "../../runs/_services/run-keys";
 
 export interface ForwardRow {
@@ -56,4 +56,47 @@ export function useLayaAction() {
     onError: (e) => toast.error(`Couldn't change Laya: ${(e as Error).message}`),
     onSettled: () => void qc.invalidateQueries({ queryKey: appKeys.status }),
   });
+}
+
+const llmKey = ["llm"] as const;
+
+/** The LLM: local status, the hosted provider, and the provider list. */
+export function useLlm() {
+  return useQuery({ queryKey: llmKey, queryFn: () => api<LlmInfo>("/api/llm"), refetchInterval: 15_000 });
+}
+
+export function useLlmActions() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: llmKey });
+    void qc.invalidateQueries({ queryKey: appKeys.status });
+  };
+  return {
+    save: useMutation({
+      mutationFn: (v: { body: Record<string, unknown>; message: string }) => post<{ status: LlmInfo }>("/api/llm/external", v.body),
+      onSuccess: (_r, v) => toast.success(v.message),
+      onError: (e) => toast.error(`Couldn't change the LLM: ${(e as Error).message}`),
+      onSettled: refresh,
+    }),
+    storeKey: useMutation({
+      mutationFn: (v: { provider: string; key: string }) => post<{ stored_in: string }>("/api/llm/key", v),
+      onSuccess: (r) => toast.success(`API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolts key file"}`),
+      onError: (e) => toast.error(`Couldn't store the key: ${(e as Error).message}`),
+      onSettled: refresh,
+    }),
+    removeKey: useMutation({
+      mutationFn: (provider: string) => del(`/api/llm/key?provider=${encodeURIComponent(provider)}`),
+      onSuccess: () => toast.success("API key removed"),
+      onSettled: refresh,
+    }),
+    models: useMutation({ mutationFn: () => api<{ models: string[] }>("/api/llm/models?target=external") }),
+    test: useMutation({
+      mutationFn: () => post<{ ok: boolean; where: string; model: string; latency_ms: number }>("/api/llm/test", {}),
+      onSuccess: (r) =>
+        r.ok
+          ? toast.success(`${r.model} answered in ${r.latency_ms} ms (${r.where === "local" ? "on this machine" : r.where})`)
+          : toast.error(`${r.model} answered, but not in the expected format`),
+      onError: (e) => toast.error(`Test failed: ${(e as Error).message}`),
+    }),
+  };
 }

@@ -38,7 +38,7 @@ export function App() {
             </main>
           ) : page === "settings" ? (
             <main className="min-h-0 overflow-y-auto">
-              <SettingsPage status={status} />
+              <SettingsPage status={status} tab={route[1]} />
             </main>
           ) : (
             <RunsPage runId={page === "runs" ? route[1] : undefined} status={status} />

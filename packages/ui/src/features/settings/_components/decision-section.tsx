@@ -20,7 +20,7 @@ const LAYA_STATE: Record<string, { tone: Tone; label: string }> = {
 };
 
 function LayaTrust({ trust }: { trust: { question: string; n: number; agreement: number | null; trusted: boolean }[] }) {
-  if (!trust.length) return <p className="text-caption text-foreground-subtle">Laya is compared with the local LLM on every answer; nothing measured yet.</p>;
+  if (!trust.length) return <p className="text-caption text-foreground-subtle">Laya is compared with the LLM on every answer; nothing measured yet.</p>;
   const trusted = trust.filter((t) => t.trusted).length;
   return (
     <details className="text-caption text-muted-foreground">
@@ -42,12 +42,11 @@ function LayaTrust({ trust }: { trust: { question: string; n: number; agreement:
   );
 }
 
-export function ModelsSection({ status }: { status: Status }) {
+/** The decision model: Laya on this machine, Jev cloud opt-in, and advanced routing. */
+export function DecisionSection({ status }: { status: Status }) {
   const save = useSaveSettings();
   const laya = useLayaAction();
   const jevKey = useKeyActions("/api/classifier/jev-key", "Jev");
-  const [llmUrl, setLlmUrl] = useState(status.config.llm.baseUrl);
-  const [llmModel, setLlmModel] = useState(status.config.llm.model);
   const [backend, setBackend] = useState(status.config.classifier.backend);
   const [clsUrl, setClsUrl] = useState(status.config.classifier.baseUrl);
   const [key, setKey] = useState("");
@@ -58,17 +57,15 @@ export function ModelsSection({ status }: { status: Status }) {
   const ls = LAYA_STATE[layaState?.state ?? "not_installed"] ?? LAYA_STATE.not_installed;
   const jev = status.classifier?.jev_cloud;
   return (
-    <Panel title="Models" meta={`${status.tier.memoryGb} GB memory · ${status.tier.tier} tier`}>
+    <Panel
+      title="Decision model"
+      meta={status.engine?.decision.backend ? `answering now: ${status.engine.decision.backend === "llm" ? "the LLM" : status.engine.decision.backend}` : undefined}
+    >
       <div className="flex flex-col gap-6 px-4 py-4">
         <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <h3 className="text-title">Decision model</h3>
-              <p className="text-caption text-muted-foreground">
-                Answers every typed question with a probability. Laya runs on this machine and takes over a question once it agrees with the local LLM on at least 90% of 30 answers. Jev cloud is opt-in.
-              </p>
-            </div>
-          </div>
+          <p className="text-body text-muted-foreground">
+            Answers each check's yes/no question with a probability. Until Laya has earned a question (90% agreement with the LLM over 30 answers), the LLM answers it.
+          </p>
           <div className="flex flex-col gap-2 rounded-md border border-border px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-2">
@@ -104,12 +101,30 @@ export function ModelsSection({ status }: { status: Status }) {
                 <span className="text-body-strong">Jev cloud</span>
                 <span className="text-caption text-foreground-subtle">TypeSafe typed-decision API</span>
               </span>
-              <Switch label="Use Jev cloud" checked={!!jev?.enabled} onChange={(v) => save.mutate({ body: { jev_cloud_enabled: v }, message: v ? "Jev cloud is on; span content is sent to TypeSafe for decisions" : "Jev cloud is off" })} />
+              <Switch
+                label="Use Jev cloud"
+                checked={!!jev?.enabled}
+                onChange={(v) =>
+                  save.mutate({ body: { jev_cloud_enabled: v }, message: v ? "Jev cloud is on; span content is sent to TypeSafe for decisions" : "Jev cloud is off" })
+                }
+              />
             </div>
             <p className="text-caption text-warning-fg">When on, the span content a question needs is sent to api.typesafe.ai. Everything else stays local.</p>
             <div className="flex items-center gap-2">
-              <Input type="password" aria-label="Jev API key" placeholder={jev?.has_key ? "Key stored" : "Paste your TypeSafe API key"} value={key} onChange={(e) => setKey(e.target.value)} />
-              <Button size="sm" variant="outline" disabled={key.length < 8} pending={jevKey.store.isPending} onClick={() => jevKey.store.mutate(key, { onSuccess: () => setKey("") })}>
+              <Input
+                type="password"
+                aria-label="Jev API key"
+                placeholder={jev?.has_key ? "Key stored" : "Paste your TypeSafe API key"}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={key.length < 8}
+                pending={jevKey.store.isPending}
+                onClick={() => jevKey.store.mutate(key, { onSuccess: () => setKey("") })}
+              >
                 Store key
               </Button>
               {jev?.has_key && (
@@ -119,49 +134,33 @@ export function ModelsSection({ status }: { status: Status }) {
               )}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Which decision model answers" htmlFor="cls-backend">
-              <Select id="cls-backend" value={backend} onChange={(e) => setBackend(e.target.value)}>
-                <option value="auto">Automatic: Jev cloud if on, else the LLM; Laya takes proven questions</option>
-                <option value="laya">Laya only</option>
-                <option value="jev-cloud">Jev cloud only</option>
-                <option value="jev">A Jev-compatible server at the URL below</option>
-                <option value="llm">The local LLM</option>
-              </Select>
-            </Field>
-            <Field label="Jev-compatible server URL" htmlFor="cls-url" hint="Used when the server above is chosen (POST /v1/systemone).">
-              <Input id="cls-url" className="font-mono text-xs" value={clsUrl} onChange={(e) => setClsUrl(e.target.value)} />
-            </Field>
-          </div>
+          <details>
+            <summary className="cursor-pointer text-caption text-muted-foreground">Advanced: choose the decision model yourself</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Which decision model answers" htmlFor="cls-backend">
+                <Select id="cls-backend" value={backend} onChange={(e) => setBackend(e.target.value)}>
+                  <option value="auto">Automatic: Jev cloud if on, else the LLM; Laya takes proven questions</option>
+                  <option value="laya">Laya only</option>
+                  <option value="jev-cloud">Jev cloud only</option>
+                  <option value="jev">A Jev-compatible server at the URL</option>
+                  <option value="llm">The LLM</option>
+                </Select>
+              </Field>
+              <Field label="Jev-compatible server URL" htmlFor="cls-url" hint="Used when that server is chosen (POST /v1/systemone).">
+                <Input id="cls-url" className="font-mono text-xs" value={clsUrl} onChange={(e) => setClsUrl(e.target.value)} />
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Button
+                variant="outline"
+                pending={save.isPending}
+                onClick={() => save.mutate({ body: { classifier_backend: backend, classifier_url: clsUrl }, message: "Decision model saved" })}
+              >
+                Save decision model
+              </Button>
+            </div>
+          </details>
         </section>
-
-        <section className="flex flex-col gap-3 border-t border-border pt-5">
-          <div className="flex flex-col gap-0.5">
-            <h3 className="text-title">Local LLM</h3>
-            <p className="text-caption text-muted-foreground">{status.tier.description}. Any OpenAI-compatible server works: Ollama, LM Studio, llama.cpp, MLX.</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Server URL" htmlFor="llm-url">
-              <Input id="llm-url" className="font-mono text-xs" value={llmUrl} onChange={(e) => setLlmUrl(e.target.value)} />
-            </Field>
-            <Field label="Model" htmlFor="llm-model" hint={'"auto" picks an installed model for this machine.'}>
-              <Input id="llm-model" className="font-mono text-xs" value={llmModel} onChange={(e) => setLlmModel(e.target.value)} />
-            </Field>
-          </div>
-          <p className="text-caption text-muted-foreground">
-            Now: LLM {status.engine?.llm.ok ? <span className="font-mono text-foreground">{status.engine.llm.model}</span> : `unavailable (${status.engine?.llm.error ?? "unknown"})`} · decisions{" "}
-            <span className="font-mono text-foreground">{status.engine?.decision.backend ?? "unavailable"}</span>
-          </p>
-        </section>
-        <div>
-          <Button
-            variant="outline"
-            pending={save.isPending}
-            onClick={() => save.mutate({ body: { llm_base_url: llmUrl, llm_model: llmModel, classifier_backend: backend, classifier_url: clsUrl }, message: "Model settings saved" })}
-          >
-            Save model settings
-          </Button>
-        </div>
       </div>
     </Panel>
   );

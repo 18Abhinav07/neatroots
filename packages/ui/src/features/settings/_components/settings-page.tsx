@@ -1,26 +1,52 @@
+import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
 import type { Status } from "../../../lib/api";
+import { go } from "../../../lib/router";
 import { AgentsSection, StorageSection } from "./agents-section";
 import { CloudSection } from "./cloud-section";
-import { ModelsSection } from "./models-section";
+import { DecisionSection } from "./decision-section";
+import { LlmSection } from "./llm-section";
 import { ProjectsSection } from "./projects-section";
 
-export function SettingsPage({ status }: { status?: Status }) {
+const TABS = [
+  { value: "projects", label: "Projects" },
+  { value: "models", label: "Models" },
+  { value: "cloud", label: "Neatlogs Cloud" },
+  { value: "agents", label: "Coding agents" },
+] as const;
+
+type Tab = (typeof TABS)[number]["value"];
+
+const INTRO: Record<Tab, string> = {
+  projects: "Steering and cloud forwarding are off until you turn them on for a project.",
+  models: "Everything runs on this machine unless you turn on a hosted model.",
+  cloud: "Nothing is sent to Neatlogs Cloud unless you send a run or turn on forwarding for a project.",
+  agents: "Coding agents read runs and findings, and add checks, over MCP.",
+};
+
+export function SettingsPage({ status, tab: raw }: { status?: Status; tab?: string }) {
+  const tab: Tab = TABS.some((t) => t.value === raw) ? (raw as Tab) : "projects";
   if (!status) return <p className="px-8 py-10 text-body text-muted-foreground">Loading settings…</p>;
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-8 py-6">
-      <header className="flex flex-col gap-1.5">
+    <div className="mx-auto flex max-w-4xl flex-col gap-6 px-8 py-6">
+      <header className="flex flex-col gap-3">
         <h1 className="text-display">Settings</h1>
-        <p className="text-body text-muted-foreground">Everything stays on this machine unless you send it. Steering and cloud forwarding are opt-in per project.</p>
+        <SegmentedTabs label="Settings section" value={tab} onChange={(t) => go(`settings/${t}`)} items={[...TABS]} />
+        <p className="text-body text-muted-foreground">{INTRO[tab]}</p>
       </header>
-      <ProjectsSection hooks={status.steering.hooks_connected} />
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        <ModelsSection status={status} />
-        <div className="flex flex-col gap-6">
-          <CloudSection status={status} />
+      {tab === "projects" && <ProjectsSection hooks={status.steering.hooks_connected} />}
+      {tab === "models" && (
+        <>
+          <LlmSection status={status} />
+          <DecisionSection status={status} />
+        </>
+      )}
+      {tab === "cloud" && <CloudSection status={status} />}
+      {tab === "agents" && (
+        <>
           <AgentsSection port={status.port} />
           <StorageSection status={status} />
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

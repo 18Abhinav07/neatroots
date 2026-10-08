@@ -9,7 +9,7 @@ import { StatusDot } from "../../../components/ui/status-pill";
 import type { Run } from "../../../lib/api";
 import { cn } from "../../../lib/cn";
 import { ago, dur, num } from "../../../lib/format";
-import { RUN_STATE } from "../_libs/labels";
+import { RUN_STATE, runGoal } from "../_libs/labels";
 import type { RunListParams } from "../_services/run-keys";
 
 export function RunsList({
@@ -37,7 +37,13 @@ export function RunsList({
           <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-foreground-subtle">
             <Icon icon={Search01Icon} size="xxs" />
           </span>
-          <Input aria-label="Search runs" className="pl-8" placeholder="Search spans, tools, inputs" value={params.q} onChange={(e) => setParams({ ...params, q: e.target.value })} />
+          <Input
+            aria-label="Search runs"
+            className="pl-8"
+            placeholder="Search spans, tools, inputs"
+            value={params.q}
+            onChange={(e) => setParams({ ...params, q: e.target.value })}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SegmentedTabs
@@ -90,6 +96,8 @@ export function RunsList({
 
 function RunRow({ run: r, active }: { run: Run; active: boolean }) {
   const state = RUN_STATE[r.status];
+  const name = r.root_name ?? r.workflow ?? r.trace_id.slice(0, 8);
+  const goal = runGoal(r);
   return (
     <a
       href={`#/runs/${r.trace_id}`}
@@ -98,24 +106,27 @@ function RunRow({ run: r, active }: { run: Run; active: boolean }) {
     >
       <span className="flex items-center gap-2">
         <StatusDot tone={state.tone} label={state.label} />
-        <span className="min-w-0 flex-1 truncate text-body-strong">{r.root_name ?? r.workflow ?? r.trace_id.slice(0, 8)}</span>
-        {r.open_finding_count > 0 && (
-          <span className="inline-flex items-center gap-1 text-label text-warning-fg tabular-nums" title={`${r.open_finding_count} open finding(s)`}>
-            <Icon icon={Alert02Icon} size="xs" />
-            {r.open_finding_count}
-          </span>
-        )}
+        <span className="min-w-0 flex-1 truncate text-body-medium text-foreground">{goal ?? name}</span>
+        <span className="shrink-0 text-caption text-foreground-subtle tabular-nums">{ago(r.started_ms)}</span>
       </span>
+      {r.top_finding && (
+        <span className="flex items-center gap-1.5 pl-4 text-caption text-foreground" title={`${r.open_finding_count} open problem(s)`}>
+          <Icon icon={Alert02Icon} size="xs" className="shrink-0 text-warning-fg" />
+          <span className="truncate">{r.top_finding}</span>
+          {r.open_finding_count > 1 && <span className="shrink-0 text-foreground-subtle tabular-nums">+{r.open_finding_count - 1}</span>}
+        </span>
+      )}
       <span className="flex gap-1.5 truncate pl-4 text-caption text-foreground-subtle tabular-nums">
-        <span className="truncate">{r.workflow}</span>
-        <span aria-hidden className="text-foreground-faint">·</span>
-        <span>{ago(r.started_ms)}</span>
-        <span aria-hidden className="text-foreground-faint">·</span>
+        <span className="truncate">{goal ? name : r.workflow}</span>
+        <span aria-hidden className="text-foreground-faint">
+          ·
+        </span>
         <span>{r.status === "running" ? "running" : dur(r.duration_ms)}</span>
-        <span aria-hidden className="text-foreground-faint">·</span>
+        <span aria-hidden className="text-foreground-faint">
+          ·
+        </span>
         <span>{num(r.span_count)} spans</span>
       </span>
-      {(r.summary || r.input_preview) && <span className="truncate pl-4 text-caption text-muted-foreground">{(r.summary ?? r.input_preview ?? "").split("\n")[0]}</span>}
     </a>
   );
 }
@@ -125,10 +136,7 @@ export function FirstRunEmpty({ port, llmOk, llmUrl }: { port: number; llmOk: bo
   return (
     <Empty className="min-h-full">
       <EmptyMedia icon={Activity01Icon} />
-      <EmptyHeader
-        title="No runs yet"
-        description="Point the Neatlogs SDK at Bolts and run your agent. Its runs appear here as they happen, and nothing leaves this machine."
-      />
+      <EmptyHeader title="No runs yet" description="Point the Neatlogs SDK at Bolts and run your agent. Its runs appear here as they happen, and nothing leaves this machine." />
       <EmptyContent>
         <div className="flex w-full flex-col gap-2 text-left">
           <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=bolts-local`} />
@@ -137,9 +145,7 @@ export function FirstRunEmpty({ port, llmOk, llmUrl }: { port: number; llmOk: bo
             Already instrumented? Setting the two variables is enough. Check the path with <code className="font-mono">neatlogs doctor --probe</code>.
           </span>
           {!llmOk && (
-            <span className="text-caption text-warning-fg">
-              No local LLM at {llmUrl}. Rules still run; start Ollama or LM Studio for questions, explanations and notes.
-            </span>
+            <span className="text-caption text-warning-fg">No local LLM at {llmUrl}. Rules still run; start Ollama or LM Studio for questions, explanations and notes.</span>
           )}
         </div>
       </EmptyContent>

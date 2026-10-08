@@ -806,6 +806,16 @@ export class Store {
     return r ? this.findingFromRow(r) : undefined;
   }
 
+  /** Title of the most important open finding in a run, for run lists. */
+  topOpenFinding(traceId: string): string | null {
+    const r = this.db
+      .prepare(
+        "SELECT title FROM findings WHERE trace_id = ? AND status IN ('raised', 'active') ORDER BY COALESCE(triage_score, 0) DESC, COALESCE(probability, 1) DESC, created_ms LIMIT 1",
+      )
+      .get(traceId) as { title: string } | undefined;
+    return r?.title ?? null;
+  }
+
   findingsForTrace(traceId: string): Finding[] {
     return (this.db.prepare("SELECT * FROM findings WHERE trace_id = ? ORDER BY created_ms").all(traceId) as Record<string, unknown>[]).map((r) =>
       this.findingFromRow(r),

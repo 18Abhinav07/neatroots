@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** Hash routes: #/runs/:traceId, #/checks, #/settings. */
+/** Hash routes: #/runs/:traceId, #/checks, #/settings/:tab. */
 export function useRoute(): string[] {
   const read = () => window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [parts, setParts] = useState(read);
