@@ -11,8 +11,9 @@ leaves your computer unless you send it.
   locally, compares it with the local LLM on every answer, and hands it a question once it agrees on
   at least 90% of 30 answers. Until then the local LLM answers. [Jev cloud](https://typesafe.ai) is an
   opt-in hosted alternative.
-- **A local LLM** (Ollama, LM Studio, llama.cpp, MLX) plans which questions fit each agent,
-  investigates when triage says it is worth it, writes short guidance for the agent, and summarizes runs.
+- **An LLM** plans which questions fit each agent, investigates when triage says it is worth it, writes
+  short guidance for the agent, and summarizes runs. It runs locally by default (Ollama, LM Studio,
+  llama.cpp, MLX). Claude, OpenAI, OpenRouter, Gemini or any OpenAI-compatible API are opt-in.
 - **Steering** puts a finding back into the agent mid-run: a note in its next LLM call, or a
   `check_my_work` tool it can call itself. Opt-in per project.
 - **MCP** gives Claude Code, Cursor or Codex the runs, findings and explanations, so a coding agent
@@ -20,12 +21,20 @@ leaves your computer unless you send it.
 - **Neatlogs Cloud** is one click away: Bolts re-exports a run over the same public OTLP endpoint the
   SDKs use, redacted first.
 
-## Quick start
+## Install
 
 ```bash
-pnpm install && pnpm build                         # from this repo, for now
-node packages/bolts/dist/cli.js start              # http://localhost:4100
+curl -fsSL https://raw.githubusercontent.com/neatlogs/bolts/main/install.sh | sh
+bolts start                                        # http://localhost:4100
 ```
+
+The installer builds Bolts into `~/.bolts` (with its own Node.js if yours is older than 22), adds a
+`bolts` command to `~/.local/bin`, and needs no sudo. Add `-s -- --service` to run Bolts at login.
+While the repository is private: `git clone https://github.com/neatlogs/bolts.git && sh bolts/install.sh`.
+
+**[Getting started](docs/getting-started.md)** walks through models, connecting an agent, reading
+findings, checks, steering, coding agents and privacy. **[Team testing](docs/team-testing.md)** is
+the checklist for this round.
 
 On first start Bolts installs Laya into `~/.bolts/laya` in the background (about 1.5 GB: PyTorch,
 Laya and its checkpoint). Skip it with `--no-laya`. Zero-shot, Laya is not yet reliable on agent-run
@@ -51,12 +60,23 @@ SDK's own doctor, which passes against Bolts:
 python -m neatlogs doctor --probe
 ```
 
-Then open http://localhost:4100.
+## Models
+
+Rules need no model. For questions, explanations and notes, run a local model (`ollama pull qwen3:8b`)
+or turn on a hosted one:
+
+```bash
+bolts llm login anthropic && bolts llm use anthropic   # claude-opus-5-5; --model to choose
+bolts llm local                                        # back to this machine only
+```
+
+With a hosted LLM on, the run content each LLM task needs is sent to that provider with secrets
+removed; rules, storage and the app stay local. Settings → Models does the same in the app.
 
 ## Steering (optional)
 
 ```bash
-pip install bolts-steer            # or: npm install @neatlogs/bolts-steer
+pip install ~/.bolts/src/python/bolts-steer      # or: npm install ~/.bolts/src/packages/steer-ts
 bolts steering advisory --project refund-agent
 ```
 
@@ -72,7 +92,7 @@ See [docs/steering.md](docs/steering.md).
 ## Coding agents
 
 ```bash
-claude mcp add --scope user bolts -- node /path/to/bolts/packages/bolts/dist/cli.js mcp
+claude mcp add --scope user bolts -- bolts mcp
 ```
 
 Or any MCP client at `http://localhost:4100/mcp`. Tools: `get_current_run`, `search_runs`,
@@ -88,11 +108,13 @@ in [skills/](skills/).
 | `bolts mcp` | MCP over stdio; starts Bolts if it is not running |
 | `bolts init` | In your repo: a `.bolts/checks/` folder, optional `.env`, steering and MCP setup |
 | `bolts status`, `bolts doctor` | What is running, and whether the trace path and models work |
-| `bolts models`, `bolts laya install`, `bolts jev login` | Decision and LLM models |
+| `bolts llm`, `bolts llm use <provider>`, `bolts llm local` | Where LLM work runs: local, or a hosted provider |
+| `bolts models`, `bolts laya install`, `bolts jev login` | Decision models |
 | `bolts steering <mode> --project <name>` | Steering per project; `bolts steering stop` turns it off everywhere |
 | `bolts cloud login`, `bolts cloud forward <trace>` | Neatlogs Cloud key (Keychain) and sends |
 | `bolts checks list`, `bolts checks validate <file>` | Checks in force, and YAML validation |
 | `bolts rerun add <project> "<command>"` | A command coding agents may use to rerun your agent |
+| `bolts service install`, `bolts update` | Run at login; update to the latest version |
 
 ## Repository
 
@@ -104,8 +126,10 @@ in [skills/](skills/).
 | `python/bolts-steer` | `bolts-steer`, the Python steering hook |
 | `packages/bolts/library` | The starter rules and the open question library |
 | `examples/refund-agent` | A refund agent instrumented with the public SDK, plus a scripted fake LLM |
+| `examples/samples` | Seven scripted support-agent runs, each with a known problem (or none) |
+| `install.sh` | The one-line installer |
 | `skills/` | Skills for coding agents |
-| `docs/` | Architecture, steering, checks, cloud, MCP |
+| `docs/` | Getting started, team testing, use case, architecture, steering, checks, cloud, MCP |
 
 ## Development
 

@@ -8,7 +8,7 @@ Bolts checks AI agents on the developer's machine. Read `README.md` and `docs/ar
   OpenTelemetry, MCP, publicly documented APIs (Jev), openly licensed models. Never copy code,
   prompts, schemas or logic from Neatlogs' internal services. The UI follows the Neatlogs design
   language (tokens and design rules only).
-- Local by default. Nothing leaves the machine unless the user sends it (cloud forward, Jev cloud).
+- Local by default. Nothing leaves the machine unless the user turns it on (cloud forward, Jev cloud, a hosted LLM).
 - Keep `/v1/traces` and the doctor read-back compatible with what the public SDKs send to
   ingest.neatlogs.com; keep stored spans lossless so cloud forwarding stays exact.
 

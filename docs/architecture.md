@@ -9,7 +9,7 @@ your agent ── Neatlogs SDK (public) ── OTLP ──► collector ──�
      ▲                                                │
      │ notes (claim / SSE)                            ▼
  steering hook ◄──── steering hub ◄──── check orchestrator ──► decision model (Laya / Jev / LLM)
-                                                │                local LLM (plan, explain, write)
+                                                │                LLM: local, or hosted opt-in (plan, explain, write)
                      app UI ◄── API + SSE ──────┤
             coding agent ◄── MCP (HTTP, stdio) ─┤
           Neatlogs Cloud ◄── relay (opt-in) ────┘
@@ -24,14 +24,16 @@ your agent ── Neatlogs SDK (public) ── OTLP ──► collector ──�
 | `store/db.ts`, `store/blobs.ts` | SQLite (WAL): sessions, runs, spans, findings, notes, plans, checks, decisions, explanations, summaries, annotations, forwards; FTS5 search; retention |
 | `server/collector.ts`, `server/readback.ts` | `/v1/traces`, `/v1/logs`, doctor read-back |
 | `checks/` | YAML check schema (zod), registry, rule evaluation |
-| `models/llm.ts` | OpenAI-compatible client with priority queue (urgent notes, high decisions, low investigations) |
+| `models/llm.ts` | The LLM: a local OpenAI-compatible server by default, or an opt-in hosted provider (Anthropic through its SDK; OpenAI-compatible APIs), with redaction, fallback to local and a priority queue (urgent notes, high decisions, low investigations) |
+| `models/providers.ts` | Hosted provider presets and the strict JSON-schema rewrite hosted structured output needs |
 | `models/decision.ts` | Jev typed-decision API client; router Laya → custom server → Jev cloud → LLM stand-in |
 | `models/laya.ts` | Installs and supervises `laya-serve` on 127.0.0.1 with a per-install token |
 | `engine/` | Orchestrator: rules, plans, questions, triage, investigations, notes, summaries, budgets |
 | `steering/hub.ts` | Notes per run, atomic claim, gate wait, SSE stream |
 | `mcp/` | Tool definitions, streamable HTTP mount, stdio bridge |
 | `relay/` | Cloud forwarding, redaction, Keychain |
-| `server/api.ts` | App and hook API, security (Host allowlist, Origin check) |
+| `server/api.ts`, `api-checks.ts`, `api-models.ts` | App and hook API, security (Host allowlist, Origin check) |
+| `cli.ts`, `cli/` | The `bolts` command; `cli/service.ts` runs Bolts at login (launchd, systemd) and updates it |
 
 ## The cascade
 
@@ -46,6 +48,11 @@ your agent ── Neatlogs SDK (public) ── OTLP ──► collector ──�
 | Write guidance for the running agent | local LLM | when a finding is raised and steering is on |
 | Check the LLM's own output | decision model | before a note is sent; on every explanation |
 | Summarize a run | local LLM | run end |
+
+"Local LLM" above means whichever LLM is configured. With a hosted provider on (`bolts llm use`),
+the same jobs go to it: the run content each prompt needs is sent with secrets removed, calls run a
+few at a time instead of one, and the local LLM takes over if the provider fails. Hosted models
+without token logprobs (Claude) state a confidence for each decision instead.
 
 ## Run end
 

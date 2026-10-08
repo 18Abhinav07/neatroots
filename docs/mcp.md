@@ -4,7 +4,7 @@ Bolts serves MCP over streamable HTTP at `http://localhost:4100/mcp` and over st
 `bolts mcp` (which starts Bolts if it is not running). Both expose the same tools.
 
 ```bash
-claude mcp add --scope user bolts -- node /path/to/bolts/packages/bolts/dist/cli.js mcp
+claude mcp add --scope user bolts -- bolts mcp
 ```
 
 | Tool | Returns | Model |

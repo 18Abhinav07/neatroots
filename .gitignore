@@ -12,3 +12,4 @@ __pycache__/
 coverage/
 /.bolts-dev/
 .bolts-installed
+docs/internal/
