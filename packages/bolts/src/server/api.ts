@@ -9,6 +9,7 @@ import { projectSettings, type SteeringMode } from "../config.js";
 import { getCloudKey, setCloudKey, deleteCloudKey, getSecret } from "../relay/keychain.js";
 import { mountModelsApi } from "./api-models.js";
 import { mountChecksApi } from "./api-checks.js";
+import { mountInsightsApi } from "./api-insights.js";
 import { err, body } from "./util.js";
 import { askRuns } from "../engine/assist.js";
 import { loadTrace } from "../engine/trace.js";
@@ -109,6 +110,7 @@ export function mountApi(app: Hono, bolts: Bolts): void {
   const engine = bolts.engine;
   mountModelsApi(app, bolts);
   mountChecksApi(app, bolts);
+  mountInsightsApi(app, bolts);
 
   app.get("/api/status", async (c) => {
     const status = engine ? await engine.status() : null;
@@ -123,6 +125,7 @@ export function mountApi(app: Hono, bolts: Bolts): void {
       engine: status,
       tier: { ...tier, platform: `${os.platform()} ${os.arch()}` },
       steering: { enabled: bolts.config.steering.enabled, hooks_connected: bolts.steering.listeners },
+      mcp: { last_seen_ms: bolts.mcpSeenMs },
       cloud: { endpoint: bolts.relay.endpoint(), has_key: !!(await getCloudKey()) },
       classifier: {
         laya: bolts.laya.state,
@@ -151,6 +154,7 @@ export function mountApi(app: Hono, bolts: Bolts): void {
       status: q.status || undefined,
       sessionId: q.session || undefined,
       hasFinding: q.has_finding === "1" || q.has_finding === "true",
+      checkId: q.check || undefined,
       text: q.q || undefined,
       sinceMs: q.since ? Number(q.since) : undefined,
       limit: q.limit ? Number(q.limit) : 100,

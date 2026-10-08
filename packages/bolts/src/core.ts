@@ -35,6 +35,8 @@ export class Bolts {
   readonly relay: Relay;
   readonly laya: LayaManager;
   private sweeper?: NodeJS.Timeout;
+  /** When a coding agent last called Bolts over MCP. */
+  mcpSeenMs: number | null = null;
   /** The run and span the app has in focus, for the MCP get_current_run tool. */
   focus: { trace_id: string; span_id: string | null; at: number } | null = null;
   /** Cloud pushes a coding agent asked for, waiting for the user to confirm in the app. */

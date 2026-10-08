@@ -18,6 +18,8 @@ leaves your computer unless you send it.
   `check_my_work` tool it can call itself. Opt-in per project.
 - **MCP** gives Claude Code, Cursor or Codex the runs, findings and explanations, so a coding agent
   can fix the bug and add a check that catches it next time.
+- **Home** shows how the agents have been doing over a period: what keeps failing, which tools and
+  models break, what is holding up, and a short LLM reading of those numbers.
 - **Neatlogs Cloud** is one click away: Bolts re-exports a run over the same public OTLP endpoint the
   SDKs use, redacted first.
 

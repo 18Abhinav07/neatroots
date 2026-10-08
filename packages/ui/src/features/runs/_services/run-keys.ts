@@ -3,6 +3,10 @@ export interface RunListParams {
   status: string;
   hasFinding: boolean;
   project: string;
+  /** Runs with a finding from this check (from Home). */
+  check?: string;
+  /** How to show that check in the filter chip. */
+  label?: string;
 }
 
 export const runKeys = {

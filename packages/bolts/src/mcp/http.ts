@@ -6,6 +6,7 @@ import { createMcpServer } from "./server.js";
 /** Streamable HTTP MCP on /mcp, stateless: each request gets a fresh server over the shared Bolts state. */
 export function mountMcpHttp(app: Hono, bolts: Bolts): void {
   app.all("/mcp", async (c) => {
+    bolts.mcpSeenMs = Date.now();
     const port = bolts.config.port;
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

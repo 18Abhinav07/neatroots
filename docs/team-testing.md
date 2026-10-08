@@ -74,6 +74,8 @@ Rules alone, with no LLM, catch loop-404 and secret-leak. The other problems nee
 - [ ] On a run page, you understood the problem without opening the trace.
 - [ ] Clicking a problem's "Seen in" span opens that span next to the trace.
 - [ ] The loop-404 run shows a note under "Notes to the agent", and the trace has a "Note sent to the agent" span.
+- [ ] **Home** lists the six problems under "Needs attention" and `lookup_order` as a failing tool. Clicking a problem shows only the runs it hit.
+- [ ] "What stands out" (needs an LLM) says nothing the numbers on the page contradict.
 
 ## 3. Try your own agent (10 minutes, if you have one)
 

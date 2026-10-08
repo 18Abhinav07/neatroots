@@ -277,6 +277,8 @@ export interface RunFilter {
   status?: string;
   sessionId?: string;
   hasFinding?: boolean;
+  /** Runs with an open or resolved finding from this check. */
+  checkId?: string;
   text?: string;
   sinceMs?: number;
   untilMs?: number;
@@ -627,6 +629,10 @@ export class Store {
       p.session = f.sessionId;
     }
     if (f.hasFinding) where.push("finding_count > 0");
+    if (f.checkId) {
+      where.push("trace_id IN (SELECT trace_id FROM findings WHERE check_id = @check AND status NOT IN ('dismissed', 'failed'))");
+      p.check = f.checkId;
+    }
     if (f.sinceMs) {
       where.push("started_ms >= @since");
       p.since = f.sinceMs;

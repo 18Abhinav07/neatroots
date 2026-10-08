@@ -1,19 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { ChecksPage } from "../features/checks/_components/checks-page";
+import { HomePage } from "../features/home/_components/home-page";
 import { appKeys } from "../features/runs/_services/run-keys";
 import { RunsPage } from "../features/runs/_components/runs-page";
 import { SettingsPage } from "../features/settings/_components/settings-page";
 import { api, type Status } from "../lib/api";
 import { useLiveEvents } from "../lib/live-events";
-import { useRoute } from "../lib/router";
+import { useLocation } from "../lib/router";
 import { useTheme } from "../lib/theme";
 import { PushBanner } from "./push-banner";
 import { Sidebar } from "./sidebar";
 
 export function App() {
-  const route = useRoute();
-  const page = route[0] ?? "runs";
+  const { parts: route, query } = useLocation();
+  const page = route[0] ?? "home";
   const qc = useQueryClient();
   const [theme, setTheme] = useTheme();
   const { connected } = useLiveEvents();
@@ -32,7 +33,11 @@ export function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <PushBanner />
         <div className="grid min-h-0 flex-1">
-          {page === "checks" ? (
+          {page === "home" ? (
+            <main className="min-h-0 overflow-y-auto">
+              <HomePage status={status} />
+            </main>
+          ) : page === "checks" ? (
             <main className="min-h-0 overflow-y-auto">
               <ChecksPage />
             </main>
@@ -41,7 +46,7 @@ export function App() {
               <SettingsPage status={status} tab={route[1]} />
             </main>
           ) : (
-            <RunsPage runId={page === "runs" ? route[1] : undefined} status={status} />
+            <RunsPage runId={page === "runs" ? route[1] : undefined} status={status} query={query} />
           )}
         </div>
       </div>

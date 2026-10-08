@@ -1,4 +1,4 @@
-import { Activity01Icon, Alert02Icon, Search01Icon, SearchAreaIcon } from "@hugeicons/core-free-icons";
+import { Activity01Icon, Alert02Icon, Cancel01Icon, Search01Icon, SearchAreaIcon } from "@hugeicons/core-free-icons";
 import { Button } from "../../../components/ui/button";
 import { CodeLine } from "../../../components/ui/copy-button";
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia } from "../../../components/ui/empty";
@@ -25,7 +25,7 @@ export function RunsList({
   setParams: (p: RunListParams) => void;
   projects: string[];
 }) {
-  const filtered = !!(params.q || params.status || params.hasFinding || params.project);
+  const filtered = !!(params.q || params.status || params.hasFinding || params.project || params.check);
   return (
     <div className="flex min-h-0 flex-col">
       <div className="flex flex-col gap-3 border-b border-border px-4 pt-4 pb-3">
@@ -64,6 +64,22 @@ export function RunsList({
           >
             With findings
           </Button>
+          {params.check && (
+            <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-surface-strong py-0.5 pr-0.5 pl-2 text-label text-foreground">
+              <span className="truncate" title={params.label ?? params.check}>
+                Problem: {params.label ?? params.check}
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="size-5"
+                aria-label="Clear the problem filter"
+                onClick={() => setParams({ ...params, check: undefined, label: undefined })}
+              >
+                <Icon icon={Cancel01Icon} size="xxs" />
+              </Button>
+            </span>
+          )}
           {projects.length > 1 && (
             <Select aria-label="Project" className="h-7 w-auto text-label" value={params.project} onChange={(e) => setParams({ ...params, project: e.target.value })}>
               <option value="">All projects</option>

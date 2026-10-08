@@ -137,6 +137,15 @@ python -m neatlogs doctor --probe
 
 ## 5. Read what Bolts found
 
+**Home** shows how your agents have been doing over the last 24 hours, 7 days or 30 days, against the period before. Everything on it is computed from your own runs:
+- **Totals:** how many runs had problems or failed, and how long runs take.
+- **Needs attention:** problems by how many runs they hit, tools that fail or return nothing, and models with errors.
+- **Working well:** projects, tools and models with a clean record, checks that found nothing, and problems you no longer see.
+- **What stands out:** the LLM's short reading of these numbers. It sees only the aggregates, never run content, and Bolts drops any sentence that quotes a number not in the data.
+- **The guide:** while setup is incomplete, Home also shows how to use Bolts, checked against what is actually set up.
+
+Click a problem to see every run it hit.
+
 The **Runs** page lists each run:
 - **Each row:** what the run was asked to do and its most important open problem.
 - **Run page:** the problems come first, each with a one-line cause. Click one to see the suggested fix, the spans that show it, and how sure Bolts is.

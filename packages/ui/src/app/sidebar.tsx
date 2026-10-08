@@ -1,4 +1,4 @@
-import { Activity01Icon, CheckListIcon, ComputerIcon, FlashIcon, Moon02Icon, Settings02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
+import { Activity01Icon, CheckListIcon, ComputerIcon, FlashIcon, Home01Icon, Moon02Icon, Settings02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 import { toast } from "sonner";
 import { Icon } from "../components/ui/icon";
@@ -10,6 +10,7 @@ import { cn } from "../lib/cn";
 import type { ThemeChoice } from "../lib/theme";
 
 const NAV: { href: string; page: string; label: string; icon: IconSvgElement }[] = [
+  { href: "#/home", page: "home", label: "Home", icon: Home01Icon },
   { href: "#/runs", page: "runs", label: "Runs", icon: Activity01Icon },
   { href: "#/checks", page: "checks", label: "Checks", icon: CheckListIcon },
   { href: "#/settings", page: "settings", label: "Settings", icon: Settings02Icon },
