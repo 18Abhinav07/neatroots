@@ -6,32 +6,27 @@ that runs a model cascade, and the surfaces people and coding agents use.
 
 ```mermaid
 flowchart TB
-  AGENT["Your agent"]
+  AGENT["Your agent<br/>Neatlogs SDK · OpenTelemetry · HTTP API"]
   OTHER["Trace files · Neatlogs Cloud"]
 
   subgraph roots["neatroots · localhost:4100"]
-    direction TB
-    COL["Collector<br/>OTLP HTTP and gRPC · Neatlogs HTTP API"]
+    COL["Collector<br/>OTLP HTTP and gRPC · /v1/trace"]
     STORE[("Local store<br/>SQLite, lossless spans")]
     CHECKS["Checks<br/>rules → decision model → LLM"]
-    REPLAY["Replay and fork"]
     COL --> STORE
-    STORE <--> CHECKS
-    STORE --> REPLAY
+    STORE --> CHECKS
   end
 
-  subgraph out["Where you see it"]
-    direction LR
-    UI["Web app<br/>Overview · Trace · Timeline<br/>Conversation · Search"]
+  subgraph out["Where it goes"]
+    UI["Web app<br/>Overview · Trace · Timeline<br/>Conversation · Search · Replay"]
     MCP["Coding agents over MCP<br/>Claude Code · Codex · Cursor · …"]
     CLOUD["Neatlogs Cloud<br/>opt-in, redacted"]
   end
 
-  AGENT -->|"Neatlogs SDK · OpenTelemetry · HTTP"| COL
+  AGENT --> COL
   OTHER -->|import| STORE
-  STORE --> out
-  CHECKS -.->|"steering: a note on the next LLM call"| AGENT
-  REPLAY -.->|"re-run with edits"| AGENT
+  CHECKS --> out
+  CHECKS -.->|opt-in| STEER["Steering<br/>a note on the agent's next LLM call"]
 ```
 
 ## Code map (`packages/neatroots/src`)
