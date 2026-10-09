@@ -1,3 +1,4 @@
+import { CloudIcon } from "@hugeicons/core-free-icons";
 import { useState } from "react";
 import { PendingButton } from "@/components/pending-button";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -5,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Status } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { useForwards, useKeyActions, useSaveSettings } from "../_services/settings-queries";
-import { KeyInput, OptionSelect, SettingField, SettingsPanel } from "./form";
+import { KeyInput, OptionSelect, SettingField } from "./form";
+import { SettingsCard, SettingsToggleCard } from "./settings-shell";
 
 const REGIONS = [
   { value: "https://ingest.neatlogs.com", label: "US · ingest.neatlogs.com" },
@@ -19,27 +21,43 @@ export function CloudSection({ status }: { status: Status }) {
   const [endpoint, setEndpoint] = useState(status.cloud.endpoint);
   const [patterns, setPatterns] = useState("");
   const regions = REGIONS.some((r) => r.value === endpoint) ? REGIONS : [...REGIONS, { value: endpoint, label: endpoint }];
+  const connected = status.cloud.has_key;
   return (
     <>
-      <SettingsPanel title="Neatlogs Cloud" meta={status.cloud.has_key ? "API key stored" : "no API key"}>
-        <p className="text-sm text-muted-foreground">
-          neatroots sends runs the way the SDK does: OTLP to the public ingest endpoint with your API key. Every send is redacted first and logged below.
-        </p>
-        <SettingField label="API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in the neatroots database.">
+      <SettingsToggleCard
+        icon={CloudIcon}
+        title="Neatlogs Cloud"
+        enabled={connected}
+        status={
+          <StatusPill size="sm" tone={connected ? "success" : "muted"} dot={connected ? "solid" : false}>
+            {connected ? "API key stored" : "Not connected"}
+          </StatusPill>
+        }
+        description="Send runs you want to keep or share, and import production traces to debug them here. Runs are redacted before they leave; nothing is sent unless you send it."
+        control={null}
+      >
+        <SettingField label="Project API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in the neatroots database. The same key sends runs and imports traces.">
           <KeyInput
             id="nl-key"
             label="Neatlogs Cloud API key"
-            stored={status.cloud.has_key}
+            stored={connected}
             storing={keys.store.isPending}
             onStore={(k, done) => keys.store.mutate(k, { onSuccess: done })}
             onRemove={() => keys.remove.mutate()}
           />
         </SettingField>
+        {connected && (
+          <a href="#/add-data/cloud" className="text-sm text-foreground underline-offset-4 hover:underline">
+            Import traces from Neatlogs Cloud
+          </a>
+        )}
+      </SettingsToggleCard>
+      <SettingsCard title="Region and redaction" description="Emails, phone numbers and keys are always redacted before a send.">
         <div className="grid gap-4 sm:grid-cols-2">
           <SettingField label="Ingest region" htmlFor="nl-endpoint">
             <OptionSelect id="nl-endpoint" className="h-8" value={endpoint} onValueChange={setEndpoint} options={regions} />
           </SettingField>
-          <SettingField label="Extra redaction patterns" htmlFor="nl-patterns" hint="One regex per line. Emails, phone numbers and keys are always redacted.">
+          <SettingField label="Extra redaction patterns" htmlFor="nl-patterns" hint="One regex per line.">
             <Textarea id="nl-patterns" rows={2} className="resize-none font-mono text-xs" placeholder="cust_[0-9]+" value={patterns} onChange={(e) => setPatterns(e.target.value)} />
           </SettingField>
         </div>
@@ -51,14 +69,7 @@ export function CloudSection({ status }: { status: Status }) {
               save.mutate({
                 body: {
                   cloud_endpoint: endpoint,
-                  ...(patterns.trim()
-                    ? {
-                        redact_patterns: patterns
-                          .split("\n")
-                          .map((x) => x.trim())
-                          .filter(Boolean),
-                      }
-                    : {}),
+                  ...(patterns.trim() ? { redact_patterns: patterns.split("\n").map((x) => x.trim()).filter(Boolean) } : {}),
                 },
                 message: "Cloud settings saved",
               })
@@ -67,10 +78,10 @@ export function CloudSection({ status }: { status: Status }) {
             Save cloud settings
           </PendingButton>
         </div>
-      </SettingsPanel>
-      {!!data?.forwards.length && (
-        <SettingsPanel title="Recent sends" meta={`${data.forwards.length}`}>
-          <ul className="-mx-6 -mb-6 flex max-h-72 flex-col overflow-y-auto border-t border-border">
+      </SettingsCard>
+      <SettingsCard title="Recent sends" description={data?.forwards.length ? undefined : "Runs you send to Neatlogs Cloud are logged here."} contentClassName="p-0">
+        {!!data?.forwards.length && (
+          <ul className="flex max-h-72 flex-col overflow-y-auto border-t border-border">
             {data.forwards.map((f) => (
               <li key={f.id} className="flex h-11 shrink-0 items-center gap-3 border-b border-border/60 px-6 text-xs text-muted-foreground tabular-nums last:border-0" title={f.error ?? undefined}>
                 <StatusPill size="sm" tone={f.status === "ok" ? "success" : "danger"}>
@@ -83,8 +94,8 @@ export function CloudSection({ status }: { status: Status }) {
               </li>
             ))}
           </ul>
-        </SettingsPanel>
-      )}
+        )}
+      </SettingsCard>
     </>
   );
 }

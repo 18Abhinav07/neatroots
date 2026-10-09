@@ -37,12 +37,15 @@ export function SpanSheet({
   findings,
   annotations,
   onClose,
+  onReplay,
 }: {
   traceId: string;
   spanId: string | undefined;
   findings: Finding[];
   annotations: Annotation[];
   onClose: () => void;
+  /** Open the replay dialog on this LLM span. */
+  onReplay?: (spanId: string) => void;
 }) {
   const { data: d, error } = useSpanDetail(traceId, spanId);
   const [tab, setTab] = useState<"io" | "attrs" | "raw">("io");
@@ -144,6 +147,11 @@ export function SpanSheet({
             </StatusPill>
           ))}
           <span className="mr-auto text-xs text-muted-foreground">Your labels teach neatroots which findings matter.</span>
+          {d?.kind === "LLM" && onReplay && (
+            <Button size="sm" variant="secondary" onClick={() => (onClose(), onReplay(d.span_id))}>
+              Replay this call
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => mark("issue")}>
             Mark as issue
           </Button>

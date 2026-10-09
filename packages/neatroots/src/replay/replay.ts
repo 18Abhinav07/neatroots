@@ -18,6 +18,8 @@ import { log } from "../util/log.js";
 export interface ReplayOverrides {
   /** LLM replay: the messages to send instead of the span's. */
   messages?: { role: string; content: string }[];
+  /** LLM replay: change one recorded message (matched by its text) and keep the rest. */
+  edit?: { from: string; to: string };
   /** Run replay: the user input to run the agent with. */
   input?: string;
   model?: string;
@@ -156,13 +158,22 @@ export class Replays {
     if (!span) throw new Error("span not found");
     if (span.kind !== "LLM") throw new Error("only LLM spans can be replayed on their own; replay the whole run instead");
     const messages: ChatMessage[] = overrides.messages?.length ? toChat(overrides.messages as Plain) : toChat(span.input);
+    if (overrides.edit) {
+      const { from, to } = overrides.edit;
+      const i = messages.findIndex((m) => m.content === from) >= 0 ? messages.findIndex((m) => m.content === from) : messages.findIndex((m) => m.content.trim() === from.trim());
+      if (i < 0) throw new Error("that message isn't in this LLM call");
+      messages[i] = { ...messages[i], content: to };
+      // Later turns followed from the old message; the fork ends at the edited one.
+      messages.splice(i + 1);
+    }
     if (overrides.system) {
       const i = messages.findIndex((m) => m.role === "system");
       if (i >= 0) messages[i] = { role: "system", content: overrides.system };
       else messages.unshift({ role: "system", content: overrides.system });
     }
     if (!messages.length) throw new Error("this LLM span has no recorded messages to replay");
-    const r = this.create(traceId, span.id, "llm", "llm", { ...overrides, messages: messages.map((m) => ({ role: m.role, content: m.content })) });
+    const { edit: _edit, ...rest } = overrides;
+    const r = this.create(traceId, span.id, "llm", "llm", { ...rest, messages: messages.map((m) => ({ role: m.role, content: m.content })) });
     try {
       const startMs = Date.now();
       const res = await this.roots.llm.chat(messages, { model: overrides.model, maxTokens: 2048, temperature: 0.2, priority: "high", timeoutSec: 180 });

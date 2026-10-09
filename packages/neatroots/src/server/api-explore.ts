@@ -12,6 +12,15 @@ import { runSummary } from "./api.js";
 // Run views (chat, conversation), search, imports, cloud import, replays and the in-app coding
 // agent. Everything here is local; the cloud and import routes call out only when the user asks.
 
+/** Where an imported run came from (neatroots.import.source on its resource), if it was imported. */
+export function importSource(roots: Roots, traceId: string): string | null {
+  const run = roots.store.getRun(traceId);
+  if (!run?.root_span_id) return null;
+  const full = roots.store.getOtlpSpan(traceId, run.root_span_id);
+  const v = full?.resource.attributes.find((a) => a.key === "neatroots.import.source")?.value;
+  return v && "stringValue" in v && v.stringValue !== "http" && v.stringValue !== "replay" ? v.stringValue : null;
+}
+
 /** `project:x status:failed kind:tool tool:lookup model:gpt has:problems check:id since:7d free text` */
 export function parseSearch(q: string): { text: string; filters: Record<string, string> } {
   const filters: Record<string, string> = {};
@@ -160,9 +169,9 @@ export function mountExploreApi(app: Hono, roots: Roots): void {
   });
   app.post("/api/runs/:traceId/replay", async (c) => {
     const traceId = c.req.param("traceId");
-    const b = await body<{ span_id?: string; messages?: { role: string; content: string }[]; input?: string; model?: string; system?: string }>(c);
+    const b = await body<{ span_id?: string; messages?: { role: string; content: string }[]; edit?: { from: string; to: string }; input?: string; model?: string; system?: string }>(c);
     try {
-      if (b.span_id) return c.json(await roots.replays.replayLlm(traceId, b.span_id, { messages: b.messages, model: b.model || undefined, system: b.system || undefined }));
+      if (b.span_id) return c.json(await roots.replays.replayLlm(traceId, b.span_id, { messages: b.messages, edit: b.edit, model: b.model || undefined, system: b.system || undefined }));
       const { replay } = roots.replays.startRun(traceId, { input: b.input, model: b.model || undefined, system: b.system || undefined });
       return c.json(replay, 202);
     } catch (e) {

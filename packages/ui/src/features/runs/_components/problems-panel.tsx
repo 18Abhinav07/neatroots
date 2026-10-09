@@ -45,7 +45,7 @@ export function ProblemsPanel({
   const open = live.filter(isOpen);
   const [expanded, setExpanded] = useState<string | undefined>(open[0]?.id);
   return (
-    <Panel>
+    <Panel data-testid="problems">
       <PanelHeader
         title={open.length ? `${open.length} problem${open.length > 1 ? "s" : ""}` : "Problems"}
         actions={plan ? <span className="hidden text-xs text-muted-foreground sm:inline">{plan.check_ids.length} questions for this agent, plus rules on every span</span> : undefined}

@@ -117,6 +117,113 @@ export interface RunDetail {
   annotations: Annotation[];
   plan: Plan | null;
   forwarded: boolean;
+  replays: Replay[];
+  replay_of: Replay | null;
+  /** Where an imported run came from (langfuse, neatlogs-cloud, file, …). */
+  import_source: string | null;
+}
+
+export interface Replay {
+  id: string;
+  trace_id: string;
+  span_id: string | null;
+  kind: "llm" | "run";
+  via: "llm" | "command" | "http";
+  overrides: { messages?: { role: string; content: string }[]; input?: string; model?: string; system?: string };
+  state: "running" | "succeeded" | "failed";
+  new_trace_id: string | null;
+  output_preview: string | null;
+  error: string | null;
+  log_tail: string | null;
+  created_ms: number;
+  finished_ms: number | null;
+}
+
+export interface ReplayOptions {
+  llm: { available: boolean; where: string | null; model: string | null };
+  run: { via: "command" | "http"; command: string | null; url: string | null; cwd: string | null } | null;
+  project: string | null;
+  default_input: string;
+  system: string | null;
+  replays: Replay[];
+}
+
+export type ChatItem =
+  | { type: "system"; text: string; span_id: string }
+  | { type: "user"; text: string; span_id: string }
+  | { type: "assistant"; text: string; span_id: string; model?: string; tokens?: number; tool_calls: { name: string; arguments: unknown }[]; error?: string }
+  | { type: "tool"; name: string; span_id: string; input: unknown; output: unknown; status: "ok" | "error" | "unset"; error?: string; duration_ms: number }
+  | { type: "agent"; name: string; span_id: string; status: "ok" | "error" | "unset"; duration_ms: number; llm_calls: number; tool_calls: number; input?: string; output?: string; error?: string };
+
+export interface SearchRun extends Run {
+  hits: { span_id: string; name: string; snippet: string; kind?: string }[];
+}
+
+export interface ImportSourceInfo {
+  id: string;
+  label: string;
+  description: string;
+  fields: { name: string; label: string; secret?: boolean; required?: boolean; placeholder?: string; default?: string }[];
+}
+
+export interface ImportJob {
+  id: string;
+  source: string;
+  label: string;
+  state: "running" | "succeeded" | "failed" | "cancelled";
+  started_ms: number;
+  finished_ms: number | null;
+  traces: number;
+  spans: number;
+  failed: number;
+  last_error: string | null;
+  trace_ids: string[];
+}
+
+export interface CloudTrace {
+  traceId: string;
+  traceName?: string | null;
+  workflowName?: string | null;
+  sessionId?: string | null;
+  startedAt: string;
+  durationMs?: number | null;
+  status?: string | null;
+  spansCount?: number | null;
+  llmCallsCount?: number | null;
+  toolCallsCount?: number | null;
+  totalTokens?: number | null;
+  local: boolean;
+}
+
+export interface ChatSession {
+  id: string;
+  agent: "claude" | "codex";
+  cwd: string;
+  title: string;
+  trace_id: string | null;
+  allow_edits: boolean;
+  allow_commands: boolean;
+  agent_session_id: string | null;
+  state: "idle" | "running" | "error";
+  created_ms: number;
+  updated_ms: number;
+}
+
+export interface ChatEvent {
+  seq: number;
+  at: number;
+  kind: "user" | "text" | "tool" | "tool_result" | "status" | "result" | "error";
+  text?: string;
+  tool?: { id: string; name: string; input?: unknown; output?: string; is_error?: boolean };
+  meta?: Record<string, unknown>;
+}
+
+export interface ChatAgentInfo {
+  id: "claude" | "codex";
+  label: string;
+  installed: boolean;
+  version: string | null;
+  mcp_connected: boolean;
 }
 
 export interface SpanDetail {
@@ -181,6 +288,7 @@ export interface Status {
     classifier: { backend: string; baseUrl: string; model: string };
     budgets: Record<string, number>;
     retention: { days: number; maxGb: number };
+    grpc_port?: number;
   };
 }
 
@@ -264,6 +372,7 @@ export interface ProjectRow {
   last_ms: number | null;
   with_findings: number;
   settings: { steering: string; forward: boolean };
+  rerun: { command?: string; cwd?: string; url?: string } | null;
 }
 
 export interface Push {

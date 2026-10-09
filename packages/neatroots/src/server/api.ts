@@ -11,7 +11,7 @@ import { mountModelsApi } from "./api-models.js";
 import { mountChecksApi } from "./api-checks.js";
 import { mountInsightsApi } from "./api-insights.js";
 import { mountAgentsApi } from "./api-agents.js";
-import { mountExploreApi } from "./api-explore.js";
+import { importSource, mountExploreApi } from "./api-explore.js";
 import { installInfo } from "../util/install.js";
 import { err, body } from "./util.js";
 import { askRuns } from "../engine/assist.js";
@@ -67,15 +67,6 @@ export function runDetail(roots: Roots, traceId: string) {
   };
 }
 
-/** Where an imported run came from (neatroots.import.source on its resource), if it was imported. */
-function importSource(roots: Roots, traceId: string): string | null {
-  const run = roots.store.getRun(traceId);
-  if (!run?.root_span_id) return null;
-  const full = roots.store.getOtlpSpan(traceId, run.root_span_id);
-  const v = full?.resource.attributes.find((a) => a.key === "neatroots.import.source")?.value;
-  return v && "stringValue" in v && v.stringValue !== "http" && v.stringValue !== "replay" ? v.stringValue : null;
-}
-
 export function spanDetail(roots: Roots, traceId: string, spanId: string) {
   const full = roots.store.getOtlpSpan(traceId, spanId);
   if (!full) return undefined;
@@ -103,10 +94,10 @@ function projects(roots: Roots) {
     .prepare("SELECT project, COUNT(*) AS runs, MAX(started_ms) AS last_ms, SUM(finding_count > 0) AS with_findings FROM runs WHERE doctor = 0 GROUP BY project ORDER BY last_ms DESC")
     .all() as { project: string; runs: number; last_ms: number; with_findings: number }[];
   const names = new Set(rows.map((r) => r.project));
-  for (const p of Object.keys(roots.config.projects)) names.add(p);
+  for (const p of [...Object.keys(roots.config.projects), ...Object.keys(roots.config.rerun)]) names.add(p);
   return [...names].map((name) => {
     const r = rows.find((x) => x.project === name);
-    return { project: name, runs: r?.runs ?? 0, last_ms: r?.last_ms ?? null, with_findings: r?.with_findings ?? 0, settings: projectSettings(roots.config, name) };
+    return { project: name, runs: r?.runs ?? 0, last_ms: r?.last_ms ?? null, with_findings: r?.with_findings ?? 0, settings: projectSettings(roots.config, name), rerun: roots.config.rerun[name] ?? null };
   });
 }
 
@@ -158,6 +149,7 @@ export function mountApi(app: Hono, roots: Roots): void {
         classifier: { backend: roots.config.classifier.backend, baseUrl: roots.config.classifier.baseUrl, model: roots.config.classifier.model },
         budgets: roots.config.budgets,
         retention: roots.config.retention,
+        grpc_port: roots.config.grpcPort,
       },
     });
   });
@@ -274,6 +266,8 @@ export function mountApi(app: Hono, roots: Roots): void {
       cloud_endpoint?: string;
       redact_patterns?: string[];
       check_dir?: string;
+      retention_days?: number;
+      retention_max_gb?: number;
     }>(c);
     if (b.project) {
       const cur = roots.config.projects[b.project] ?? {};
@@ -283,6 +277,8 @@ export function mountApi(app: Hono, roots: Roots): void {
       }
       if (b.forward !== undefined) roots.config.projects[b.project] = { ...cur, ...roots.config.projects[b.project], forward: !!b.forward };
     }
+    if (typeof b.retention_days === "number" && b.retention_days >= 1 && b.retention_days <= 3650) roots.config.retention.days = Math.round(b.retention_days);
+    if (typeof b.retention_max_gb === "number" && b.retention_max_gb > 0 && b.retention_max_gb <= 10_000) roots.config.retention.maxGb = b.retention_max_gb;
     if (b.steering_enabled !== undefined) roots.config.steering.enabled = !!b.steering_enabled;
     if (b.llm_model) roots.config.llm.model = b.llm_model;
     if (b.llm_base_url) roots.config.llm.baseUrl = b.llm_base_url;

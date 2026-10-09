@@ -1,4 +1,4 @@
-import { BarChartHorizontalIcon, ComputerIcon, Home01Icon, Moon02Icon, Plant02Icon, SearchAreaIcon, Settings02Icon, SidebarLeftIcon, Sun03Icon } from "@hugeicons/core-free-icons";
+import { BarChartHorizontalIcon, BubbleChatIcon, ComputerIcon, DatabaseImportIcon, Home01Icon, Moon02Icon, Plant02Icon, Search01Icon, SearchAreaIcon, Settings02Icon, SidebarLeftIcon, Sun03Icon } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
@@ -23,7 +23,10 @@ import { cn } from "@/lib/utils";
 const NAV: { href: string; page: string; title: string; icon: IconSvgElement }[] = [
   { href: "#/home", page: "home", title: "home", icon: Home01Icon },
   { href: "#/runs", page: "runs", title: "runs", icon: BarChartHorizontalIcon },
+  { href: "#/search", page: "search", title: "search", icon: Search01Icon },
   { href: "#/checks", page: "checks", title: "checks", icon: SearchAreaIcon },
+  { href: "#/agents", page: "agents", title: "coding agents", icon: BubbleChatIcon },
+  { href: "#/add-data", page: "add-data", title: "add data", icon: DatabaseImportIcon },
   { href: "#/settings", page: "settings", title: "settings", icon: Settings02Icon },
 ];
 

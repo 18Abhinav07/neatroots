@@ -3,28 +3,7 @@ import { PendingButton } from "@/components/pending-button";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-/** A settings card: title, a muted line of current state, and controls on the right. */
-export function SettingsPanel({ title, meta, actions, children }: { title: string; meta?: ReactNode; actions?: ReactNode; children: ReactNode }) {
-  return (
-    <Panel>
-      <PanelHeader
-        title={title}
-        actions={
-          meta || actions ? (
-            <span className="flex items-center gap-3">
-              {meta && <span className="hidden text-xs text-muted-foreground sm:inline">{meta}</span>}
-              {actions}
-            </span>
-          ) : undefined
-        }
-      />
-      <PanelContent className="flex flex-col gap-5">{children}</PanelContent>
-    </Panel>
-  );
-}
 
 /** A labelled control with an optional hint under it. */
 export function SettingField({ label, htmlFor, hint, children }: { label: string; htmlFor?: string; hint?: ReactNode; children: ReactNode }) {

@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { AiBrain01Icon } from "@hugeicons/core-free-icons";
 import { PendingButton } from "@/components/pending-button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Switch } from "@/components/ui/switch";
 import type { LlmInfo, Status } from "@/lib/api";
 import { useLlm, useLlmActions, useSaveSettings } from "../_services/settings-queries";
-import { KeyInput, OptionSelect, SettingField, SettingsPanel } from "./form";
+import { KeyInput, OptionSelect, SettingField } from "./form";
+import { SettingsCard, SettingsLoading, SettingsToggleCard } from "./settings-shell";
 
 const REDACT = [
   { value: "secrets", label: "Secrets: keys, tokens, private keys" },
@@ -22,44 +23,55 @@ const REDACT = [
  */
 export function LlmSection({ status }: { status: Status }) {
   const { data: llm, error } = useLlm();
-  const [where, setWhere] = useState<"local" | "hosted">("local");
-  useEffect(() => {
-    if (llm) setWhere(llm.config.enabled ? "hosted" : "local");
-  }, [llm?.config.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  const actions = useLlmActions();
   if (!llm) {
-    return (
-      <SettingsPanel title="LLM">
-        <EmptyState
-          variant="inline"
-          size="compact"
-          state={error ? "error" : "loading"}
-          title={error ? "Couldn't load the LLM settings" : "Loading LLM settings"}
-          description={error ? (error as Error).message : undefined}
-        />
-      </SettingsPanel>
+    return error ? (
+      <EmptyState variant="bordered" state="error" title="Couldn't load the LLM settings" description={(error as Error).message} />
+    ) : (
+      <SettingsLoading rows={2} />
     );
   }
+  const hostedOn = llm.config.enabled;
+  const preset = llm.providers.find((p) => p.id === llm.config.provider);
+  const canTurnOn = !!preset?.key && !!(llm.config.model || preset?.default_model);
   const active = llm.active === "local" ? `${llm.local.model} on this machine` : llm.active ? `${llm.external?.model} at ${llm.external?.label}` : null;
   return (
-    <SettingsPanel
-      title="LLM"
-      meta={active ? `answering now: ${active}` : "no LLM answering; rules still run"}
-      actions={
-        <SegmentedTabs
-          value={where}
-          onValueChange={setWhere}
-          size="compact"
-          items={[
-            { value: "local", label: "This machine" },
-            { value: "hosted", label: "Hosted provider" },
-          ]}
-        />
-      }
-    >
-      <p className="text-sm text-muted-foreground">Plans which questions fit each agent, explains problems, writes notes for the agent and summarizes runs.</p>
-      {where === "local" ? <LocalLlm llm={llm} status={status} /> : <HostedLlm llm={llm} />}
-    </SettingsPanel>
+    <>
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-subtle px-4 py-3 text-sm">
+        <StatusPill size="sm" tone={active ? "success" : "warning"} dot={active ? "solid" : false}>
+          {active ? "Answering" : "No LLM"}
+        </StatusPill>
+        <span className="min-w-0 truncate text-muted-foreground">{active ?? "Rules still run. Start a local model or turn on a hosted one for questions and explanations."}</span>
+      </div>
+      <SettingsCard title="This machine" description="Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, MLX. Nothing leaves your machine.">
+        <LocalLlm llm={llm} status={status} />
+      </SettingsCard>
+      <SettingsToggleCard
+        icon={AiBrain01Icon}
+        title="Hosted LLM"
+        enabled={hostedOn}
+        status={
+          hostedOn ? (
+            <StatusPill size="sm" tone={llm.external?.ok ? "success" : "warning"} dot="solid">
+              {llm.external?.label} · {llm.external?.ok ? "on" : "unreachable"}
+            </StatusPill>
+          ) : undefined
+        }
+        description="Claude, OpenAI, OpenRouter, Gemini, Groq, Mistral, Together or any OpenAI-compatible URL. Opt-in: the run content each task needs is sent to the provider."
+        control={
+          <Switch
+            aria-label="Use a hosted LLM"
+            checked={hostedOn}
+            disabled={!hostedOn && !canTurnOn}
+            onCheckedChange={(v) => actions.save.mutate({ body: { enabled: v }, message: v ? `${preset?.label ?? "Hosted LLM"} is on` : "The LLM runs on this machine only" })}
+          />
+        }
+      >
+        <div className="flex flex-col gap-4 border-t border-border pt-4">
+          <HostedLlm llm={llm} />
+        </div>
+      </SettingsToggleCard>
+    </>
   );
 }
 
@@ -82,18 +94,6 @@ function LocalLlm({ llm, status }: { llm: LlmInfo; status: Status }) {
           )}
         </span>
       </div>
-      {llm.config.enabled && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-subtle px-3 py-2.5">
-          <span className="text-sm text-foreground">{llm.external?.label} is on. Switch back so nothing is sent to it.</span>
-          <PendingButton
-            variant="secondary"
-            pending={actions.save.isPending}
-            onClick={() => actions.save.mutate({ body: { enabled: false }, message: "The LLM runs on this machine only" })}
-          >
-            Use this machine only
-          </PendingButton>
-        </div>
-      )}
       <Collapsible>
         <CollapsibleTrigger className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">Change the local server</CollapsibleTrigger>
         <CollapsibleContent className="flex flex-col gap-4 pt-4">

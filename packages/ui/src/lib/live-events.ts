@@ -1,6 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { appKeys, runKeys } from "../features/runs/_services/run-keys";
+import type { ChatEvent } from "./api";
+import { go } from "./router";
+
+/** Chat events streamed from the server, for an open chat to append without refetching. */
+export const chatStream = new EventTarget();
 
 /**
  * Subscribes to neatroots' event stream and refreshes the affected queries. Returns whether
@@ -51,6 +56,23 @@ export function useLiveEvents(): { connected: boolean; spanTick: number } {
       on("settings", () => {
         void qc.invalidateQueries({ queryKey: appKeys.status });
         void qc.invalidateQueries({ queryKey: appKeys.projects });
+      });
+      on("replay", (d) => {
+        schedule(d.trace_id);
+        if (typeof d.new_trace_id === "string") schedule(d.new_trace_id);
+      });
+      on("import", (d) => {
+        void qc.invalidateQueries({ queryKey: ["imports"] });
+        if (d.state !== "running") void qc.invalidateQueries({ queryKey: runKeys.lists() });
+      });
+      on("chat", (d) => {
+        chatStream.dispatchEvent(new CustomEvent("event", { detail: { session_id: d.session_id, event: d.event as ChatEvent } }));
+        const kind = (d.event as ChatEvent | undefined)?.kind;
+        if (kind === "result" || kind === "error" || kind === "status") void qc.invalidateQueries({ queryKey: ["chat-sessions"] });
+      });
+      // A coding agent asked to show something (MCP show_in_ui).
+      on("navigate", (d) => {
+        if (typeof d.path === "string") go(d.path);
       });
       on("activity", (d) => {
         if (String(d.kind ?? "").startsWith("push")) void qc.invalidateQueries({ queryKey: appKeys.pushes });

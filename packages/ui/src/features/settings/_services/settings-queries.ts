@@ -119,3 +119,14 @@ export function useAgentAction() {
     },
   });
 }
+
+/** Saves how neatroots re-runs a project's agent (command or HTTP endpoint); empty values remove it. */
+export function useRerunTarget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { project: string; command?: string; cwd?: string; url?: string }) => post(`/api/projects/${encodeURIComponent(v.project)}/rerun`, { command: v.command, cwd: v.cwd, url: v.url }),
+    onSuccess: (_d, v) => toast.success(v.command || v.url ? `Replay set up for ${v.project}` : `Replay removed for ${v.project}`),
+    onError: (e) => toast.error(`Couldn't save: ${(e as Error).message}`),
+    onSettled: () => void qc.invalidateQueries({ queryKey: appKeys.projects }),
+  });
+}
