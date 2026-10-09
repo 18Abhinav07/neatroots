@@ -240,7 +240,7 @@ neatroots replay <trace-id> --input "Refund order 2002" --model gpt-4o-mini
 
 The **Checks** page lists everything neatroots watches for:
 - **Rules** run in code on every span.
-- **Questions** go to the decision model. For each agent, the LLM picks the library questions that fit its goal, system prompt and tools, and may write new ones for risks the library does not cover. Two questions always run: ignored tool errors and followed injected instructions.
+- **Questions** go to the decision model. For each agent, the LLM picks the library questions that fit its goal, system prompt and tools, and may write new ones for risks the library does not cover. Three questions always run: ignored tool errors, followed injected instructions, and personal data in the answer.
 - **Your own checks:** click **New check**, describe the problem in a sentence, and neatroots drafts a yes/no question. **Preview on recent runs** shows how often it would fire before you save it.
 - **Sharing checks:** keep them in your repository's `.neatroots/checks/` folder to share with your team. `neatroots checks validate <file>` checks the YAML. The format is in [checks.md](checks.md).
 
