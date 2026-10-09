@@ -41,7 +41,7 @@ export function SettingsPage({ status, tab: raw }: { status?: Status; tab?: stri
           <EmptyState variant="bordered" state="loading" title="Loading settings" />
         ) : (
           <>
-            {tab === "projects" && <ProjectsSection hooks={status.steering.hooks_connected} />}
+            {tab === "projects" && <ProjectsSection hooks={status.steering.hooks_connected} steerPython={status.install?.steer_python} steerTs={status.install?.steer_ts} />}
             {tab === "models" && (
               <>
                 <LlmSection status={status} />

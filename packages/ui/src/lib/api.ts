@@ -143,6 +143,15 @@ export interface SpanDetail {
   scope: { name: string; version: string | null };
 }
 
+export interface AgentClient {
+  id: string;
+  label: string;
+  detected: boolean;
+  connected: boolean;
+  where: string;
+  note?: string;
+}
+
 export interface Status {
   version: string;
   port: number;
@@ -157,6 +166,7 @@ export interface Status {
   tier: { tier: string; memoryGb: number; description: string; platform: string };
   steering: { enabled: boolean; hooks_connected: number };
   mcp?: { last_seen_ms: number | null };
+  install?: { mode: "bundle" | "source" | "other"; root: string | null; steer_python: string | null; steer_ts: string | null };
   cloud: { endpoint: string; has_key: boolean };
   classifier?: {
     laya: { state: string; message: string | null; progress: number | null; url: string | null };

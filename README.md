@@ -30,9 +30,13 @@ curl -fsSL https://raw.githubusercontent.com/neatlogs/neatlogs-bolt/main/install
 neatbolt start                                        # http://localhost:4100
 ```
 
-The installer builds Bolt into `~/.neatbolt` (with its own Node.js if yours is older than 22), adds a
-`neatbolt` command to `~/.local/bin`, and needs no sudo. Add `-s -- --service` to run Bolt at login.
-While the repository is private: `git clone https://github.com/neatlogs/neatlogs-bolt.git && sh neatlogs-bolt/install.sh`.
+The installer downloads the prebuilt release (one 15 MB bundle for macOS and Linux) into `~/.neatbolt`,
+uses your Node.js if it is 22 or newer (otherwise it fetches its own), adds a `neatbolt` command to
+`~/.local/bin`, and offers to connect the coding agents it finds. No sudo, no git, no build; it takes
+a few seconds. Add `-s -- --service` to run Bolt at login.
+
+While the repository is private, fetch the installer with the GitHub CLI (it then downloads the release
+the same way): `gh api -H "Accept: application/vnd.github.raw" repos/neatlogs/neatlogs-bolt/contents/install.sh | sh`.
 
 **[Getting started](docs/getting-started.md)** walks through models, connecting an agent, reading
 findings, checks, steering, coding agents and privacy. **[Team testing](docs/team-testing.md)** is
@@ -94,10 +98,11 @@ See [docs/steering.md](docs/steering.md).
 ## Coding agents
 
 ```bash
-claude mcp add --scope user neatbolt -- neatbolt mcp
+neatbolt connect            # finds Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code, Claude Desktop
 ```
 
-Or any MCP client at `http://localhost:4100/mcp`. Tools: `get_current_run`, `search_runs`,
+It adds a `neatbolt` entry to each agent's own MCP settings (or Settings → Coding agents in the app does
+it with one click). Any other MCP client can use `http://localhost:4100/mcp`. Tools: `get_current_run`, `search_runs`,
 `get_run_outline`, `get_span`, `list_findings`, `explain_run`, `ask`, `judge`, `create_check`,
 `preview_check`, `annotate`, `rerun`, `push_to_cloud`. See [docs/mcp.md](docs/mcp.md) and the skills
 in [skills/](skills/).

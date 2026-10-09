@@ -5,12 +5,10 @@ import path from "node:path";
 import type { Command } from "commander";
 import { boltHome, loadConfig } from "../config.js";
 import { port, running } from "./util.js";
+import { bundleDir, cliPath, sourceDir } from "../util/install.js";
 
 const LABEL = "com.neatlogs.neatbolt";
 
-function cliPath(): string {
-  return fs.realpathSync(process.argv[1]);
-}
 
 function logFile(): string {
   return path.join(boltHome(), "logs", "neatbolt.log");
@@ -104,12 +102,6 @@ function restartService(): void {
   else spawnSync("systemctl", ["--user", "restart", "neatbolt.service"], { stdio: "ignore" });
 }
 
-/** The source checkout this CLI was built from (installer or git clone), if there is one. */
-function sourceDir(): string | undefined {
-  const dir = path.resolve(path.dirname(cliPath()), "..", "..", "..");
-  return fs.existsSync(path.join(dir, "install.sh")) && fs.existsSync(path.join(dir, "pnpm-workspace.yaml")) ? dir : undefined;
-}
-
 /** neatbolt service (start at login) and neatbolt update. */
 export function registerServiceCommands(program: Command): void {
   const service = program.command("service").description("Run Bolt in the background and start it at login");
@@ -164,13 +156,24 @@ export function registerServiceCommands(program: Command): void {
 
   program
     .command("update")
-    .description("Update Bolt to the latest version (installs made with install.sh or a git clone)")
-    .option("--ref <ref>", "branch or tag to update to")
+    .description("Update Bolt to the latest version")
+    .option("--version <tag>", "release to install, e.g. v0.2.0 (prebuilt installs)")
+    .option("--ref <ref>", "branch or tag to build (source installs)")
     .action((opts) => {
-      const dir = sourceDir();
-      if (!dir) throw new Error("this copy of Bolt was not installed from source; reinstall with the install script");
-      const env = { ...process.env, NEATBOLT_SOURCE_DIR: dir, NEATBOLT_UPDATE: "1", ...(opts.ref ? { NEATBOLT_REF: opts.ref } : {}) };
-      const r = spawnSync("sh", [path.join(dir, "install.sh")], { stdio: "inherit", env });
+      const bundle = bundleDir();
+      const dir = bundle ? undefined : sourceDir();
+      if (!bundle && !dir) throw new Error("this copy of Bolt wasn't installed with the install script; reinstall with it to get updates");
+      // Keep the Node this runs on, and rewrite the command where it was installed.
+      const env: NodeJS.ProcessEnv = { ...process.env, NEATBOLT_UPDATE: "1", NEATBOLT_NODE: process.execPath };
+      if (process.env.NEATBOLT_WRAPPER) env.NEATBOLT_BIN_DIR = path.dirname(process.env.NEATBOLT_WRAPPER);
+      if (bundle) {
+        env.NEATBOLT_INSTALL_DIR = path.dirname(bundle);
+        if (opts.version) env.NEATBOLT_VERSION = opts.version;
+      } else {
+        env.NEATBOLT_SOURCE_DIR = dir;
+        if (opts.ref) env.NEATBOLT_REF = opts.ref;
+      }
+      const r = spawnSync("sh", [path.join(bundle ?? dir!, "install.sh")], { stdio: "inherit", env });
       if (r.status !== 0) {
         process.exitCode = r.status ?? 1;
         return;

@@ -4,8 +4,13 @@ Bolt serves MCP over streamable HTTP at `http://localhost:4100/mcp` and over std
 `neatbolt mcp` (which starts Bolt if it is not running). Both expose the same tools.
 
 ```bash
-claude mcp add --scope user neatbolt -- neatbolt mcp
+neatbolt connect             # Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code, Claude Desktop
+neatbolt connect --print cursor   # what to add by hand
 ```
+
+`neatbolt connect` registers `~/.local/bin/neatbolt mcp` (the installer's command, which survives
+updates) with each agent, in that agent's own settings file or, for Claude Code, through `claude mcp add
+--scope user`.
 
 | Tool | Returns | Model |
 | --- | --- | --- |

@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import type { InsightWindow, Status } from "@/lib/api";
-import { useProjects } from "../../settings/_services/settings-queries";
+import { useAgents, useProjects } from "../../settings/_services/settings-queries";
 import { useInsights } from "../_services/home-queries";
 import { DigestCard } from "./digest-card";
 import { Health } from "./health";
@@ -30,6 +30,7 @@ export function HomePage({ status }: { status?: Status }) {
   const [win, setWin] = useState<InsightWindow>(savedWindow);
   const { data, error } = useInsights(win);
   const { data: projects } = useProjects();
+  const { data: agents } = useAgents();
   const choose = (w: InsightWindow) => {
     setWin(w);
     try {
@@ -61,7 +62,7 @@ export function HomePage({ status }: { status?: Status }) {
       }
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 pt-1 pb-10">
-        {status && <SetupGuide status={status} projects={projects?.projects ?? []} />}
+        {status && <SetupGuide status={status} projects={projects?.projects ?? []} agents={agents?.agents ?? []} />}
         {error && <EmptyState variant="bordered" state="error" title="Couldn't load insights" description={(error as Error).message} />}
         {everReceived && data && !hasRuns && (
           <EmptyState

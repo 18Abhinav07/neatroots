@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, del, post, type LlmInfo, type ProjectRow } from "../../../lib/api";
+import { api, del, post, type AgentClient, type LlmInfo, type ProjectRow } from "@/lib/api";
 import { appKeys } from "../../runs/_services/run-keys";
 
 export interface ForwardRow {
@@ -99,4 +99,23 @@ export function useLlmActions() {
       onError: (e) => toast.error(`Test failed: ${(e as Error).message}`),
     }),
   };
+}
+
+export function useAgents() {
+  return useQuery({ queryKey: ["agents"], queryFn: () => api<{ command: string[]; agents: AgentClient[] }>("/api/agents") });
+}
+
+/** Connects or disconnects a coding agent: Bolt edits that agent's own MCP config. */
+export function useAgentAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; action: "connect" | "disconnect" }) =>
+      post<{ ok: boolean; message: string; note: string | null }>(`/api/agents/${v.id}/${v.action}`),
+    onSuccess: (r, v) => toast.success(v.action === "connect" ? `Connected. ${r.note ?? "Start a new session in it to load Neatlogs Bolt."}` : "Disconnected"),
+    onError: (e) => toast.error(`Couldn't change it: ${(e as Error).message}`),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["agents"] });
+      void qc.invalidateQueries({ queryKey: appKeys.status });
+    },
+  });
 }

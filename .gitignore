@@ -13,3 +13,4 @@ coverage/
 /.neatbolt-dev/
 .neatbolt-installed
 docs/internal/
+release/

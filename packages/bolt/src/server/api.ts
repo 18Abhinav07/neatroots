@@ -10,6 +10,8 @@ import { getCloudKey, setCloudKey, deleteCloudKey, getSecret } from "../relay/ke
 import { mountModelsApi } from "./api-models.js";
 import { mountChecksApi } from "./api-checks.js";
 import { mountInsightsApi } from "./api-insights.js";
+import { mountAgentsApi } from "./api-agents.js";
+import { installInfo } from "../util/install.js";
 import { err, body } from "./util.js";
 import { askRuns } from "../engine/assist.js";
 import { loadTrace } from "../engine/trace.js";
@@ -111,6 +113,7 @@ export function mountApi(app: Hono, bolts: Bolt): void {
   mountModelsApi(app, bolts);
   mountChecksApi(app, bolts);
   mountInsightsApi(app, bolts);
+  mountAgentsApi(app);
 
   app.get("/api/status", async (c) => {
     const status = engine ? await engine.status() : null;
@@ -121,6 +124,7 @@ export function mountApi(app: Hono, bolts: Bolt): void {
       uptime_ms: Date.now() - bolts.startedMs,
       port: bolts.config.port,
       home: bolts.home,
+      install: installInfo(),
       stats: bolts.store.stats(),
       engine: status,
       tier: { ...tier, platform: `${os.platform()} ${os.arch()}` },

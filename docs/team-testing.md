@@ -9,17 +9,18 @@ The run takes about 30 minutes. Write down anything that confuses you; confusion
 
 ## Before you start
 
-- macOS or Linux, about 2 GB free, and git.
+- macOS or Linux and about 2 GB free.
+- The [GitHub CLI](https://cli.github.com), signed in (`gh auth login`) with your neatlogs account, while the repository is private.
 - Optional: [Ollama](https://ollama.com) with a model (`ollama pull qwen3:8b`), or an Anthropic API key. Without one of these, only the rules run.
 - Python 3.9+ for the samples.
 
 ## 1. Install (5 minutes)
 
 ```bash
-git clone https://github.com/neatlogs/neatlogs-bolt.git && sh neatlogs-bolt/install.sh
+gh api -H "Accept: application/vnd.github.raw" repos/neatlogs/neatlogs-bolt/contents/install.sh | sh
 ```
 
-Once the repository is public, this one line does the same:
+It downloads the prebuilt release through the GitHub CLI and takes a few seconds. Say yes when it offers to connect your coding agents. Once the repository is public, this one line does the same:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/neatlogs/neatlogs-bolt/main/install.sh | sh
@@ -92,13 +93,17 @@ Run it a few times, including once where you expect it to go wrong.
 - [ ] Note anything it missed that you would have wanted flagged.
 - [ ] **New check** on the Checks page turned a one-sentence concern into a check that previewed sensibly.
 
-## 4. The coding-agent loop (5 minutes, if you use Claude Code)
+## 4. The coding-agent loop (5 minutes)
+
+If you didn't connect your coding agent during install:
 
 ```bash
-claude mcp add --scope user neatbolt -- neatbolt mcp
+neatbolt connect
 ```
 
-In your agent's repository, ask Claude Code: *"Look at my last run in Bolt, explain what went wrong, and add a check for it."*
+- [ ] It found the coding agents you use (Claude Code, Codex, Cursor, …), and connecting worked.
+
+In your agent's repository, ask your coding agent (Claude Code here): *"Look at my last run in Bolt, explain what went wrong, and add a check for it."*
 
 - [ ] Claude Code found the run and the problem without you pasting anything.
 - [ ] It created a check. The check appears on the Checks page.

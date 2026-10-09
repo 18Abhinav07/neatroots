@@ -4,7 +4,7 @@ import { CodeLine } from "@/components/code-line";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
-import type { ProjectRow, Status } from "@/lib/api";
+import type { AgentClient, ProjectRow, Status } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -20,12 +20,15 @@ interface Step {
   body: ReactNode;
 }
 
-function steps(status: Status, projects: ProjectRow[]): Step[] {
+function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): Step[] {
   const port = status.port;
   const llm = status.engine?.llm;
   const hosted = llm?.where && llm.where !== "local";
   const steered = projects.filter((p) => p.settings.steering !== "off");
   const names = projects.map((p) => p.project);
+  const connected = agents.filter((a) => a.connected).map((a) => a.label);
+  const found = agents.filter((a) => a.detected && !a.connected).map((a) => a.label);
+  const steerPy = status.install?.steer_python ?? "~/.neatbolt/app/steer/python/neatbolt-steer";
   return [
     {
       id: "runs",
@@ -67,13 +70,26 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
       short: "Coding agent",
       title: "Let your coding agent read what Neatlogs Bolt finds",
       optional: true,
-      done: !!status.mcp?.last_seen_ms,
-      state: status.mcp?.last_seen_ms ? `a coding agent last asked ${ago(status.mcp.last_seen_ms)}` : "",
+      done: connected.length > 0 || !!status.mcp?.last_seen_ms,
+      state: status.mcp?.last_seen_ms
+        ? `${connected.length ? `${connected.join(", ")} connected; ` : ""}a coding agent last asked ${ago(status.mcp.last_seen_ms)}`
+        : connected.length
+          ? `${connected.join(", ")} connected`
+          : "",
       body: (
         <>
-          <p>Claude Code, Cursor or Codex can read your runs and findings, fix the problem and add a check so it is caught next time.</p>
-          <CodeLine text="claude mcp add --scope user neatbolt -- neatbolt mcp" />
-          <p>Then ask it: “Fix what Bolt found in my last run.”</p>
+          <p>
+            Claude Code, Codex, Cursor and other coding agents can read your runs and findings, fix the problem and add a check so it is caught next time.
+            {found.length ? ` Found here: ${found.join(", ")}.` : ""}
+          </p>
+          <CodeLine text="neatbolt connect --detected" />
+          <p>
+            Or connect them one at a time in{" "}
+            <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/agents">
+              Settings → Coding agents
+            </a>
+            . Then ask your agent: “Fix what Neatlogs Bolt found in my last run.”
+          </p>
         </>
       ),
     },
@@ -87,7 +103,7 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
       body: (
         <>
           <p>When a check fires mid-run, Neatlogs Bolt can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
-          <CodeLine text={`pip install ~/.neatbolt/src/python/neatbolt-steer\nneatbolt steering advisory --project ${names[0] ?? "my-agent"}`} />
+          <CodeLine text={`pip install ${steerPy}\nneatbolt steering advisory --project ${names[0] ?? "my-agent"}`} />
           <p>
             Then wrap your client: <span className="font-mono">client = neatbolt_steer.wrap(OpenAI())</span>. Turn it on per project in{" "}
             <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/projects">
@@ -126,8 +142,8 @@ const DAILY = [
  * How to use Neatlogs Bolt, as steps checked against what is actually set up. Expanded while the
  * essentials are missing; one line once they are done.
  */
-export function SetupGuide({ status, projects }: { status: Status; projects: ProjectRow[] }) {
-  const list = steps(status, projects);
+export function SetupGuide({ status, projects, agents }: { status: Status; projects: ProjectRow[]; agents: AgentClient[] }) {
+  const list = steps(status, projects, agents);
   const essentialsDone = list.filter((s) => !s.optional).every((s) => s.done);
   const [open, setOpen] = useState<boolean | undefined>(undefined);
   const expanded = open ?? !essentialsDone;

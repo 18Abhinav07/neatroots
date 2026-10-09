@@ -15,26 +15,29 @@ This guide covers installing Bolt, connecting an agent, reading what it finds, a
 curl -fsSL https://raw.githubusercontent.com/neatlogs/neatlogs-bolt/main/install.sh | sh
 ```
 
-While the repository is private, clone it first (your git credentials are used), then run the same installer:
+While the repository is private, fetch the installer with the [GitHub CLI](https://cli.github.com) (signed in with `gh auth login` to an account in the neatlogs org). The installer then downloads the release through it too:
 
 ```bash
-git clone https://github.com/neatlogs/neatlogs-bolt.git && sh neatlogs-bolt/install.sh
+gh api -H "Accept: application/vnd.github.raw" repos/neatlogs/neatlogs-bolt/contents/install.sh | sh
 ```
 
 The installer:
+- downloads the prebuilt release, one bundle of about 15 MB for macOS and Linux on Apple silicon, Intel and arm64, and checks its checksum;
 - uses your Node.js if it is version 22 or newer; otherwise it downloads Node.js 24 into `~/.neatbolt/node` and checks its checksum;
-- clones Bolt into `~/.neatbolt/src` and builds it, which takes a minute or two;
 - puts a `neatbolt` command in `~/.local/bin` and adds that folder to your shell's PATH;
-- needs no sudo and changes nothing outside your home folder.
+- offers to connect the coding agents it finds (Claude Code, Codex, Cursor and others; see section 8);
+- needs no sudo and changes nothing outside your home folder, except the MCP settings of agents you agree to connect.
 
-You need macOS or Linux (on Windows, use WSL), git, and about 2 GB of disk: 300 MB for Bolt and 1.5 GB for Laya, the local decision model.
+You need macOS or Linux (on Windows, use WSL) and about 2 GB of disk: 70 MB for Bolt and 1.5 GB for Laya, the local decision model.
 
 Installer options go after `sh -s --`, for example `curl … | sh -s -- --service`:
 
 | Option | What it does |
 | --- | --- |
 | `--service` | Also run Bolt in the background now and every time you log in |
-| `--ref <branch or tag>` | Install a specific version |
+| `--version <tag>` | Install a specific release, e.g. `v0.1.0` |
+| `--connect`, `--no-connect` | Connect the coding agents found here without asking, or don't offer |
+| `--from-source`, `--ref <branch>` | Clone and build instead of downloading (needs git) |
 | `--no-modify-path` | Leave your shell profile alone; the installer prints the line to add instead |
 | `--dir <path>`, `--bin-dir <path>` | Install somewhere other than `~/.neatbolt` and `~/.local/bin` |
 | `--uninstall` | Remove Bolt but keep your runs and settings |
@@ -191,11 +194,16 @@ Limits:
 
 ## 8. Coding agents (MCP)
 
-Give Claude Code, Cursor or Codex the runs, findings and explanations:
+Give your coding agent the runs, findings and explanations:
 
 ```bash
-claude mcp add --scope user neatbolt -- neatbolt mcp
+neatbolt connect                 # pick from the agents found on this machine
+neatbolt connect cursor codex    # or name them
+neatbolt connect --list          # what's found and what's connected
+neatbolt connect --remove cursor
 ```
+
+Supported: Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code and Claude Desktop. Each gets a `neatbolt` entry in its own MCP settings, in the format its docs give; other entries are kept, and the file is backed up once (`*.neatbolt-backup`) before the first change. A settings file with comments is left alone, and Bolt prints what to add instead. **Settings → Coding agents** in the app does the same with one click.
 
 Other clients can use the HTTP endpoint `http://localhost:4100/mcp`.
 
@@ -250,6 +258,7 @@ Bolt listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Linux, a
 
 ```bash
 neatbolt update                                       # pulls, rebuilds and restarts the background service
+neatbolt connect --remove --detected   # optional; uninstalling does this too
 curl -fsSL https://raw.githubusercontent.com/neatlogs/neatlogs-bolt/main/install.sh | sh -s -- --uninstall
 ```
 

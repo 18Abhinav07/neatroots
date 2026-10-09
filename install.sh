@@ -4,28 +4,39 @@
 #   curl -fsSL https://raw.githubusercontent.com/neatlogs/neatlogs-bolt/main/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --service      # also start Bolt at login
 #
-# Installs into ~/.neatbolt (source and, if needed, a private Node.js) and puts `neatbolt` in
-# ~/.local/bin. No sudo. Your runs and settings also live in ~/.neatbolt and are kept on update.
+# Downloads the prebuilt release (one bundle for macOS and Linux) into ~/.neatbolt/app and puts
+# `neatbolt` in ~/.local/bin. Uses your Node.js if it is 22 or newer, otherwise downloads a private
+# copy into ~/.neatbolt/node. No sudo, no git, no build. Your runs and settings live in ~/.neatbolt
+# and are kept on update.
 #
 # Options (flags or environment variables):
 #   --service            start Bolt in the background now and at login   (NEATBOLT_SERVICE=1)
-#   --ref <ref>          branch or tag to install                         (NEATBOLT_REF, default main)
-#   --repo <url>         git URL or local path to install from            (NEATBOLT_REPO)
+#   --version <tag>      release to install, e.g. v0.1.0                 (NEATBOLT_VERSION, default latest)
+#   --connect            connect the coding agents found here, no prompt (NEATBOLT_CONNECT=1; 0 to skip)
+#   --no-connect         don't offer to connect coding agents
 #   --dir <path>         install directory                                (NEATBOLT_INSTALL_DIR, default ~/.neatbolt)
-#   --bin-dir <path>     where the `neatbolt` command goes                   (NEATBOLT_BIN_DIR, default ~/.local/bin)
+#   --bin-dir <path>     where the `neatbolt` command goes                (NEATBOLT_BIN_DIR, default ~/.local/bin)
 #   --no-modify-path     do not add the bin dir to your shell profile     (NEATBOLT_NO_MODIFY_PATH=1)
-#   --uninstall          remove the command, service, source and private Node (keeps your data)
+#   --bundle <file>      install from a downloaded neatbolt.tar.gz        (NEATBOLT_BUNDLE)
+#   --from-source        clone and build instead of downloading           (NEATBOLT_FROM_SOURCE=1)
+#   --ref <ref>          branch or tag to build (implies --from-source)   (NEATBOLT_REF, default main)
+#   --uninstall          remove the command, service and app (keeps your data)
 #
 # The whole script is a function called on the last line, so a partial download runs nothing.
 
 set -eu
 
 main() {
-  REPO="${NEATBOLT_REPO:-https://github.com/neatlogs/neatlogs-bolt.git}"
-  REF="${NEATBOLT_REF:-main}"
+  GH_REPO="${NEATBOLT_GITHUB_REPO:-neatlogs/neatlogs-bolt}"
+  REPO="${NEATBOLT_REPO:-https://github.com/$GH_REPO.git}"
+  REF="${NEATBOLT_REF:-}"
+  VERSION="${NEATBOLT_VERSION:-latest}"
+  BUNDLE="${NEATBOLT_BUNDLE:-}"
+  FROM_SOURCE="${NEATBOLT_FROM_SOURCE:-0}"
   DIR="${NEATBOLT_INSTALL_DIR:-$HOME/.neatbolt}"
   BIN_DIR="${NEATBOLT_BIN_DIR:-$HOME/.local/bin}"
   SERVICE="${NEATBOLT_SERVICE:-0}"
+  CONNECT="${NEATBOLT_CONNECT:-ask}"
   NO_MODIFY_PATH="${NEATBOLT_NO_MODIFY_PATH:-0}"
   UPDATE="${NEATBOLT_UPDATE:-0}"
   UNINSTALL=0
@@ -35,40 +46,56 @@ main() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --service) SERVICE=1 ;;
-      --ref) REF="$2"; shift ;;
-      --repo) REPO="$2"; shift ;;
+      --version) VERSION="$2"; shift ;;
+      --connect) CONNECT=1 ;;
+      --no-connect) CONNECT=0 ;;
       --dir) DIR="$2"; shift ;;
       --bin-dir) BIN_DIR="$2"; shift ;;
       --no-modify-path) NO_MODIFY_PATH=1 ;;
+      --bundle) BUNDLE="$2"; shift ;;
+      --from-source) FROM_SOURCE=1 ;;
+      --ref) REF="$2"; FROM_SOURCE=1; shift ;;
+      --repo) REPO="$2"; FROM_SOURCE=1; shift ;;
       --uninstall) UNINSTALL=1 ;;
-      -h|--help) sed -n '2,22p' "$0" 2>/dev/null || true; exit 0 ;;
+      -h|--help) sed -n '2,27p' "$0" 2>/dev/null || true; exit 0 ;;
       *) fail "unknown option: $1" ;;
     esac
     shift
   done
 
   SRC="${NEATBOLT_SOURCE_DIR:-$DIR/src}"
+  APP="$DIR/app"
   LOG="$DIR/install.log"
+  [ -n "$REF" ] || REF=main
 
   if [ "$UNINSTALL" = 1 ]; then uninstall; return; fi
 
   detect_platform
-  need git
   need tar
   mkdir -p "$DIR" "$BIN_DIR"
   : >"$LOG"
 
-  if [ "$UPDATE" = 1 ]; then say "Updating Bolt in $SRC"; else say "Installing Neatlogs Bolt"; fi
+  # An update keeps the kind of install it found: a source checkout stays one.
+  if [ -n "${NEATBOLT_SOURCE_DIR:-}" ]; then FROM_SOURCE=1; fi
+  if [ "$UPDATE" = 1 ] && [ ! -f "$APP/.neatbolt-bundle" ] && [ -f "$SRC/.neatbolt-installed" ]; then FROM_SOURCE=1; fi
+
+  if [ "$UPDATE" = 1 ]; then say "Updating Neatlogs Bolt"; else say "Installing Neatlogs Bolt"; fi
   ensure_node
-  fetch_source
-  build
+  if [ "$FROM_SOURCE" = 1 ]; then
+    install_from_source
+  elif ! install_bundle; then
+    if [ -n "$BUNDLE" ] || [ "$VERSION" != latest ]; then fail "could not install the prebuilt bundle (see $LOG)"; fi
+    step "No prebuilt release reachable for $GH_REPO; building from source instead"
+    install_from_source
+  fi
   if [ "$UPDATE" = 1 ]; then
     [ -f "$BIN_DIR/neatbolt" ] && write_command
-    ok "Bolt updated ($(version))"
+    ok "Neatlogs Bolt updated ($(version))"
     return
   fi
   write_command
   setup_path
+  connect_agents
   finish
 }
 
@@ -105,13 +132,19 @@ detect_platform() {
   esac
 }
 
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi
+}
+
 # -------------------------------------------------------------------- node
 
 node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
 
 ensure_node() {
   NODE=""
-  if [ "${NEATBOLT_FORCE_NODE:-0}" != 1 ] && command -v node >/dev/null 2>&1 && [ "$(node_major node)" -ge 22 ]; then
+  if [ -n "${NEATBOLT_NODE:-}" ] && [ -x "$NEATBOLT_NODE" ] && [ "$(node_major "$NEATBOLT_NODE")" -ge 22 ]; then
+    NODE="$NEATBOLT_NODE"
+  elif [ "${NEATBOLT_FORCE_NODE:-0}" != 1 ] && command -v node >/dev/null 2>&1 && [ "$(node_major node)" -ge 22 ]; then
     NODE="$(command -v node)"
   elif [ -x "$DIR/node/bin/node" ] && [ "$(node_major "$DIR/node/bin/node")" -ge 22 ]; then
     NODE="$DIR/node/bin/node"
@@ -121,10 +154,6 @@ ensure_node() {
   fi
   NODE_BIN="$(dirname "$NODE")"
   ok "Node.js $("$NODE" -v) ($NODE)"
-}
-
-sha256() {
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi
 }
 
 install_node() {
@@ -145,7 +174,75 @@ install_node() {
   rm -rf "$tmp"
 }
 
-# ------------------------------------------------------------------ source
+# ------------------------------------------------------------ prebuilt bundle
+
+# Fetches neatbolt.tar.gz and its .sha256 into $1. Public releases come straight from GitHub; while
+# the repository is private, the GitHub CLI (gh auth login) is used instead.
+download_release() {
+  asset="neatbolt.tar.gz"
+  if [ "$VERSION" = latest ]; then base="https://github.com/$GH_REPO/releases/latest/download"; else base="https://github.com/$GH_REPO/releases/download/$VERSION"; fi
+  if command -v curl >/dev/null 2>&1 &&
+    curl -fsSL -o "$1/$asset" "$base/$asset" >>"$LOG" 2>&1 &&
+    curl -fsSL -o "$1/$asset.sha256" "$base/$asset.sha256" >>"$LOG" 2>&1; then
+    return 0
+  fi
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    step "Downloading with the GitHub CLI"
+    if [ "$VERSION" = latest ]; then
+      gh release download -R "$GH_REPO" -p "$asset" -p "$asset.sha256" -D "$1" --clobber >>"$LOG" 2>&1 && return 0
+    else
+      gh release download "$VERSION" -R "$GH_REPO" -p "$asset" -p "$asset.sha256" -D "$1" --clobber >>"$LOG" 2>&1 && return 0
+    fi
+  fi
+  return 1
+}
+
+install_bundle() {
+  tmp="$(mktemp -d)"
+  if [ -n "$BUNDLE" ]; then
+    [ -f "$BUNDLE" ] || fail "no such file: $BUNDLE"
+    step "Installing from $BUNDLE"
+    cp "$BUNDLE" "$tmp/neatbolt.tar.gz"
+    [ -f "$BUNDLE.sha256" ] && cp "$BUNDLE.sha256" "$tmp/neatbolt.tar.gz.sha256"
+  else
+    step "Downloading Neatlogs Bolt ($VERSION)"
+    if ! download_release "$tmp"; then rm -rf "$tmp"; return 1; fi
+  fi
+  if [ -f "$tmp/neatbolt.tar.gz.sha256" ]; then
+    want="$(cut -d' ' -f1 "$tmp/neatbolt.tar.gz.sha256")"
+    [ "$(sha256 "$tmp/neatbolt.tar.gz")" = "$want" ] || fail "the download did not match its checksum"
+  elif [ -z "$BUNDLE" ]; then
+    fail "the release has no checksum file"
+  fi
+  rm -rf "$APP.new"
+  mkdir -p "$APP.new"
+  run tar -xzf "$tmp/neatbolt.tar.gz" -C "$APP.new"
+  rm -rf "$tmp"
+  [ -f "$APP.new/bolt/dist/cli.js" ] && [ -f "$APP.new/.neatbolt-bundle" ] || fail "the bundle is incomplete"
+  "$NODE" "$APP.new/bolt/dist/cli.js" --version >>"$LOG" 2>&1 || fail "the downloaded Bolt doesn't start with $NODE"
+  # Swap in one step, so a failed update leaves the old version working.
+  rm -rf "$APP.old"
+  [ -d "$APP" ] && mv "$APP" "$APP.old"
+  mv "$APP.new" "$APP"
+  rm -rf "$APP.old"
+  CLI="$APP/bolt/dist/cli.js"
+  STEER_PY="$APP/steer/python/neatbolt-steer"
+  STEER_TS="$APP/steer/ts"
+  GUIDE="$APP/docs/getting-started.md"
+  ok "Neatlogs Bolt $(version) in $APP"
+}
+
+# ------------------------------------------------------------ from source
+
+install_from_source() {
+  need git
+  fetch_source
+  build
+  CLI="$SRC/packages/bolt/dist/cli.js"
+  STEER_PY="$SRC/python/neatbolt-steer"
+  STEER_TS="$SRC/packages/steer-ts"
+  GUIDE="$SRC/docs/getting-started.md"
+}
 
 fetch_source() {
   if [ -f "$SRC/.neatbolt-installed" ]; then
@@ -169,8 +266,6 @@ fetch_source() {
   ok "Source $(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo local) in $SRC"
 }
 
-# ------------------------------------------------------------------- build
-
 pnpm() {
   (cd "$SRC" && PATH="$NODE_BIN:$PATH" "$NODE_BIN/npm" exec --yes --package="pnpm@$PNPM_VERSION" -- pnpm "$@")
 }
@@ -184,15 +279,15 @@ build() {
   ok "Built"
 }
 
-version() { "$NODE" "$SRC/packages/bolt/dist/cli.js" --version 2>/dev/null || echo "?"; }
+version() { "$NODE" "$CLI" --version 2>/dev/null || echo "?"; }
 
 # ----------------------------------------------------------------- command
 
 write_command() {
   cat >"$BIN_DIR/neatbolt" <<EOF
 #!/bin/sh
-# Neatlogs Bolt (written by install.sh; rerun it or use \`neatbolt update\` to update)
-exec "$NODE" "$SRC/packages/bolt/dist/cli.js" "\$@"
+# Neatlogs Bolt (written by install.sh; \`neatbolt update\` updates it)
+NEATBOLT_WRAPPER="$BIN_DIR/neatbolt" exec "$NODE" "$CLI" "\$@"
 EOF
   chmod +x "$BIN_DIR/neatbolt"
   ok "Command: $BIN_DIR/neatbolt ($(version))"
@@ -222,12 +317,39 @@ setup_path() {
   PATH_NOTE="Open a new terminal (or run: source $rc) so \`neatbolt\` is on your PATH."
 }
 
+# ------------------------------------------------------------ coding agents
+
+# Offers to register Bolt's MCP server with the coding agents on this machine (Claude Code, Codex,
+# Cursor, …). Asks on the terminal even under `curl | sh`; never edits anything without a yes or
+# --connect.
+connect_agents() {
+  [ "$CONNECT" = 0 ] && return
+  found="$("$BIN_DIR/neatbolt" connect --list-detected 2>/dev/null || true)"
+  if [ -z "$found" ]; then return; fi
+  if [ "$CONNECT" = 1 ]; then
+    "$BIN_DIR/neatbolt" connect --detected --yes || true
+    return
+  fi
+  if [ -t 1 ] && [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
+    echo
+    printf '%s' "Connect Neatlogs Bolt to $found, so they can read its findings over MCP? [Y/n] "
+    ans=""
+    read -r ans </dev/tty || ans=n
+    case "$ans" in
+      ""|y|Y|yes|YES) "$BIN_DIR/neatbolt" connect --detected --yes || true ;;
+      *) CONNECT_NOTE="Connect coding agents later: neatbolt connect" ;;
+    esac
+  else
+    CONNECT_NOTE="Connect your coding agents ($found): neatbolt connect --detected"
+  fi
+}
+
 finish() {
   echo
   if [ "$SERVICE" = 1 ]; then
     "$BIN_DIR/neatbolt" service install || true
   fi
-  say "Bolt is installed."
+  say "Neatlogs Bolt is installed."
   [ -n "${PATH_NOTE:-}" ] && echo "  $PATH_NOTE"
   echo
   if [ "$SERVICE" != 1 ]; then
@@ -235,25 +357,30 @@ finish() {
   fi
   echo "  Open the app:        http://localhost:4100"
   echo "  Point your agent:    export NEATLOGS_ENDPOINT=http://localhost:4100 NEATLOGS_API_KEY=neatbolt-local"
+  [ -n "${CONNECT_NOTE:-}" ] && echo "  ${CONNECT_NOTE}"
   echo "  Check everything:    neatbolt doctor"
   echo
   if ! command -v ollama >/dev/null 2>&1; then
     echo "  ${D}No Ollama found. Rules work without it; for questions and explanations install a local model"
     echo "  (https://ollama.com, then: ollama pull qwen3:8b) or use a hosted one: neatbolt llm login anthropic${N}"
   fi
-  echo "  ${D}Steering hooks: pip install \"$SRC/python/neatbolt-steer\"  ·  npm install \"$SRC/packages/steer-ts\"${N}"
-  echo "  ${D}Guide: $SRC/docs/getting-started.md${N}"
+  echo "  ${D}Steering hooks: pip install \"$STEER_PY\"  ·  npm install \"$STEER_TS\"${N}"
+  echo "  ${D}Guide: $GUIDE${N}"
 }
 
 # --------------------------------------------------------------- uninstall
 
 uninstall() {
-  if [ -x "$BIN_DIR/neatbolt" ]; then "$BIN_DIR/neatbolt" service uninstall >/dev/null 2>&1 || true; fi
+  if [ -x "$BIN_DIR/neatbolt" ]; then
+    "$BIN_DIR/neatbolt" service uninstall >/dev/null 2>&1 || true
+    # Connected coding agents would point at a command that no longer exists.
+    "$BIN_DIR/neatbolt" connect --remove --detected 2>/dev/null || true
+  fi
   rm -f "$BIN_DIR/neatbolt"
-  rm -rf "$DIR/src" "$DIR/node" "$DIR/install.log"
-  ok "Removed the neatbolt command, background service, source and private Node.js."
+  rm -rf "$DIR/app" "$DIR/app.new" "$DIR/app.old" "$DIR/src" "$DIR/node" "$DIR/install.log"
+  ok "Removed the neatbolt command, background service, app and private Node.js."
   echo "  Your runs, settings and Laya are still in $DIR. Delete that folder to remove them too."
-  echo "  Stored API keys are in the macOS Keychain under \"neatlogs-bolts\" (Keychain Access to remove)."
+  echo "  Stored API keys are in the macOS Keychain under \"neatlogs-bolt\" (Keychain Access to remove)."
 }
 
 main "$@"

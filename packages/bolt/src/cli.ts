@@ -10,6 +10,8 @@ import { runStdioBridge } from "./mcp/stdio.js";
 import { api, ask, port, running } from "./cli/util.js";
 import { registerModelCommands } from "./cli/models.js";
 import { registerServiceCommands } from "./cli/service.js";
+import { registerConnectCommand } from "./cli/connect.js";
+import { connectClient, findClient, listClients, serverCommand, CLIENTS } from "./mcp/clients.js";
 import { parseChecks } from "./checks/registry.js";
 import { hardwareTier, LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
@@ -85,7 +87,7 @@ program
   .option("--project <name>", "project name (the SDK's service.name / workflow_name)")
   .option("--write-env", "write NEATLOGS_ENDPOINT and NEATLOGS_API_KEY to .env")
   .option("--steering <mode>", "enable steering for the project: advisory, gate or self-check")
-  .option("--mcp <client>", "register the MCP server with a coding agent: claude")
+  .option("--mcp <agent>", `connect a coding agent over MCP: ${CLIENTS.map((c) => c.id).join(", ")}`)
   .action(async (opts) => {
     const cwd = process.cwd();
     const cfg = loadConfig();
@@ -137,13 +139,16 @@ program
       await api(p, "/api/checks/reload", { method: "POST" }).catch(() => undefined);
       if (opts.steering && opts.project) await api(p, "/api/settings", { method: "POST", body: JSON.stringify({ project: opts.project, steering: opts.steering }) }).catch(() => undefined);
     }
-    const cli = path.resolve(process.argv[1] ?? "neatbolt");
-    if (opts.mcp === "claude") {
-      const { spawnSync } = await import("node:child_process");
-      const r = spawnSync("claude", ["mcp", "add", "--scope", "user", "neatbolt", "--", process.execPath, cli, "mcp"], { stdio: "inherit" });
-      console.log(r.status === 0 ? "✓ registered the neatbolt MCP server with Claude Code" : "✗ could not run `claude mcp add`; add it by hand (below)");
+    if (opts.mcp) {
+      const c = findClient(opts.mcp);
+      if (!c) throw new Error(`unknown agent "${opts.mcp}". Known: ${CLIENTS.map((x) => x.id).join(", ")}`);
+      const r = connectClient(c);
+      console.log(`${r.ok ? "✓" : "✗"} ${c.label}: ${r.message}`);
+    } else {
+      const cmd = serverCommand();
+      console.log(`\nConnect your coding agents: neatbolt connect   (Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code, Claude Desktop)`);
+      console.log(`    or by hand: command "${cmd.command}", args ${JSON.stringify(cmd.args)}, or the HTTP endpoint http://localhost:${p}/mcp`);
     }
-    console.log(`\nMCP for coding agents:\n    claude mcp add --scope user neatbolt -- ${process.execPath} ${cli} mcp\n    (Cursor/others: command "${process.execPath}", args ["${cli}", "mcp"], or the HTTP endpoint http://localhost:${p}/mcp)`);
     console.log(`\nInstrumentation tip: pass flush_interval=0.5 to neatlogs.init() so Bolt sees spans while the run is still going.`);
   });
 
@@ -202,6 +207,10 @@ program
     line(st.backend ? true : "warn", st.backend ? `decisions answered by: ${st.backend}${st.model ? ` (${st.model})` : ""}` : "no decision model (no Laya, no Jev cloud, no LLM)");
     const tier = hardwareTier();
     line(true, `${tier.memoryGb} GB memory: ${tier.tier} tier, ${tier.description}`);
+    const agents = listClients();
+    const linked = agents.filter((a) => a.connected).map((a) => a.label);
+    const unlinked = agents.filter((a) => a.detected && !a.connected).map((a) => a.label);
+    line(linked.length ? true : "warn", linked.length ? `coding agents connected over MCP: ${linked.join(", ")}` : `no coding agent connected${unlinked.length ? ` (found ${unlinked.join(", ")}: neatbolt connect)` : ""}`);
     if (up) {
       const traceId = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
       const spanId = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -403,6 +412,7 @@ checks
 
 registerModelCommands(program);
 registerServiceCommands(program);
+registerConnectCommand(program);
 
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : err);

@@ -43,4 +43,4 @@ Where the skeptic is right: a small model is not better than Claude at judging. 
 - **Not a security product.** It flags leaks and injection. It does not replace a guardrail gateway.
 - **Not a proof system.** It gives probabilities, not guarantees. For formal guarantees on reasoning, see Microsoft's interwhen (research code).
 - **Not the only local trace viewer.** Raindrop Workshop and others also hand traces to coding agents. Bolt' difference is checks, steering and findings.
-- **Not finished.** It installs from source, and the local decision model is still earning trust.
+- **Not finished.** The local decision model is still earning trust, and the repository is private until the team has tested it.

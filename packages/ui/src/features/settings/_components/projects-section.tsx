@@ -13,7 +13,7 @@ const MODES: { value: string; label: string; help: string }[] = [
 
 const HEAD = "h-9 px-3 text-eyebrow font-normal text-muted-foreground";
 
-export function ProjectsSection({ hooks }: { hooks: number }) {
+export function ProjectsSection({ hooks, steerPython, steerTs }: { hooks: number; steerPython?: string | null; steerTs?: string | null }) {
   const { data } = useProjects();
   const save = useSaveSettings();
   const projects = data?.projects ?? [];
@@ -81,8 +81,8 @@ export function ProjectsSection({ hooks }: { hooks: number }) {
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Steering needs the hook in your agent: <span className="font-mono">pip install ~/.neatbolt/src/python/neatbolt-steer</span> then{" "}
-        <span className="font-mono">neatbolt_steer.wrap(OpenAI())</span>, or <span className="font-mono">npm install ~/.neatbolt/src/packages/steer-ts</span> for TypeScript.
+        Steering needs the hook in your agent: <span className="font-mono">pip install {steerPython ?? "~/.neatbolt/app/steer/python/neatbolt-steer"}</span> then{" "}
+        <span className="font-mono">neatbolt_steer.wrap(OpenAI())</span>, or <span className="font-mono">npm install {steerTs ?? "~/.neatbolt/app/steer/ts"}</span> for TypeScript.
         Hooks connected now: <span className="tabular-nums">{hooks}</span>.
       </p>
     </SettingsPanel>
