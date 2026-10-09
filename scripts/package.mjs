@@ -8,7 +8,7 @@
 // when the machine has none. Unpacked to ~/.neatbolt/app:
 //
 //   bolt/dist/cli.js (+ dist/ui, library, proto, node_modules)
-//   steer/python/neatbolt-steer   steer/ts   docs/   install.sh   .neatbolt-bundle
+//   steer/python/neatbolt-steer   steer/ts   skills/   docs/   install.sh   .neatbolt-bundle
 
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -54,6 +54,7 @@ const skipCaches = (src) => !/(__pycache__|\.pytest_cache|\.venv|node_modules|\.
 for (const f of ["dist", "package.json", "README.md", "LICENSE"]) copy(`packages/steer-ts/${f}`, `steer/ts/${f}`);
 for (const f of ["src", "pyproject.toml", "README.md", "LICENSE"]) copy(`python/neatbolt-steer/${f}`, `steer/python/neatbolt-steer/${f}`, skipCaches);
 for (const f of ["getting-started.md", "mcp.md", "steering.md", "checks.md", "cloud.md"]) copy(`docs/${f}`, `docs/${f}`);
+copy("skills", "skills", skipCaches);
 copy("install.sh", "install.sh");
 copy("LICENSE", "LICENSE");
 let commit = "unknown";

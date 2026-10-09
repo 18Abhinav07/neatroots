@@ -1,5 +1,5 @@
 ---
-name: instrument-agent
+name: neatbolt-instrument-agent
 description: Add the public Neatlogs SDK to an agent in this repo and point it at a local Bolt, so Bolt can check its runs. Use when the user wants Bolt or Neatlogs tracing on an agent, or Bolt shows no runs for it.
 ---
 

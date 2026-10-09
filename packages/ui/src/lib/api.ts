@@ -150,6 +150,8 @@ export interface AgentClient {
   connected: boolean;
   where: string;
   note?: string;
+  /** Bolt's skills are installed (agents that read skills: Claude Code, Codex). */
+  skills?: boolean;
 }
 
 export interface Status {

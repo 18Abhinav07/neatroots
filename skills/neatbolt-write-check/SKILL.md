@@ -1,5 +1,5 @@
 ---
-name: write-check
+name: neatbolt-write-check
 description: Turn a bug or concern the user describes into a Bolt check, preview how often it fires on recent runs, and save it. Use when the user wants Bolt to watch for a specific failure from now on.
 ---
 

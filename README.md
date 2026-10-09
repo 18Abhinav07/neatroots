@@ -101,8 +101,8 @@ See [docs/steering.md](docs/steering.md).
 neatbolt connect            # finds Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code, Claude Desktop
 ```
 
-It adds a `neatbolt` entry to each agent's own MCP settings (or Settings → Coding agents in the app does
-it with one click). Any other MCP client can use `http://localhost:4100/mcp`. Tools: `get_current_run`, `search_runs`,
+It adds a `neatbolt` entry to each agent's own MCP settings, and Bolt's skills to Claude Code and Codex
+(or Settings → Coding agents in the app does it with one click). Any other MCP client can use `http://localhost:4100/mcp`. Tools: `get_current_run`, `search_runs`,
 `get_run_outline`, `get_span`, `list_findings`, `explain_run`, `ask`, `judge`, `create_check`,
 `preview_check`, `annotate`, `rerun`, `push_to_cloud`. See [docs/mcp.md](docs/mcp.md) and the skills
 in [skills/](skills/).

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Registers Neatlogs Bolt's MCP server with coding agents, each in the format its own docs give.
 // File-based clients are edited in place: other entries are kept, a backup is made before the
@@ -24,6 +25,8 @@ export interface ClientStatus {
   where: string;
   /** Shown after connecting, e.g. "restart Cursor". */
   note?: string;
+  /** Neatlogs Bolt skills installed in this agent, if it supports skills. */
+  skills?: boolean;
 }
 
 export interface ConnectResult {
@@ -45,6 +48,8 @@ interface ClientDef {
   toml?: { file: () => string };
   /** Managed through its own CLI (Claude Code). */
   cli?: "claude";
+  /** Where the agent reads user-level skills (SKILL.md folders), if it supports them. */
+  skills?: () => string;
   note?: string;
 }
 
@@ -59,6 +64,7 @@ export const CLIENTS: ClientDef[] = [
     bins: ["claude"],
     dirs: () => [path.join(home(), ".claude")],
     cli: "claude",
+    skills: () => path.join(home(), ".claude", "skills"),
   },
   {
     id: "codex",
@@ -66,6 +72,7 @@ export const CLIENTS: ClientDef[] = [
     bins: ["codex"],
     dirs: () => [path.join(home(), ".codex")],
     toml: { file: () => path.join(home(), ".codex", "config.toml") },
+    skills: () => path.join(home(), ".agents", "skills"),
   },
   {
     id: "cursor",
@@ -246,6 +253,47 @@ function claudeCli(args: string[]): { ok: boolean; out: string } {
   return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 
+// ---------------------------------------------------------------- skills
+
+/** The skills shipped with Bolt (skills/neatbolt-*), found next to the bundle or the checkout. */
+export function skillsSource(): string | undefined {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, "skills");
+    if (fs.existsSync(candidate) && fs.readdirSync(candidate).some((d) => d.startsWith("neatbolt-"))) return candidate;
+    dir = path.dirname(dir);
+  }
+  return undefined;
+}
+
+function ourSkills(): string[] {
+  const src = skillsSource();
+  return src ? fs.readdirSync(src).filter((d) => d.startsWith("neatbolt-") && fs.existsSync(path.join(src, d, "SKILL.md"))) : [];
+}
+
+function skillsInstalled(c: ClientDef): boolean {
+  const names = ourSkills();
+  return !!c.skills && names.length > 0 && names.every((n) => fs.existsSync(path.join(c.skills!(), n, "SKILL.md")));
+}
+
+/** Copies (or refreshes) Bolt's skills into the agent's user skills folder. Returns how many. */
+function installSkills(c: ClientDef): number {
+  const src = skillsSource();
+  if (!c.skills || !src) return 0;
+  const names = ourSkills();
+  for (const n of names) {
+    const dest = path.join(c.skills(), n);
+    fs.rmSync(dest, { recursive: true, force: true });
+    fs.cpSync(path.join(src, n), dest, { recursive: true, filter: (f) => !f.endsWith(".DS_Store") });
+  }
+  return names.length;
+}
+
+function removeSkills(c: ClientDef): void {
+  if (!c.skills) return;
+  for (const n of ourSkills()) fs.rmSync(path.join(c.skills(), n), { recursive: true, force: true });
+}
+
 // ------------------------------------------------------------------- API
 
 function whereOf(c: ClientDef): string {
@@ -256,7 +304,7 @@ function whereOf(c: ClientDef): string {
 export function clientStatus(c: ClientDef): ClientStatus {
   const detected = (c.bins ?? []).some((b) => !!onPath(b)) || (c.dirs?.() ?? []).some((d) => fs.existsSync(d));
   const connected = c.cli ? claudeCodeConnected() : c.json ? jsonHas(c.json.file(), c.json.shape) : tomlHas(c.toml!.file());
-  return { id: c.id, label: c.label, detected, connected, where: whereOf(c), note: c.note };
+  return { id: c.id, label: c.label, detected, connected, where: whereOf(c), note: c.note, ...(c.skills ? { skills: skillsInstalled(c) } : {}) };
 }
 
 export function listClients(): ClientStatus[] {
@@ -275,7 +323,7 @@ function shellQuote(s: string): string {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-export function connectClient(c: ClientDef, cmd = serverCommand()): ConnectResult {
+function connectMcp(c: ClientDef, cmd: ServerCommand): ConnectResult {
   try {
     if (c.cli) {
       if (!onPath("claude")) return { id: c.id, ok: false, message: `the claude command isn't on PATH. Run this yourself:\n  ${manualSnippet(c, cmd)}` };
@@ -295,7 +343,7 @@ export function connectClient(c: ClientDef, cmd = serverCommand()): ConnectResul
   }
 }
 
-export function disconnectClient(c: ClientDef): ConnectResult {
+function disconnectMcp(c: ClientDef): ConnectResult {
   try {
     if (c.cli) {
       if (!onPath("claude")) return { id: c.id, ok: false, message: `the claude command isn't on PATH. Run: claude mcp remove --scope user ${SERVER_NAME}` };
@@ -311,4 +359,22 @@ export function disconnectClient(c: ClientDef): ConnectResult {
   } catch (e) {
     return { id: c.id, ok: false, message: (e as Error).message };
   }
+}
+
+/** Registers the MCP server and, for agents that read skills, installs Bolt's skills. */
+export function connectClient(c: ClientDef, cmd = serverCommand()): ConnectResult {
+  const r = connectMcp(c, cmd);
+  if (!r.ok || !c.skills) return r;
+  try {
+    const n = installSkills(c);
+    return n ? { ...r, message: `${r.message}; ${n} skills in ${c.skills()}` } : r;
+  } catch (e) {
+    return { ...r, message: `${r.message}; skills not installed: ${(e as Error).message}` };
+  }
+}
+
+export function disconnectClient(c: ClientDef): ConnectResult {
+  const r = disconnectMcp(c);
+  if (r.ok) removeSkills(c);
+  return r;
 }

@@ -203,7 +203,7 @@ neatbolt connect --list          # what's found and what's connected
 neatbolt connect --remove cursor
 ```
 
-Supported: Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code and Claude Desktop. Each gets a `neatbolt` entry in its own MCP settings, in the format its docs give; other entries are kept, and the file is backed up once (`*.neatbolt-backup`) before the first change. A settings file with comments is left alone, and Bolt prints what to add instead. **Settings → Coding agents** in the app does the same with one click.
+Supported: Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code and Claude Desktop. Claude Code and Codex also get Bolt's four skills (`neatbolt-debug-last-run`, `neatbolt-write-check`, `neatbolt-instrument-agent`, `neatbolt-push-to-neatlogs`) in `~/.claude/skills` and `~/.agents/skills`. Each agent gets a `neatbolt` entry in its own MCP settings, in the format its docs give; other entries are kept, and the file is backed up once (`*.neatbolt-backup`) before the first change. A settings file with comments is left alone, and Bolt prints what to add instead. **Settings → Coding agents** in the app does the same with one click.
 
 Other clients can use the HTTP endpoint `http://localhost:4100/mcp`.
 

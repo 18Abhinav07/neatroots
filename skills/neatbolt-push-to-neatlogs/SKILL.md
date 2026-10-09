@@ -1,5 +1,5 @@
 ---
-name: push-to-neatlogs
+name: neatbolt-push-to-neatlogs
 description: Send the runs under discussion from Bolt to Neatlogs Cloud so the team can see them. Use when the user wants to share a run, keep history, or hand a run to teammates.
 ---
 

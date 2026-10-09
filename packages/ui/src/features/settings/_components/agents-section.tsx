@@ -19,14 +19,15 @@ export function AgentsSection({ port }: { port: number }) {
     <SettingsPanel title="Coding agents (MCP)" meta={data ? `${connected} connected` : undefined}>
       <p className="text-sm text-muted-foreground">
         Connected agents can read your runs and findings, get explanations and add checks. Connecting adds a <span className="font-mono">neatbolt</span> entry to that
-        agent's own MCP settings and leaves the rest as it is.
+        agent's own MCP settings and leaves the rest as it is. Claude Code and Codex also get four skills: debug the last run, write a check, instrument an
+        agent, push runs to Neatlogs Cloud.
       </p>
       <div className="-mx-6 max-h-[26rem] overflow-auto border-y border-border">
         <Table className="min-w-[36rem] table-fixed">
           <TableHeader className="sticky top-0 z-10 bg-surface-subtle">
             <TableRow className="border-b border-border hover:bg-transparent">
               <TableHead className={`${HEAD} w-40 pl-6`}>Agent</TableHead>
-              <TableHead className={`${HEAD} w-32`}>Status</TableHead>
+              <TableHead className={`${HEAD} w-40`}>Status</TableHead>
               <TableHead className={HEAD}>Settings file</TableHead>
               <TableHead className={`${HEAD} w-32 pr-6 text-right`} />
             </TableRow>
@@ -38,8 +39,13 @@ export function AgentsSection({ port }: { port: number }) {
                 <TableRow key={a.id} className="h-12 hover:bg-transparent">
                   <TableCell className="px-3 pl-6 text-sm text-foreground">{a.label}</TableCell>
                   <TableCell className="px-3">
-                    <StatusPill size="sm" tone={a.connected ? "success" : a.detected ? "neutral" : "muted"} dot={a.connected ? "solid" : false}>
-                      {a.connected ? "Connected" : a.detected ? "Not connected" : "Not found"}
+                    <StatusPill
+                      size="sm"
+                      tone={a.connected ? "success" : a.detected ? "neutral" : "muted"}
+                      dot={a.connected ? "solid" : false}
+                      title={a.connected && a.skills ? "MCP server and Neatlogs Bolt's skills" : undefined}
+                    >
+                      {a.connected ? (a.skills ? "Connected + skills" : "Connected") : a.detected ? "Not connected" : "Not found"}
                     </StatusPill>
                   </TableCell>
                   <TableCell className="truncate px-3 font-mono text-2xs text-muted-foreground" title={a.where}>

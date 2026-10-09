@@ -73,6 +73,18 @@ describe("coding-agent MCP setup", () => {
     expect(fs.readFileSync(path.join(home, ".codex/config.toml"), "utf8")).toBe(before);
   });
 
+  it("installs Bolt's skills where Codex reads them, and removes them on disconnect", () => {
+    const codex = findClient("codex")!;
+    expect(connectClient(codex, cmd).message).toContain("4 skills");
+    const skill = path.join(home, ".agents/skills/neatbolt-debug-last-run/SKILL.md");
+    expect(fs.readFileSync(skill, "utf8")).toContain("name: neatbolt-debug-last-run");
+    expect(clientStatus(codex).skills).toBe(true);
+    fs.mkdirSync(path.join(home, ".agents/skills/someone-else"));
+    disconnectClient(codex);
+    expect(fs.existsSync(skill)).toBe(false);
+    expect(fs.existsSync(path.join(home, ".agents/skills/someone-else"))).toBe(true);
+  });
+
   it("knows Claude Code from ~/.claude.json and needs its CLI to change it", () => {
     fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ mcpServers: { neatbolt: cmd } }));
     const claude = findClient("claude")!;

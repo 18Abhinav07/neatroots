@@ -1,5 +1,5 @@
 ---
-name: debug-last-run
+name: neatbolt-debug-last-run
 description: Debug the agent's most recent run with Bolt — explain what went wrong, read the evidence spans, fix the code or prompt, rerun, and confirm the finding is gone. Use when the user says the agent misbehaved, a run failed, or asks why a run went wrong.
 ---
 
