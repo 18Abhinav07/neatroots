@@ -1,13 +1,14 @@
 # Getting started with neatroots
 
 neatroots checks your AI agent while you build it, on your own machine.
-- It reads the traces the public Neatlogs SDK already sends.
-- It runs checks on every run, and tells you what went wrong and where.
-- It can give your coding agent the evidence over MCP, and can add a note to your agent's next LLM call while the run is still going.
+- It takes the runs your agent already sends: the Neatlogs SDK, OpenTelemetry, or a plain HTTP call.
+- It runs checks on every run, and tells you what went wrong, where, and how to fix it.
+- It lets you replay a run, or one LLM call in it, with your changes.
+- It gives your coding agent the evidence over MCP, and can add a note to your agent's next LLM call while the run is still going.
 
 Nothing leaves your machine unless you send it.
 
-This guide covers installing neatroots, connecting an agent, reading what it finds, and the settings worth knowing. For why it exists and who it is for, see [use-case.md](use-case.md).
+This guide covers installing neatroots, sending runs, reading what it finds, replaying, and the settings worth knowing. For why it exists and who it is for, see [use-case.md](use-case.md).
 
 ## 1. Install
 
@@ -15,29 +16,25 @@ This guide covers installing neatroots, connecting an agent, reading what it fin
 curl -fsSL https://raw.githubusercontent.com/neatlogs/neatroots/main/install.sh | sh
 ```
 
-While the repository is private, fetch the installer with the [GitHub CLI](https://cli.github.com) (signed in with `gh auth login` to an account in the neatlogs org). The installer then downloads the release through it too:
-
-```bash
-gh api -H "Accept: application/vnd.github.raw" repos/neatlogs/neatroots/contents/install.sh | sh
-```
-
 The installer:
 - downloads the prebuilt release, one bundle of about 15 MB for macOS and Linux on Apple silicon, Intel and arm64, and checks its checksum;
 - uses your Node.js if it is version 22 or newer; otherwise it downloads Node.js 24 into `~/.neatroots/node` and checks its checksum;
 - puts a `neatroots` command in `~/.local/bin` and adds that folder to your shell's PATH;
-- offers to connect the coding agents it finds (Claude Code, Codex, Cursor and others; see section 8);
+- offers to connect the coding agents it finds (Claude Code, Codex, Cursor and others; see section 9);
 - needs no sudo and changes nothing outside your home folder, except the MCP settings of agents you agree to connect.
 
 You need macOS or Linux (on Windows, use WSL) and about 2 GB of disk: 70 MB for neatroots and 1.5 GB for Laya, the local decision model.
+
+Everything lands in `~/.neatroots/app`: the app, the steering hooks (`steer/`), the docs, and 15 runnable examples (`examples/`).
 
 Installer options go after `sh -s --`, for example `curl … | sh -s -- --service`:
 
 | Option | What it does |
 | --- | --- |
 | `--service` | Also run neatroots in the background now and every time you log in |
-| `--version <tag>` | Install a specific release, e.g. `v0.1.0` |
+| `--version <tag>` | Install a specific release, e.g. `v0.2.0` |
 | `--connect`, `--no-connect` | Connect the coding agents found here without asking, or don't offer |
-| `--from-source`, `--ref <branch>` | Clone and build instead of downloading (needs git) |
+| `--from-source`, `--ref <branch>` | Clone and build instead of downloading (needs git and pnpm) |
 | `--no-modify-path` | Leave your shell profile alone; the installer prints the line to add instead |
 | `--dir <path>`, `--bin-dir <path>` | Install somewhere other than `~/.neatroots` and `~/.local/bin` |
 | `--uninstall` | Remove neatroots but keep your runs and settings |
@@ -49,7 +46,7 @@ neatroots start                  # runs in this terminal; Ctrl+C to stop
 neatroots service install        # or: run in the background and start at login
 ```
 
-Open **http://localhost:4100**.
+Open **http://localhost:4100**. neatroots also listens for OTLP/gRPC on port 4317.
 
 The first start installs Laya in the background. Rules work right away, and questions start working once a model is available (next step). To skip Laya, use `neatroots start --no-laya`.
 
@@ -67,7 +64,7 @@ neatroots works in three layers. You only need the first to start.
 | --- | --- | --- |
 | **Rules** | Code checks on every span: loops, repeated tool calls, error streaks, leaked keys, failed or empty runs | Always on, no model |
 | **Decision model** | Answers each check's yes/no question with a probability | Laya on this machine; the LLM answers a question until Laya has earned it |
-| **LLM** | Picks the questions that fit your agent, explains problems, writes notes for the agent, summarizes runs | A local model (Ollama, LM Studio, llama.cpp, MLX) |
+| **LLM** | Picks the questions that fit your agent, explains problems, writes notes for the agent, summarizes runs, replays LLM calls | A local model (Ollama, LM Studio, llama.cpp, MLX) |
 
 ### A local LLM (the default)
 
@@ -91,7 +88,7 @@ neatroots llm test                                     # one tiny prompt, to con
 neatroots llm local                                    # back to this machine only
 ```
 
-You can also do this in the app under **Settings → Models → Hosted provider**.
+You can also do this in the app under **Settings → Models**.
 
 - **Providers:** Anthropic, OpenAI, OpenRouter, Google Gemini, Groq, Mistral, Together AI, and any OpenAI-compatible server (`neatroots llm use custom --base-url https://…/v1 --model …`). `neatroots llm providers` lists them, and `neatroots llm models <provider>` lists a provider's models.
 - **What is sent:** when a hosted LLM is on, the run content each LLM task needs is sent to that provider. Keys, tokens and private keys are removed first. `--redact all` also removes emails and phone numbers, though that can stop the personal-data check from seeing a leak. Rules, stored runs and the app stay on your machine.
@@ -106,20 +103,36 @@ You can also do this in the app under **Settings → Models → Hosted provider*
 neatroots jev login && neatroots jev on
 ```
 
-## 4. Connect your agent
+## 4. Send runs
+
+### No agent yet? Use an example
+
+The examples need no API keys: they talk to neatroots' mock LLM, a stand-in that speaks the OpenAI and Anthropic APIs. Python examples need [uv](https://docs.astral.sh/uv/); TypeScript ones need Node 22+.
+
+```bash
+neatroots mock-llm &                                    # port 4110
+cd ~/.neatroots/app/examples/python-openai
+uv run agent.py "Please refund order 1001"
+MODEL=mock-sloppy uv run agent.py "Please refund order 4512"   # the agent claims success after a failed tool
+sh ~/.neatroots/app/examples/run-all.sh                 # every example, checked
+```
+
+`~/.neatroots/app/examples/README.md` lists all fifteen. Set `REAL_LLM=1` to use your own `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` instead of the mock.
+
+### Your agent, with the Neatlogs SDK
 
 neatroots speaks the same protocol as Neatlogs Cloud, so an agent that already uses the Neatlogs SDK only needs two environment variables:
 
 ```bash
 export NEATLOGS_ENDPOINT=http://localhost:4100
-export NEATLOGS_API_KEY=neatroots-local
+export NEATLOGS_API_KEY=neatroots-local     # any value works locally
 ```
 
 If the agent isn't instrumented yet:
 
 ```python
 import neatlogs
-neatlogs.init(workflow_name="refund-agent", instrumentations=["openai"], flush_interval=0.5)
+neatlogs.init(workflow_name="refund-agent", flush_interval=0.5)
 ```
 
 ```ts
@@ -129,14 +142,44 @@ await neatlogs.init({ workflowName: "refund-agent", flushInterval: 0.5 });
 
 - `workflow_name` is the project name neatroots shows.
 - `flush_interval=0.5` (`flushInterval` in TypeScript) sends spans every half second, so neatroots can check a run while it is still going.
+- In production, unset `NEATLOGS_ENDPOINT` and the same code sends to Neatlogs Cloud.
 
-In your agent's repository, `neatroots init --project refund-agent --write-env` writes the two variables to `.env` and adds a `.neatroots/checks/` folder for checks your team shares.
+In your agent's repository, `neatroots init --project refund-agent --write-env` writes the two variables to `.env` and adds a `.neatroots/checks/` folder for checks your team shares. To check the path end to end with the SDK's own doctor: `python -m neatlogs doctor --probe`.
 
-To check the path end to end with the SDK's own doctor:
+### Other ways in
+
+**Add data** in the app shows each of these with this machine's ports filled in.
+
+| Path | How |
+| --- | --- |
+| Neatlogs Browser SDK | `new Neatlogs({ apiKey: "neatroots-local", project: "my-web-app", endpoint: "http://localhost:4100" })` |
+| Neatlogs HTTP trace API | `POST http://localhost:4100/v1/trace` with one JSON tree per trace; `children` sets the hierarchy and neatroots makes the ids. See `examples/http-api` |
+| OpenTelemetry over HTTP | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4100/v1/traces` (protobuf or JSON) |
+| OpenTelemetry over gRPC | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4317`, `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc` |
+
+With OpenTelemetry, `OTEL_SERVICE_NAME` becomes the project. neatroots reads Neatlogs, OpenInference, OpenLLMetry (`traceloop.*`), GenAI semantic-convention and Vercel AI SDK attributes, so LLM messages, tool calls, models and tokens show up whichever instrumentation you use.
+
+### Import runs
+
+Bring in runs you already have, to check, explain or replay them here:
 
 ```bash
-python -m neatlogs doctor --probe
+neatroots import traces.json export.jsonl               # files: OTLP JSON, Neatlogs exports, Neatlogs HTTP traces
+neatroots import langfuse --since 7d --limit 50         # keys from flags or the usual environment variables
+neatroots import --list                                 # every source and what it needs
 ```
+
+| Source | Needs |
+| --- | --- |
+| Neatlogs Cloud | The API key stored with `neatroots cloud login`; optionally trace ids |
+| Langfuse | Public and secret key; host (cloud.langfuse.com by default) |
+| LangSmith | API key and project |
+| Arize Phoenix | Phoenix URL and project; API key for Phoenix Cloud |
+| Braintrust | API key and project |
+| Raindrop | Query API key (not the write key) |
+| Laminar | Project API key |
+
+**Add data → Import** in the app does the same, with a form per source, progress as it runs, and a drop zone for files. Keys typed there are used for that import only and are not stored. Imported runs are checked like any other.
 
 ## 5. Read what neatroots found
 
@@ -145,19 +188,55 @@ python -m neatlogs doctor --probe
 - **Needs attention:** problems by how many runs they hit, tools that fail or return nothing, and models with errors.
 - **Working well:** projects, tools and models with a clean record, checks that found nothing, and problems you no longer see.
 - **What stands out:** the LLM's short reading of these numbers. It sees only the aggregates, never run content, and neatroots drops any sentence that quotes a number not in the data.
-- **The guide:** while setup is incomplete, Home also shows how to use neatroots, checked against what is actually set up.
+- **The guide:** while setup is incomplete, Home shows how to use neatroots, checked against what is actually set up.
 
-Click a problem to see every run it hit.
+The **Runs** page lists each run with what it was asked to do and its most important open problem. A run page:
+- leads with the **problems**, each with a one-line cause. Open one to see the suggested fix, the spans that show it, and how sure neatroots is;
+- has **Explain run**, where the LLM writes a likely cause for the whole run;
+- shows the run four ways:
 
-The **Runs** page lists each run:
-- **Each row:** what the run was asked to do and its most important open problem.
-- **Run page:** the problems come first, each with a one-line cause. Click one to see the suggested fix, the spans that show it, and how sure neatroots is.
-- **Explain run:** the LLM writes a likely cause for the whole run.
-- **Trace:** the trace and the selected span sit side by side. neatroots opens the span that best shows the top problem. Click any span to see its input and output.
+| View | What it shows |
+| --- | --- |
+| **Overview** | The run as a chat: the system prompt, what the user asked, what the model answered, each tool call with its input and output, and sub-agents as cards you can open. Edit a user message here to fork the run (section 6) |
+| **Trace** | The span tree. Click any span to see its input, output, attributes and findings |
+| **Timeline** | Spans on a time axis, with zoom, to see what was slow and what ran in parallel |
+| **Conversation** | Every turn of the session this run belongs to, oldest first, with each turn's problems |
+
 - **Dismiss finding:** use it when a finding is wrong. neatroots counts dismissals per check, so you can see which checks are noisy.
-- **Labels:** **Mark as issue / good** on a span records your judgment. neatroots uses it when measuring its checks.
+- **Mark as issue / good** on a span records your judgment. neatroots uses it when measuring its checks.
 
-## 6. Checks
+**Search** (⌘K or Ctrl+K from anywhere) looks through every span's name, input, output and error, and highlights the hits. Add filters to narrow it down, or use the chips under the box:
+
+| Filter | Example |
+| --- | --- |
+| `project:` | `project:refund-agent` |
+| `status:` | `status:failed`, `status:succeeded`, `status:running` |
+| `kind:` | `kind:llm`, `kind:tool`, `kind:agent` |
+| `tool:`, `model:` | `tool:lookup_order`, `model:gpt-4o` |
+| `check:` | `check:system-prompt-violation` |
+| `session:` | `session:abc123` |
+| `has:problems` | runs with open problems |
+| `since:` | `since:24h`, `since:7d`, `since:2026-10-01` |
+
+A hit opens the run at that span.
+
+## 6. Replay and fork
+
+Replays answer "would it have gone better with a different prompt, model or input?" without rewriting your agent first. Every replay is a new run, linked to the one it came from, and checked like any other.
+
+- **One LLM call** (no agent needed): **Replay** on a run, or **Replay this call** on an LLM span, re-sends that call's messages to neatroots' LLM, without tool definitions. Change the model or the system prompt, or edit a message.
+- **Edit and fork:** in the Overview, hover a user message and click **Edit and fork**. **Re-run this LLM call** replays just that call with your edit; **Re-run the agent** runs your whole agent with the new message.
+- **The whole agent:** register how to start it once, then use **Replay** with a new input, model or system prompt:
+
+```bash
+neatroots rerun add refund-agent "uv run agent.py" --cwd ~/code/refund-agent
+neatroots rerun add web-agent --url http://localhost:3000/replay      # or an HTTP endpoint your agent serves
+neatroots replay <trace-id> --input "Refund order 2002" --model gpt-4o-mini
+```
+
+**Settings → Projects** does the same in the app. See [replay.md](replay.md) for how your agent picks up a replay's input, model and system prompt.
+
+## 7. Checks
 
 The **Checks** page lists everything neatroots watches for:
 - **Rules** run in code on every span.
@@ -165,12 +244,12 @@ The **Checks** page lists everything neatroots watches for:
 - **Your own checks:** click **New check**, describe the problem in a sentence, and neatroots drafts a yes/no question. **Preview on recent runs** shows how often it would fire before you save it.
 - **Sharing checks:** keep them in your repository's `.neatroots/checks/` folder to share with your team. `neatroots checks validate <file>` checks the YAML. The format is in [checks.md](checks.md).
 
-## 7. Steering (opt-in)
+## 8. Steering (opt-in)
 
 Steering puts a finding back into the agent while it is still running. It is off until you turn it on for a project, and it needs a small hook in your agent:
 
 ```bash
-pip install ~/.neatroots/src/python/neatroots-steer        # until the hook is published: pip install neatroots-steer
+pip install ~/.neatroots/app/steer/python/neatroots-steer
 neatroots steering gate --project refund-agent
 ```
 
@@ -179,7 +258,7 @@ import neatroots_steer
 client = neatroots_steer.wrap(OpenAI())   # or Anthropic(); sync or async
 ```
 
-For TypeScript, run `npm install ~/.neatroots/src/packages/steer-ts` and see [steering.md](steering.md).
+For TypeScript, run `npm install ~/.neatroots/app/steer/ts` and see [steering.md](steering.md).
 
 | Mode | What happens |
 | --- | --- |
@@ -192,7 +271,9 @@ Limits:
 - Only rules you write with `action: halt` can stop a run.
 - `neatroots steering stop` turns steering off everywhere at once. The sidebar switch does the same.
 
-## 8. Coding agents (MCP)
+## 9. Coding agents
+
+### Over MCP, in the agent you already use
 
 Give your coding agent the runs, findings and explanations:
 
@@ -205,33 +286,43 @@ neatroots connect --remove cursor
 
 Supported: Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code and Claude Desktop. Claude Code and Codex also get neatroots' four skills (`neatroots-debug-last-run`, `neatroots-write-check`, `neatroots-instrument-agent`, `neatroots-push-to-neatlogs`) in `~/.claude/skills` and `~/.agents/skills`. Each agent gets a `neatroots` entry in its own MCP settings, in the format its docs give; other entries are kept, and the file is backed up once (`*.neatroots-backup`) before the first change. A settings file with comments is left alone, and neatroots prints what to add instead. **Settings → Coding agents** in the app does the same with one click.
 
-Other clients can use the HTTP endpoint `http://localhost:4100/mcp`.
+Other clients can use the HTTP endpoint `http://localhost:4100/mcp`, or `neatroots mcp` over stdio.
 
 Then ask, for example: *"Fix what neatroots found in my last run, and add a check so it is caught next time."* Your coding agent can:
 - read the run, find the problem and explain it;
+- search runs, compare two runs, and answer questions with read-only SQL over the local store;
 - write a check and preview it on recent runs;
-- rerun your agent, if you registered a command with `neatroots rerun add <project> "<command>"`.
+- replay a run or one LLM call, and open what it is talking about in your browser (`show_in_ui`);
+- pull a production trace from Neatlogs Cloud to debug it locally.
 
-[mcp.md](mcp.md) lists the tools. The `skills/` folder has ready-made skills for coding agents.
+[mcp.md](mcp.md) lists the 23 tools.
 
-## 9. Neatlogs Cloud
+### Inside the app
+
+**Coding agents** in the sidebar chats with Claude Code or Codex (whichever is installed) in a project folder you pick, with neatroots' tools attached. Each message runs the agent's own CLI on your machine with your own sign-in, and the chat resumes the same agent session. A chat is read-only until you switch on **Allow edits** or **Allow commands** for it. **Ask a coding agent** on a run (in the **More actions** menu) starts a chat about that run.
+
+## 10. Neatlogs Cloud
 
 To keep a run, or share it with your team, send it to Neatlogs Cloud:
 
 ```bash
-neatroots cloud login                                   # your app.neatlogs.com API key, stored in the Keychain
+neatroots cloud login              # your app.neatlogs.com project API key, stored in the Keychain
 ```
 
-Then click **Send to Cloud** on a run. neatroots shows what it will remove before it sends anything. To forward every run of a project as it finishes, run `neatroots cloud auto <project> on`. See [cloud.md](cloud.md).
+Then click **Send to Cloud** on a run. neatroots shows what it will remove before it sends anything. To forward every run of a project as it finishes, run `neatroots cloud auto <project> on`.
+
+The same key lets you go the other way: **Add data → Neatlogs Cloud** lists your project's recent traces and imports the ones you pick, so you can explain, check and replay a production run locally. See [cloud.md](cloud.md).
 
 ## What leaves your machine
 
 | Feature | Default | What is sent, and where |
 | --- | --- | --- |
-| Rules, Laya, local LLM, storage, app | On | Nothing; all local |
+| Collector, rules, Laya, local LLM, storage, app, MCP | On | Nothing; all local |
 | Hosted LLM | Off | Run content each LLM task needs, minus secrets, to the provider you choose |
 | Jev cloud | Off | Span content a question needs, to api.typesafe.ai |
-| Neatlogs Cloud | Off | Runs you send or a project you forward, redacted first, to ingest.neatlogs.com |
+| Neatlogs Cloud forward | Off | Runs you send or a project you forward, redacted first, to ingest.neatlogs.com |
+| Imports | Off | Requests to the service you import from, with the key you give |
+| Coding agents in the app | Off | Whatever Claude Code or Codex sends to their providers, as when you run them yourself |
 | Steering | Off | Notes go to your own agent's next LLM call; nothing leaves the machine |
 | Install and update | — | Downloads neatroots, Node.js, packages and Laya |
 
@@ -241,24 +332,28 @@ neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Lin
 
 | Command | What it does |
 | --- | --- |
-| `neatroots start` | Run neatroots on port 4100 (`--port`, `--no-laya`) |
+| `neatroots start` | Run neatroots on port 4100 and OTLP/gRPC on 4317 (`--port`, `--grpc-port`, `--no-laya`) |
 | `neatroots service install / uninstall / status / restart` | Run in the background and start at login |
 | `neatroots status`, `neatroots doctor` | What is running; whether everything works |
 | `neatroots init` | Set up an agent's repository (`--project`, `--write-env`, `--steering`, `--mcp claude`) |
+| `neatroots import <files or source>` | Bring in runs (`--list`, `--since`, `--limit`, `--project`) |
+| `neatroots replay <trace-id>` | Replay a run (`--span`, `--input`, `--model`, `--system`) |
+| `neatroots rerun add / list / remove` | How neatroots starts your agent for replays |
+| `neatroots mock-llm` | A stand-in LLM on port 4110 for running agents without API keys |
 | `neatroots llm` | Where LLM calls go; `login`, `use`, `local`, `models`, `test`, `providers` |
 | `neatroots models`, `neatroots laya install`, `neatroots jev login / on / off` | Decision models |
 | `neatroots steering <mode> --project <name>`, `neatroots steering stop` | Steering |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks |
 | `neatroots cloud login / forward / auto` | Neatlogs Cloud |
-| `neatroots rerun add <project> "<command>"` | Let coding agents rerun your agent |
+| `neatroots connect` | Give coding agents neatroots' MCP tools |
 | `neatroots mcp` | MCP over stdio for coding agents |
-| `neatroots update` | Update to the latest version |
+| `neatroots update` | Update to the latest release |
 
 ## Update and uninstall
 
 ```bash
-neatroots update                                       # pulls, rebuilds and restarts the background service
-neatroots connect --remove --detected   # optional; uninstalling does this too
+neatroots update                                       # downloads the latest release and restarts the background service
+neatroots connect --remove --detected                  # optional; uninstalling does this too
 curl -fsSL https://raw.githubusercontent.com/neatlogs/neatroots/main/install.sh | sh -s -- --uninstall
 ```
 
@@ -272,8 +367,11 @@ Uninstalling keeps `~/.neatroots`, which holds your runs, settings and Laya. Del
 | `port 4100 is in use` | neatroots is already running: run `neatroots status`. Or use `neatroots start --port 4200` and point `NEATLOGS_ENDPOINT` at it |
 | No runs appear | Check that both variables are set in the agent's process. Run `python -m neatlogs doctor --probe` and `neatroots doctor` |
 | Runs appear only at the end | Set `flush_interval=0.5` in `neatlogs.init` |
+| An example fails with a connection error | Start the mock LLM (`neatroots mock-llm`) in another terminal |
 | "No LLM" in the sidebar | Start Ollama (`ollama serve`) and pull a model, or turn on a hosted LLM. Rules still run without one |
 | Laya failed to install | Run `neatroots laya install` to see the error (it needs `uv` or Python 3.10+). neatroots works without Laya: the LLM answers instead |
 | Hosted LLM errors | `neatroots llm` shows the error. "Rejected the key": run `neatroots llm login <provider>` again. "Model not found": check `neatroots llm models <provider>` |
+| Replay says it doesn't know how to start the agent | Register a command or endpoint: `neatroots rerun add <project> "<command>"`, or Settings → Projects |
+| An import fails | The error names the request that failed; check the key and URL. Keys for imports are never stored, so enter them again |
 | Steering notes never arrive | Turn steering on for the project, install the hook, and set `NEATROOTS_STEER_DEBUG=1` in the agent to see what the hook does |
 | Where are the logs? | The terminal running `neatroots start`, or `~/.neatroots/logs/neatroots.log` for the background service. `NEATROOTS_DEBUG=1` adds detail |

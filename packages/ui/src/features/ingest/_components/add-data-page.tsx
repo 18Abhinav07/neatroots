@@ -30,7 +30,7 @@ export function AddDataPage({ status, tab: raw }: { status?: Status; tab?: strin
       }
     >
       <div className="flex w-full max-w-4xl flex-col gap-4 px-6 pt-1 pb-10">
-        {tab === "send" ? <SdkTab port={status?.port ?? 4100} grpcPort={status?.config.grpc_port} /> : tab === "import" ? <ImportTab /> : <CloudTab status={status} />}
+        {tab === "send" ? <SdkTab port={status?.port ?? 4100} grpcPort={status?.config.grpc_port} examples={status?.install?.examples} /> : tab === "import" ? <ImportTab /> : <CloudTab status={status} />}
       </div>
     </ListPageLayout>
   );

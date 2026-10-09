@@ -1,9 +1,16 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["neatlogs>=1.4.25", "openai>=1.40", "neatroots-steer"]
+#
+# [tool.uv.sources]
+# neatroots-steer = { path = "../../python/neatroots-steer", editable = true }
+# ///
 """Runs a set of support-agent scenarios through the public Neatlogs SDK into neatroots.
 
-    python run_samples.py                 # every scenario
-    python run_samples.py injection happy # some of them
+    uv run run_samples.py                 # every scenario
+    uv run run_samples.py injection happy # some of them
 
-Needs: pip install neatlogs openai neatroots-steer (see ../refund-agent/requirements.txt).
+uv installs what it needs (neatlogs, openai and the neatroots-steer hook next to this repo).
 """
 
 import json

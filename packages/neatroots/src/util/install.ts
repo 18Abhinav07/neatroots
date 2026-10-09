@@ -26,12 +26,14 @@ export interface InstallInfo {
   /** Folders to pip / npm install the steering hooks from. */
   steer_python: string | null;
   steer_ts: string | null;
+  /** The runnable examples (examples/README.md lists them). */
+  examples: string | null;
 }
 
 export function installInfo(): InstallInfo {
   const b = bundleDir();
-  if (b) return { mode: "bundle", root: b, steer_python: path.join(b, "steer", "python", "neatroots-steer"), steer_ts: path.join(b, "steer", "ts") };
+  if (b) return { mode: "bundle", root: b, steer_python: path.join(b, "steer", "python", "neatroots-steer"), steer_ts: path.join(b, "steer", "ts"), examples: path.join(b, "examples") };
   const s = sourceDir();
-  if (s) return { mode: "source", root: s, steer_python: path.join(s, "python", "neatroots-steer"), steer_ts: path.join(s, "packages", "steer-ts") };
-  return { mode: "other", root: null, steer_python: null, steer_ts: null };
+  if (s) return { mode: "source", root: s, steer_python: path.join(s, "python", "neatroots-steer"), steer_ts: path.join(s, "packages", "steer-ts"), examples: path.join(s, "examples") };
+  return { mode: "other", root: null, steer_python: null, steer_ts: null, examples: null };
 }

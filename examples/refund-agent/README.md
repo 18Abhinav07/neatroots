@@ -5,8 +5,7 @@ the agent's next LLM call (through `neatroots_steer.wrap`). Watch the notes in t
 "Notes to the agent" panel.
 
 ```bash
-pip install -r requirements.txt
 neatroots steering advisory --project refund-agent
-python agent.py "Refund order 4512"                          # with Ollama
-LLM_BASE_URL=http://127.0.0.1:4199/v1 python agent.py        # with the scripted fake LLM (python fake_llm.py)
+uv run agent.py "Refund order 4512"                          # with Ollama
+LLM_BASE_URL=http://127.0.0.1:4199/v1 uv run agent.py        # with the scripted fake LLM (python3 fake_llm.py)
 ```

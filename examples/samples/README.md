@@ -5,7 +5,6 @@ a lookup loop on a 404, an ignored tool error, a prompt injection in tool output
 leak, a contradiction, a leaked secret, and one clean run.
 
 ```bash
-pip install -r ../refund-agent/requirements.txt
-python run_samples.py                 # all of them
-python run_samples.py injection happy # some of them
+uv run run_samples.py                 # all of them
+uv run run_samples.py injection happy # some of them
 ```

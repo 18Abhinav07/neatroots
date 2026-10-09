@@ -47,7 +47,7 @@ __all__ = [
     "replay_overrides",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 logger = logging.getLogger("neatroots_steer")
 

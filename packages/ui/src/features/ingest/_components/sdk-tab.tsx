@@ -32,7 +32,7 @@ function Section({ title, badge, description, children }: { title: string; badge
   );
 }
 
-export function SdkTab({ port, grpcPort }: { port: number; grpcPort?: number }) {
+export function SdkTab({ port, grpcPort, examples }: { port: number; grpcPort?: number; examples?: string | null }) {
   const base = `http://localhost:${port}`;
   const [lang, setLang] = useState<"python" | "typescript" | "go">("python");
   return (
@@ -71,7 +71,12 @@ export function SdkTab({ port, grpcPort }: { port: number; grpcPort?: number }) 
         <CodeLine text={grpcPort ? `# OTLP/gRPC\nexport OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:${grpcPort}\nexport OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc` : "# OTLP/gRPC is off; start neatroots with --grpc-port 4317"} />
         <CodeLine text={`export OTEL_SERVICE_NAME=my-agent   # becomes the project in neatroots`} />
       </Section>
-      <Section title="What works" description="Everything the Neatlogs SDK instruments, plus anything that speaks OpenTelemetry. Runnable examples for many of these are in the repo's examples/ folder.">
+      <Section title="Runnable examples" description="No agent of your own yet? Fifteen examples across SDKs, frameworks and ingestion paths, all without API keys: they talk to neatroots' mock LLM.">
+        <CodeLine
+          text={`neatroots mock-llm &                      # a stand-in LLM (OpenAI and Anthropic APIs)\ncd ${examples ?? "examples"}/python-openai\nuv run agent.py "Please refund order 1001"\n\nsh ${examples ?? "examples"}/run-all.sh   # every example, checked`}
+        />
+      </Section>
+      <Section title="What works" description="Everything the Neatlogs SDK instruments, plus anything that speaks OpenTelemetry.">
         {Object.entries(FRAMEWORKS).map(([group, items]) => (
           <div key={group} className="flex flex-col gap-2">
             <span className="text-xs text-muted-foreground">{group}</span>

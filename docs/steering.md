@@ -6,9 +6,9 @@ never edits tool calls or model output. It needs a small hook in the agent's pro
 ## Turn it on
 
 ```bash
-pip install neatroots-steer                              # Python
-npm install @neatlogs/neatroots-steer                    # TypeScript
-neatroots steering advisory --project <service name>     # or in the app: Settings → Projects
+pip install ~/.neatroots/app/steer/python/neatroots-steer   # Python
+npm install ~/.neatroots/app/steer/ts                       # TypeScript (@neatlogs/neatroots-steer)
+neatroots steering advisory --project <service name>        # or in the app: Settings → Projects
 ```
 
 The project is the SDK's `workflow_name` (the OTLP `service.name`).
@@ -72,3 +72,9 @@ Span content is treated as untrusted. Notes never include raw tool output; LLM-w
 checked before they are sent and fall back to the template otherwise. The hook does nothing when
 neatroots is not running, and backs off for five seconds after a failed request. `NEATROOTS_STEER=off`
 disables it in a process.
+
+## Replays
+
+The same hook reads a replay's overrides: `neatroots_steer.replay_input()` (`replayInput()` in
+TypeScript) returns the replay's input, and `wrap()` applies its model and system prompt. See
+[replay.md](replay.md).

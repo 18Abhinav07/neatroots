@@ -1,7 +1,14 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["neatlogs>=1.4.25", "openai>=1.40", "neatroots-steer"]
+#
+# [tool.uv.sources]
+# neatroots-steer = { path = "../../python/neatroots-steer", editable = true }
+# ///
 """A small refund agent instrumented with the public Neatlogs SDK and steered by neatroots.
 
-    python agent.py "Refund order 4512"                 # uses Ollama (gemma4 or $MODEL)
-    LLM_BASE_URL=http://127.0.0.1:4199/v1 python agent.py   # the scripted fake LLM
+    uv run agent.py "Refund order 4512"                 # uses Ollama (gemma4 or $MODEL)
+    LLM_BASE_URL=http://127.0.0.1:4199/v1 uv run agent.py   # the scripted fake LLM
 
 Environment: NEATLOGS_ENDPOINT (default http://localhost:4100), MODEL, LLM_BASE_URL, STEP_DELAY.
 """

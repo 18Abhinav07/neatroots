@@ -8,7 +8,7 @@
 // when the machine has none. Unpacked to ~/.neatroots/app:
 //
 //   neatroots/dist/cli.js (+ dist/ui, library, proto, node_modules)
-//   steer/python/neatroots-steer   steer/ts   skills/   docs/   install.sh   .neatroots-bundle
+//   steer/python/neatroots-steer   steer/ts   examples/   skills/   docs/   install.sh   .neatroots-bundle
 
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -53,8 +53,16 @@ const copy = (from, to, filter) => fs.cpSync(path.join(root, from), path.join(st
 const skipCaches = (src) => !/(__pycache__|\.pytest_cache|\.venv|node_modules|\.DS_Store)/.test(src);
 for (const f of ["dist", "package.json", "README.md", "LICENSE"]) copy(`packages/steer-ts/${f}`, `steer/ts/${f}`);
 for (const f of ["src", "pyproject.toml", "README.md", "LICENSE"]) copy(`python/neatroots-steer/${f}`, `steer/python/neatroots-steer/${f}`, skipCaches);
-for (const f of ["getting-started.md", "mcp.md", "steering.md", "checks.md", "cloud.md"]) copy(`docs/${f}`, `docs/${f}`);
+for (const f of ["getting-started.md", "tester-guide.md", "replay.md", "mcp.md", "steering.md", "checks.md", "cloud.md"]) copy(`docs/${f}`, `docs/${f}`);
 copy("skills", "skills", skipCaches);
+// The examples as committed (no node_modules or venvs), with the hook paths pointed at steer/.
+for (const f of execFileSync("git", ["ls-files", "examples"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)) {
+  const to = path.join(stage, f);
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  const text = fs.readFileSync(path.join(root, f), "utf8");
+  if (text.includes("../../python/neatroots-steer")) fs.writeFileSync(to, text.replaceAll("../../python/neatroots-steer", "../../steer/python/neatroots-steer"));
+  else fs.copyFileSync(path.join(root, f), to);
+}
 copy("install.sh", "install.sh");
 copy("LICENSE", "LICENSE");
 let commit = "unknown";

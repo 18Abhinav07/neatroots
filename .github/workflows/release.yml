@@ -1,7 +1,7 @@
 name: release
 
-# Push a tag like v0.1.0 to publish neatroots.tar.gz, the bundle install.sh downloads.
-# Tags with a suffix (v0.1.0-rc.1) are published as pre-releases, which `latest` skips.
+# Push a tag like v0.2.0 to publish neatroots.tar.gz, the bundle install.sh downloads.
+# Tags with a suffix (v0.2.0-rc.1) are published as pre-releases, which `latest` skips.
 
 on:
   push:

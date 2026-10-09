@@ -11,7 +11,7 @@
 #
 # Options (flags or environment variables):
 #   --service            start neatroots in the background now and at login   (NEATROOTS_SERVICE=1)
-#   --version <tag>      release to install, e.g. v0.1.0                 (NEATROOTS_VERSION, default latest)
+#   --version <tag>      release to install, e.g. v0.2.0                 (NEATROOTS_VERSION, default latest)
 #   --connect            connect the coding agents found here, no prompt (NEATROOTS_CONNECT=1; 0 to skip)
 #   --no-connect         don't offer to connect coding agents
 #   --dir <path>         install directory                                (NEATROOTS_INSTALL_DIR, default ~/.neatroots)
@@ -229,6 +229,7 @@ install_bundle() {
   STEER_PY="$APP/steer/python/neatroots-steer"
   STEER_TS="$APP/steer/ts"
   GUIDE="$APP/docs/getting-started.md"
+  EXAMPLES="$APP/examples"
   ok "neatroots $(version) in $APP"
 }
 
@@ -242,6 +243,7 @@ install_from_source() {
   STEER_PY="$SRC/python/neatroots-steer"
   STEER_TS="$SRC/packages/steer-ts"
   GUIDE="$SRC/docs/getting-started.md"
+  EXAMPLES="$SRC/examples"
 }
 
 fetch_source() {
@@ -359,6 +361,7 @@ finish() {
   echo "  Point your agent:    export NEATLOGS_ENDPOINT=http://localhost:4100 NEATLOGS_API_KEY=neatroots-local"
   [ -n "${CONNECT_NOTE:-}" ] && echo "  ${CONNECT_NOTE}"
   echo "  Check everything:    neatroots doctor"
+  echo "  No agent yet?        $EXAMPLES/README.md  (15 examples; neatroots mock-llm means no API keys)"
   echo
   if ! command -v ollama >/dev/null 2>&1; then
     echo "  ${D}No Ollama found. Rules work without it; for questions and explanations install a local model"

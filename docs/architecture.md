@@ -1,18 +1,37 @@
 # Architecture
 
-neatroots is one local process (`neatroots start`, port 4100) in three layers: capture through the public
-SDK, a check orchestrator that runs a model cascade, and the surfaces people and coding agents use.
-It follows the "neatroots Architecture" design doc.
+neatroots is one local process (`neatroots start`: port 4100, plus OTLP/gRPC on 4317) in three
+layers: capture (the public SDKs, OpenTelemetry, the HTTP trace API, imports), a check orchestrator
+that runs a model cascade, and the surfaces people and coding agents use.
 
-```
-your agent ── Neatlogs SDK (public) ── OTLP ──► collector ──► store (SQLite + blobs)
-     ▲                                                │
-     │ notes (claim / SSE)                            ▼
- steering hook ◄──── steering hub ◄──── check orchestrator ──► decision model (Laya / Jev / LLM)
-                                                │                LLM: local, or hosted opt-in (plan, explain, write)
-                     app UI ◄── API + SSE ──────┤
-            coding agent ◄── MCP (HTTP, stdio) ─┤
-          Neatlogs Cloud ◄── relay (opt-in) ────┘
+```mermaid
+flowchart TB
+  AGENT["Your agent"]
+  OTHER["Trace files · Neatlogs Cloud · Langfuse · LangSmith<br/>Phoenix · Braintrust · Raindrop · Laminar"]
+
+  subgraph roots["neatroots · localhost:4100"]
+    direction TB
+    COL["Collector<br/>OTLP HTTP and gRPC · Neatlogs HTTP API"]
+    STORE[("Local store<br/>SQLite, lossless spans")]
+    CHECKS["Checks<br/>rules → decision model → LLM"]
+    REPLAY["Replay and fork"]
+    COL --> STORE
+    STORE <--> CHECKS
+    STORE --> REPLAY
+  end
+
+  subgraph out["Where you see it"]
+    direction LR
+    UI["Web app<br/>Overview · Trace · Timeline<br/>Conversation · Search"]
+    MCP["Coding agents over MCP<br/>Claude Code · Codex · Cursor · …"]
+    CLOUD["Neatlogs Cloud<br/>opt-in, redacted"]
+  end
+
+  AGENT -->|"Neatlogs SDK · OpenTelemetry · HTTP"| COL
+  OTHER -->|import| STORE
+  STORE --> out
+  CHECKS -.->|"steering: a note on the next LLM call"| AGENT
+  REPLAY -.->|"re-run with edits"| AGENT
 ```
 
 ## Code map (`packages/neatroots/src`)
@@ -22,7 +41,12 @@ your agent ── Neatlogs SDK (public) ── OTLP ──► collector ──�
 | `otlp/codec.ts` | OTLP protobuf/JSON decode and lossless encode (vendored opentelemetry-proto) |
 | `semantics/view.ts` | Span kind, input/output, model, tokens from public `neatlogs.*`, OpenInference and GenAI attributes |
 | `store/db.ts`, `store/blobs.ts` | SQLite (WAL): sessions, runs, spans, findings, notes, plans, checks, decisions, explanations, summaries, annotations, forwards; FTS5 search; retention |
-| `server/collector.ts`, `server/readback.ts` | `/v1/traces`, `/v1/logs`, doctor read-back |
+| `server/collector.ts`, `server/readback.ts` | `/v1/traces`, `/v1/logs`, `/v1/trace`, doctor read-back |
+| `ingest/` | The HTTP trace API and OTLP/gRPC (`http-trace.ts`, `grpc.ts`), span trees to OTLP (`build.ts`), and importers for files, Neatlogs Cloud, Langfuse, LangSmith, Phoenix, Braintrust, Raindrop and Laminar (`importers/`), run as cancellable jobs |
+| `semantics/chat-view.ts` | A run as a conversation: system, user, assistant, tool and sub-agent items |
+| `replay/` | LLM-call replays through the configured LLM, and whole-agent replays through a registered command or endpoint, linked to the original run |
+| `agents/chat.ts` | Claude Code and Codex chats in the app: each turn runs the agent's CLI headless with neatroots' MCP server attached; events are stored and streamed |
+| `dev/mock-llm.ts` | `neatroots mock-llm`: a predictable OpenAI- and Anthropic-compatible LLM for examples and tests |
 | `checks/` | YAML check schema (zod), registry, rule evaluation |
 | `models/llm.ts` | The LLM: a local OpenAI-compatible server by default, or an opt-in hosted provider (Anthropic through its SDK; OpenAI-compatible APIs), with redaction, fallback to local and a priority queue (urgent notes, high decisions, low investigations) |
 | `models/providers.ts` | Hosted provider presets and the strict JSON-schema rewrite hosted structured output needs |
@@ -30,10 +54,10 @@ your agent ── Neatlogs SDK (public) ── OTLP ──► collector ──�
 | `models/laya.ts` | Installs and supervises `laya-serve` on 127.0.0.1 with a per-install token |
 | `engine/` | Orchestrator: rules, plans, questions, triage, investigations, notes, summaries, budgets |
 | `steering/hub.ts` | Notes per run, atomic claim, gate wait, SSE stream |
-| `mcp/` | Tool definitions, streamable HTTP mount, stdio bridge |
+| `mcp/` | Tool definitions (`tools.ts`, and the exploring tools in `explore-tools.ts`), streamable HTTP mount, stdio bridge |
 | `relay/` | Cloud forwarding, redaction, Keychain |
-| `server/api.ts`, `api-checks.ts`, `api-models.ts` | App and hook API, security (Host allowlist, Origin check) |
-| `cli.ts`, `cli/` | The `neatroots` command; `cli/service.ts` runs neatroots at login (launchd, systemd) and updates it |
+| `server/api.ts`, `api-checks.ts`, `api-models.ts`, `api-explore.ts` | App and hook API (runs, views, search, imports, replays, chats), security (Host allowlist, Origin check) |
+| `cli.ts`, `cli/` | The `neatroots` command; `cli/data.ts` (import, replay, rerun), `cli/connect.ts` (coding agents), `cli/service.ts` (run at login, update) |
 
 ## The cascade
 
@@ -72,5 +96,13 @@ localhost for testing). Secrets live in the macOS Keychain.
 neatroots is built from public building blocks: the public Neatlogs SDKs (`neatlogs`, `neatlogs-typescript`)
 and their public telemetry schema and doctor contract, OpenTelemetry, MCP, the Jev typed-decision API
 as documented publicly, and openly licensed models (Laya, Apache-2.0). Checks, prompts and rules are
-written for the local use case. The app UI follows the Neatlogs design language (tokens and design
-rules only).
+written for the local use case. The app UI is built from the Neatlogs design system's shared
+primitives (`packages/ui/src/components/{ui,neat-ui,list-page,detail,kpi}`).
+
+## Tests
+
+- `packages/neatroots/test`: the server (vitest), including ingestion, imports against mock services,
+  replays through a real child process, MCP tools and the mock LLM.
+- `packages/ui/e2e`: Playwright against a real server built from the repo, with an isolated home
+  folder, the mock LLM and seeded runs.
+- `examples/run-all.sh`: every example against a running neatroots. CI runs all three.

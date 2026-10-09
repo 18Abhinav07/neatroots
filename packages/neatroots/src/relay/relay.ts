@@ -9,6 +9,7 @@ import { getCloudKey } from "./keychain.js";
 import { projectSettings } from "../config.js";
 import type { ForwardRow } from "../types.js";
 import { log } from "../util/log.js";
+import { VERSION } from "../version.js";
 
 export interface ForwardPreview {
   trace_ids: string[];
@@ -190,7 +191,7 @@ export class Relay {
       const gz = zlib.gzipSync(body);
       const res = await fetch(`${endpoint}/v1/traces`, {
         method: "POST",
-        headers: { "content-type": "application/x-protobuf", "content-encoding": "gzip", "x-api-key": key, "user-agent": "neatroots/0.1.0" },
+        headers: { "content-type": "application/x-protobuf", "content-encoding": "gzip", "x-api-key": key, "user-agent": `neatroots/${VERSION}` },
         body: gz,
         signal: AbortSignal.timeout(30_000),
       });

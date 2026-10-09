@@ -21,6 +21,8 @@ pnpm test                                  # packages/neatroots (vitest)
 cd packages/steer-ts && pnpm test
 cd python/neatroots-steer && python -m pytest  # needs a venv with pytest
 pnpm --filter @neatlogs/neatroots typecheck && pnpm --filter @neatlogs/neatroots-ui typecheck
+pnpm --filter @neatlogs/neatroots-ui e2e   # Playwright: builds nothing, so pnpm build first
+sh examples/run-all.sh                     # every example, against a running neatroots
 ```
 
 ## Conventions
@@ -36,3 +38,8 @@ pnpm --filter @neatlogs/neatroots typecheck && pnpm --filter @neatlogs/neatroots
   panels on Home, sheet bodies) sits in a fixed-height box that scrolls inside, so neighbours stay
   aligned. Check light, dark and a 390px width with screenshots before calling UI work done.
 - Checks: library YAML in `packages/neatroots/library/`; yes/no questions are phrased as failures.
+- The name is always lowercase: neatroots, in prose, the UI and docs (code identifiers such as
+  `NeatrootsHalt` follow their language's conventions).
+- New UI flows get an e2e spec in `packages/ui/e2e/`; tests must pass when repeated
+  (`--repeat-each=3`), so don't depend on state another test changes.
+- Examples default to the mock LLM and need no API keys; `REAL_LLM=1` switches to real providers.

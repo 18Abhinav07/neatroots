@@ -1,8 +1,9 @@
 # Neatlogs Cloud
 
-neatroots reaches Neatlogs Cloud the way any SDK does: OTLP/protobuf to the public ingest endpoint
-(`https://ingest.neatlogs.com/v1/traces`, or `eu.ingest.neatlogs.com`) with your own `x-api-key`.
-It needs no private API.
+neatroots reaches Neatlogs Cloud through public endpoints only. Sending goes the way any SDK does:
+OTLP/protobuf to the public ingest endpoint (`https://ingest.neatlogs.com/v1/traces`, or
+`eu.ingest.neatlogs.com`) with your own `x-api-key`. Importing reads the Neatlogs public API
+(`https://app.neatlogs.com/api/v1/public`) with the same project key.
 
 ## Compatibility
 
@@ -17,8 +18,8 @@ It needs no private API.
   them first, then each trace's `neatlogs.trace.complete` marker in a second request, as the SDKs do.
   A run without a marker (interrupted) gets one synthesized under its root.
 - **Findings.** neatroots adds `neatroots.findings` (JSON) and `neatroots.finding.checks` to evidence spans, and
-  `neatroots.findings.count`, `neatroots.run.summary` and `neatroots.run.explanation` to the root. How the cloud
-  shows them is a contract still to agree with the Neatlogs team.
+  `neatroots.findings.count`, `neatroots.run.summary` and `neatroots.run.explanation` to the root.
+  They travel as ordinary span attributes.
 
 The relay is tested end to end by forwarding into a second neatroots instance and comparing spans.
 
@@ -34,3 +35,17 @@ private keys are always redacted; add your own patterns in Settings. The SDK's o
 options still apply first, in your process. Every send is logged (Settings → Neatlogs Cloud).
 
 The API key is stored in the macOS Keychain (`neatroots cloud login`), never in the database.
+
+## Importing
+
+With the key stored, neatroots can pull traces from your Neatlogs Cloud project, so a production
+run can be explained, checked and replayed on your machine:
+
+- **Add data → Neatlogs Cloud** lists recent traces; pick the ones to import.
+- `neatroots import neatlogs-cloud` imports the most recent ones (`--trace-ids a,b` for specific
+  traces, `--since 24h`, `--limit 20`).
+- From a coding agent: `list_cloud_traces`, then `import_cloud_trace`.
+
+neatroots fetches each trace's export and the full input, output and error of every span, and stores
+them like any other run (marked with where they came from). Imported runs are never sent back
+automatically.
