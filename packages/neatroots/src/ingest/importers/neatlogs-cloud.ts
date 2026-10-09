@@ -1,9 +1,25 @@
 import { toBatches, type SpanNode } from "../build.js";
 import { getJson, iso, trimSlash, ImportError, type ImportSource } from "./types.js";
 
-// Neatlogs Cloud Public API (app.neatlogs.com/api/v1/public), with the same project API key
-// neatroots uses to send runs (x-api-key). A trace comes from /traces/{id}/export (trace and
-// spans) plus each span's input, output and error from /spans/{id}/payload.
+// Neatlogs Cloud Public API (app.neatlogs.com/api/v1/public), read with a service-account token
+// (nlsa_…) as Authorization: Bearer, and x-project-id naming the project when the account sees
+// several. The project API key that sends runs can't read them. A trace comes from
+// /traces/{id}/export (trace and spans) plus each span's input, output and error from
+// /spans/{id}/payload.
+
+/** How imports authenticate: the token, and the project to read from. */
+export interface CloudAuth {
+  token: string;
+  projectId?: string;
+}
+
+export interface CloudProject {
+  id: string;
+  name: string;
+  orgId?: string;
+  isDefault?: boolean;
+  isArchived?: boolean;
+}
 
 export interface CloudTraceSummary {
   traceId: string;
@@ -54,11 +70,41 @@ export function cloudApiBase(ingest: string, override?: string): string {
   }
 }
 
-const headers = (key: string) => ({ "x-api-key": key, accept: "application/json" });
+const headers = (a: CloudAuth): Record<string, string> => ({
+  authorization: `Bearer ${a.token}`,
+  accept: "application/json",
+  ...(a.projectId ? { "x-project-id": a.projectId } : {}),
+});
+
+/** A refused credential gets a sentence about what to fix instead of the raw problem+json. */
+async function cloudJson<T>(url: string, init: RequestInit & { signal: AbortSignal }): Promise<T> {
+  try {
+    return await getJson<T>(url, init);
+  } catch (e) {
+    const m = (e as Error).message;
+    if (/ answered 401\b/.test(m)) throw new ImportError(`Neatlogs Cloud didn't accept the service-account token (401). Check it in Settings → Neatlogs Cloud; the project API key that sends runs can't read them.`);
+    if (/ answered 403\b/.test(m)) throw new ImportError(`The service-account token can't read that Neatlogs Cloud project (403). Pick a project it has access to in Settings → Neatlogs Cloud.`);
+    throw e;
+  }
+}
+
+/** Projects the service account can read, for choosing which one imports come from. */
+export async function listCloudProjects(base: string, token: string, signal: AbortSignal = AbortSignal.timeout(30_000)): Promise<CloudProject[]> {
+  const out: CloudProject[] = [];
+  let cursor: string | undefined;
+  do {
+    const q = new URLSearchParams({ limit: "100" });
+    if (cursor) q.set("cursor", cursor);
+    const r = await cloudJson<{ data: { projects: CloudProject[]; page: { nextCursor: string | null; hasMore: boolean } } }>(`${base}/projects?${q}`, { headers: headers({ token }), signal });
+    out.push(...r.data.projects.filter((p) => !p.isArchived));
+    cursor = r.data.page.hasMore ? (r.data.page.nextCursor ?? undefined) : undefined;
+  } while (cursor && out.length < 1000);
+  return out;
+}
 
 export async function listCloudTraces(
   base: string,
-  key: string,
+  auth: CloudAuth,
   opts: { limit?: number; cursor?: string; sinceMs?: number; untilMs?: number; workflowName?: string; signal?: AbortSignal } = {},
 ): Promise<{ traces: CloudTraceSummary[]; nextCursor: string | null }> {
   const q = new URLSearchParams({ limit: String(Math.min(50, opts.limit ?? 50)) });
@@ -66,8 +112,8 @@ export async function listCloudTraces(
   if (opts.sinceMs) q.set("from", iso(opts.sinceMs));
   if (opts.untilMs) q.set("to", iso(opts.untilMs));
   if (opts.workflowName) q.set("workflowName", opts.workflowName);
-  const r = await getJson<{ data: { traces: CloudTraceSummary[]; page: { nextCursor: string | null; hasMore: boolean } } }>(`${base}/traces?${q}`, {
-    headers: headers(key),
+  const r = await cloudJson<{ data: { traces: CloudTraceSummary[]; page: { nextCursor: string | null; hasMore: boolean } } }>(`${base}/traces?${q}`, {
+    headers: headers(auth),
     signal: opts.signal ?? AbortSignal.timeout(30_000),
   });
   return { traces: r.data.traces, nextCursor: r.data.page.hasMore ? r.data.page.nextCursor : null };
@@ -88,15 +134,15 @@ async function pool<T, R>(items: T[], n: number, fn: (x: T) => Promise<R>): Prom
 }
 
 /** One cloud trace as span nodes, payloads included. */
-export async function fetchCloudTrace(base: string, key: string, traceId: string, signal: AbortSignal = AbortSignal.timeout(120_000)): Promise<{ nodes: SpanNode[]; workflow: string }> {
+export async function fetchCloudTrace(base: string, auth: CloudAuth, traceId: string, signal: AbortSignal = AbortSignal.timeout(120_000)): Promise<{ nodes: SpanNode[]; workflow: string }> {
   const id = encodeURIComponent(traceId);
-  const exp = await getJson<{ data: { trace?: CloudTraceSummary & { tags?: string[] }; spans?: CloudSpan[] } }>(`${base}/traces/${id}/export?format=json`, { headers: headers(key), signal });
+  const exp = await cloudJson<{ data: { trace?: CloudTraceSummary & { tags?: string[] }; spans?: CloudSpan[] } }>(`${base}/traces/${id}/export?format=json`, { headers: headers(auth), signal });
   const trace = exp.data.trace;
   const spans = exp.data.spans;
   if (!trace || !Array.isArray(spans)) throw new ImportError("Neatlogs Cloud did not return the trace's spans");
   const payloads = await pool(spans, 4, (s) =>
     getJson<{ data: { fields: { input?: Field; output?: Field; error?: Field } } }>(`${base}/traces/${id}/spans/${encodeURIComponent(s.spanId)}/payload?fields=input,output,error`, {
-      headers: headers(key),
+      headers: headers(auth),
       signal,
     })
       .then((r) => r.data.fields)
@@ -132,16 +178,18 @@ export async function fetchCloudTrace(base: string, key: string, traceId: string
   return { nodes, workflow: trace.workflowName || trace.traceName || "neatlogs-cloud" };
 }
 
-/** Built by the import runner with the stored cloud key and API base. */
-export function neatlogsCloudSource(base: () => string, key: () => Promise<string | undefined>): ImportSource {
+export const NO_CLOUD_TOKEN = "importing from Neatlogs Cloud needs a service-account token (nlsa_…): add it in Settings → Neatlogs Cloud, or run neatroots cloud token";
+
+/** Built by the import runner with the stored service-account token, project and API base. */
+export function neatlogsCloudSource(base: () => string, auth: () => Promise<CloudAuth | undefined>): ImportSource {
   return {
     id: "neatlogs-cloud",
     label: "Neatlogs Cloud",
-    description: "Traces from your Neatlogs Cloud project, with the API key stored in Settings → Neatlogs Cloud.",
+    description: "Traces from your Neatlogs Cloud project, read with a service-account token (neatroots cloud token).",
     fields: [{ name: "traceIds", label: "Trace ids (comma-separated; empty imports the most recent)", placeholder: "4bf92f35…" }],
     async *traces(o) {
-      const k = await key();
-      if (!k) throw new ImportError("store your Neatlogs Cloud API key first (Settings → Neatlogs Cloud, or neatroots cloud login)");
+      const k = await auth();
+      if (!k) throw new ImportError(NO_CLOUD_TOKEN);
       const b = base();
       let ids = (o.values.traceIds ?? "").split(/[\s,]+/).filter(Boolean);
       if (!ids.length) {

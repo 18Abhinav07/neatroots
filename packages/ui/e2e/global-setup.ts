@@ -59,8 +59,17 @@ export default async function globalSetup(): Promise<void> {
       "",
     ].join("\n"),
   );
-  // A home of its own and a PATH without coding agents: nothing touches the developer's config.
-  const env: NodeJS.ProcessEnv = { NEATROOTS_HOME: home, HOME: home, PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, NEATROOTS_DEBUG: "" };
+  // A home of its own and no coding agent CLIs (the overrides point nowhere, so neatroots doesn't find
+  // one in /Applications either): nothing touches the developer's config. Cursor looks installed.
+  fs.mkdirSync(path.join(home, ".cursor"), { recursive: true });
+  const env: NodeJS.ProcessEnv = {
+    NEATROOTS_HOME: home,
+    HOME: home,
+    PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`,
+    NEATROOTS_CLAUDE_BIN: path.join(home, "no-claude"),
+    NEATROOTS_CODEX_BIN: path.join(home, "no-codex"),
+    NEATROOTS_DEBUG: "",
+  };
   const mock = start(["mock-llm", "--port", String(mockPort)], env, path.join(home, "mock.log"));
   const server = start(["start", "--port", String(port), "--grpc-port", "0", "--no-laya"], env, path.join(home, "server.log"));
   const url = `http://127.0.0.1:${port}`;

@@ -122,14 +122,22 @@ describe("imports", () => {
     expect(() => parseTraceFile('{"foo":1}', "x.json")).toThrow(/not OTLP JSON/);
   });
 
-  it("imports a trace from Neatlogs Cloud through the public API", async () => {
+  it("imports a trace from Neatlogs Cloud with a service-account token and the chosen project", async () => {
     const tid = hex(16);
     const sid = hex(8);
     const seen: string[] = [];
     const cloud = http.createServer((req, res) => {
-      seen.push(`${req.headers["x-api-key"]} ${req.url}`);
       res.setHeader("content-type", "application/json");
-      if (req.url?.startsWith(`/api/v1/public/traces/${tid}/export`)) {
+      // As the public API's OpenAPI spec says: Authorization: Bearer nlsa_…, x-project-id for the project.
+      if (req.headers.authorization !== "Bearer nlsa_test_token" || req.headers["x-api-key"]) {
+        res.statusCode = 401;
+        res.end(JSON.stringify({ type: "about:blank", title: "Unauthorized", status: 401 }));
+        return;
+      }
+      seen.push(`${req.headers["x-project-id"]} ${req.url}`);
+      if (req.url?.startsWith("/api/v1/public/projects")) {
+        res.end(JSON.stringify({ success: true, requestId: "r", data: { projects: [{ id: "proj_1", name: "Production", orgId: "org", isDefault: true, isArchived: false }, { id: "proj_old", name: "Old", isArchived: true }], page: { hasMore: false, nextCursor: null, limit: 100 } } }));
+      } else if (req.url?.startsWith(`/api/v1/public/traces/${tid}/export`)) {
         res.end(JSON.stringify({ success: true, requestId: "req_x", data: { schemaVersion: 1, trace: { traceId: tid, workflowName: "prod-agent", sessionId: "sess", startedAt: "2026-10-09T10:00:00Z" }, spans: [{ traceId: tid, spanId: sid, parentSpanId: null, spanName: "openai.chat", spanType: "llm", startedAt: "2026-10-09T10:00:00Z", endedAt: "2026-10-09T10:00:01Z", durationMs: 1000, status: "OK", model: "gpt-4o", provider: "openai", promptTokens: 4, completionTokens: 2, totalTokens: 6 }] } }));
       } else if (req.url?.includes(`/spans/${sid}/payload`)) {
         res.end(JSON.stringify({ success: true, requestId: "req_y", data: { traceId: tid, spanId: sid, fields: { input: { available: true, value: '[{"role":"user","content":"hi"}]', mimeType: "application/json", truncated: false }, output: { available: true, value: "hello", mimeType: null, truncated: false }, error: { available: false, value: null, mimeType: null, truncated: false } } } }));
@@ -140,19 +148,39 @@ describe("imports", () => {
     });
     const port = await freePort();
     await new Promise<void>((r) => cloud.listen(port, "127.0.0.1", r));
-    t = await makeRoots({ noEngine: true, config: (c) => (c.cloud.apiBase = `http://127.0.0.1:${port}/api/v1/public`) });
-    process.env.NEATLOGS_CLOUD_API_KEY = "nl_test_key";
+    t = await makeRoots({
+      noEngine: true,
+      serve: true,
+      config: (c) => {
+        c.cloud.apiBase = `http://127.0.0.1:${port}/api/v1/public`;
+        c.cloud.projectId = "proj_1";
+      },
+    });
     try {
-      const { done } = t.roots.imports.start("neatlogs-cloud", { traceIds: tid }, { limit: 1 });
-      const job = await done;
+      // No token yet: a sentence about what to add, not a request with the wrong credential.
+      process.env.NEATLOGS_CLOUD_API_KEY = "nl_project_key";
+      const missing = await t.roots.imports.start("neatlogs-cloud", { traceIds: tid }, { limit: 1 }).done;
+      expect(missing).toMatchObject({ state: "failed" });
+      expect(missing.last_error).toMatch(/service-account token/);
+      expect(seen).toEqual([]);
+
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_test_token";
+      const projects = (await (await fetch(`${t.url}/api/cloud/projects`)).json()) as { projects: { id: string }[] };
+      expect(projects.projects.map((p) => p.id)).toEqual(["proj_1"]);
+      const job = await t.roots.imports.start("neatlogs-cloud", { traceIds: tid }, { limit: 1 }).done;
       expect(job).toMatchObject({ state: "succeeded", traces: 1, spans: 1 });
-      expect(seen.every((x) => x.startsWith("nl_test_key "))).toBe(true);
+      expect(seen.filter((x) => x.includes("/traces/")).every((x) => x.startsWith("proj_1 "))).toBe(true);
       const run = t.roots.store.getRun(tid)!;
       expect(run).toMatchObject({ project: "prod-agent", session_id: "sess", llm_calls: 1 });
       const s1 = t.roots.store.getOtlpSpan(tid, sid)!;
       expect(buildView(s1.span, s1.resource.attributes)).toMatchObject({ model: "gpt-4o", input: [{ role: "user", content: "hi" }], output: "hello" });
+
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_wrong";
+      const refused = await t.roots.imports.start("neatlogs-cloud", { traceIds: hex(16) }, { limit: 1 }).done;
+      expect(refused.last_error).toMatch(/didn't accept the service-account token \(401\)/);
     } finally {
       delete process.env.NEATLOGS_CLOUD_API_KEY;
+      delete process.env.NEATLOGS_SERVICE_TOKEN;
       cloud.close();
     }
   });

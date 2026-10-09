@@ -2,8 +2,10 @@
 
 neatroots reaches Neatlogs Cloud through public endpoints only. Sending goes the way any SDK does:
 OTLP/protobuf to the public ingest endpoint (`https://ingest.neatlogs.com/v1/traces`, or
-`eu.ingest.neatlogs.com`) with your own `x-api-key`. Importing reads the Neatlogs public API
-(`https://app.neatlogs.com/api/v1/public`) with the same project key.
+`eu.ingest.neatlogs.com`) with your project API key as `x-api-key`. Importing reads the Neatlogs
+public API (`https://app.neatlogs.com/api/v1/public`), which takes a different credential: a
+service-account token (`nlsa_…`) sent as `Authorization: Bearer`, with `x-project-id` naming the
+project.
 
 ## Compatibility
 
@@ -34,12 +36,22 @@ Before each send neatroots shows a redaction preview. Emails, phone numbers, API
 private keys are always redacted; add your own patterns in Settings. The SDK's own `mask` and PII
 options still apply first, in your process. Every send is logged (Settings → Neatlogs Cloud).
 
-The API key is stored in the macOS Keychain (`neatroots cloud login`), never in the database.
+The project API key is stored in the macOS Keychain (`neatroots cloud login`), never in the database.
 
 ## Importing
 
-With the key stored, neatroots can pull traces from your Neatlogs Cloud project, so a production
-run can be explained, checked and replayed on your machine:
+Importing needs a Neatlogs service-account token (see the
+[public API docs](https://docs.neatlogs.com/api-reference) for creating one). The project API key
+that sends runs can't read them.
+
+```bash
+neatroots cloud token              # paste the nlsa_… token; it goes to the macOS Keychain
+neatroots cloud project            # the projects it can read; neatroots cloud project <id> picks one
+```
+
+Or **Settings → Neatlogs Cloud → Import from Neatlogs Cloud**: store the token and choose the
+project there. With one project, neatroots picks it. Then a production run can be explained,
+checked and replayed on your machine:
 
 - **Add data → Neatlogs Cloud** lists recent traces; pick the ones to import.
 - `neatroots import neatlogs-cloud` imports the most recent ones (`--trace-ids a,b` for specific

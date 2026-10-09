@@ -6,7 +6,7 @@ import { kvToPlain } from "../otlp/types.js";
 import { buildView } from "../semantics/view.js";
 import { hardwareTier } from "../models/llm.js";
 import { projectSettings, type SteeringMode } from "../config.js";
-import { getCloudKey, setCloudKey, deleteCloudKey, getSecret } from "../relay/keychain.js";
+import { getCloudKey, setCloudKey, deleteCloudKey, getCloudToken, getSecret } from "../relay/keychain.js";
 import { mountModelsApi } from "./api-models.js";
 import { mountChecksApi } from "./api-checks.js";
 import { mountInsightsApi } from "./api-insights.js";
@@ -135,7 +135,7 @@ export function mountApi(app: Hono, roots: Roots): void {
       tier: { ...tier, platform: `${os.platform()} ${os.arch()}` },
       steering: { enabled: roots.config.steering.enabled, hooks_connected: roots.steering.listeners },
       mcp: { last_seen_ms: roots.mcpSeenMs },
-      cloud: { endpoint: roots.relay.endpoint(), has_key: !!(await getCloudKey()) },
+      cloud: { endpoint: roots.relay.endpoint(), has_key: !!(await getCloudKey()), has_token: !!(await getCloudToken()), project_id: roots.config.cloud.projectId ?? null },
       classifier: {
         laya: roots.laya.state,
         trust: Object.entries(roots.decisions.trust.all())

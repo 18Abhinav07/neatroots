@@ -16,6 +16,7 @@ import { ago, pretty } from "@/lib/format";
 import { go } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { useChat, useChatActions, useChatAgents, useChatSessions } from "../_services/chat-queries";
+import { OtherAgents } from "./other-agents";
 
 const AGENT_LABEL = { claude: "Claude Code", codex: "Codex" } as const;
 
@@ -36,7 +37,7 @@ function NewChat({ traceId, onCreated }: { traceId?: string; onCreated: (s: Chat
         variant="bordered"
         icon={BubbleChatIcon}
         title="No coding agent found"
-        description="Install Claude Code (npm i -g @anthropic-ai/claude-code) or Codex (npm i -g @openai/codex) and sign in once in a terminal. They then run here, with neatroots' tools attached."
+        description="Chats here run Claude Code or Codex. Install one (npm i -g @anthropic-ai/claude-code, or npm i -g @openai/codex; the Codex inside the ChatGPT app works too) and sign in once in a terminal. If it's installed somewhere neatroots doesn't look, set NEATROOTS_CLAUDE_BIN or NEATROOTS_CODEX_BIN."
       />
     );
   }
@@ -270,6 +271,7 @@ export function AgentsPage({ sessionId, query }: { sessionId?: string; query: UR
         {creating || !sessionId ? (
           <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 py-8">
             <NewChat traceId={traceId} onCreated={(s) => go(`agents/${s.id}`)} />
+            <OtherAgents />
           </div>
         ) : (
           <ChatPane key={sessionId} id={sessionId} />

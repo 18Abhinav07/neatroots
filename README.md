@@ -144,7 +144,7 @@ neatlogs.init(workflow_name="refund-agent", flush_interval=0.5)
 | OpenTelemetry, OTLP/HTTP | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4100/v1/traces` |
 | OpenTelemetry, OTLP/gRPC | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4317` |
 | Trace files (OTLP JSON, Neatlogs exports, JSONL) | `neatroots import traces.json`, or **Add data → Import files** |
-| Neatlogs Cloud | `neatroots import neatlogs-cloud`, or **Add data → Neatlogs Cloud** |
+| Neatlogs Cloud | A service-account token (`neatroots cloud token`), then `neatroots import neatlogs-cloud` or **Add data → Neatlogs Cloud** |
 
 **Add data** in the app shows each of these with this machine's ports filled in.
 `python -m neatlogs doctor --probe` passes against neatroots.
@@ -227,7 +227,7 @@ note per call and three per run. See [docs/steering.md](docs/steering.md).
 | Hosted LLM | Off | The run content each LLM task needs, minus secrets, to the provider you pick |
 | Jev cloud | Off | Span content a question needs, to api.typesafe.ai |
 | Neatlogs Cloud forward | Off | Runs you send, redacted first, to ingest.neatlogs.com |
-| Neatlogs Cloud import | Off | Requests to app.neatlogs.com with your project key |
+| Neatlogs Cloud import | Off | Requests to app.neatlogs.com with your service-account token |
 | Coding agents in the app | Off | Whatever Claude Code or Codex sends to their own providers |
 
 neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Linux, a file only you
@@ -248,7 +248,8 @@ can read) and never in the database.
 | `neatroots llm`, `neatroots models`, `neatroots jev` | Where LLM and decision-model work runs |
 | `neatroots steering <mode> --project <name>` | Steering per project; `neatroots steering stop` turns it off everywhere |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks in force, and YAML validation |
-| `neatroots cloud login`, `neatroots cloud forward <trace>` | Neatlogs Cloud |
+| `neatroots cloud login`, `neatroots cloud forward <trace>` | Neatlogs Cloud: send runs (project API key) |
+| `neatroots cloud token`, `neatroots cloud project` | Neatlogs Cloud: import traces (service-account token) |
 | `neatroots service install`, `neatroots update` | Run at login; update to the latest release |
 
 ## Documentation

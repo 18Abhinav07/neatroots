@@ -52,7 +52,7 @@ The 23 tools, by what they are for:
 
 | Tool | Returns | Model |
 | --- | --- | --- |
-| `list_cloud_traces` | Recent traces in your Neatlogs Cloud project (needs the key from `neatroots cloud login`) | none |
+| `list_cloud_traces` | Recent traces in your Neatlogs Cloud project (needs a service-account token: `neatroots cloud token`) | none |
 | `import_cloud_trace` | Pulls one cloud trace, with inputs and outputs, into neatroots to explain, check and replay locally | none |
 | `push_to_cloud` | Asks to send runs to Neatlogs Cloud; you confirm in the app | none |
 

@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { api, del, post, type ChatAgentInfo, type ChatEvent, type ChatSession } from "@/lib/api";
+import { api, del, post, type ChatAgentInfo, type ChatEvent, type ChatSession, type OtherAgent } from "@/lib/api";
 import { chatStream } from "@/lib/live-events";
 
 export const chatKeys = { sessions: ["chat-sessions"] as const, agents: ["chat-agents"] as const, session: (id: string) => ["chat-session", id] as const };
 
 export function useChatAgents() {
-  return useQuery({ queryKey: chatKeys.agents, queryFn: () => api<{ agents: ChatAgentInfo[] }>("/api/chat/agents"), staleTime: 60_000 });
+  return useQuery({ queryKey: chatKeys.agents, queryFn: () => api<{ agents: ChatAgentInfo[]; elsewhere?: OtherAgent[] }>("/api/chat/agents"), staleTime: 60_000 });
 }
 
 export function useChatSessions() {

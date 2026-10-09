@@ -12,12 +12,12 @@ import { api, ask, port, running } from "./cli/util.js";
 import { registerModelCommands } from "./cli/models.js";
 import { registerServiceCommands } from "./cli/service.js";
 import { registerConnectCommand } from "./cli/connect.js";
-import { registerDataCommands } from "./cli/data.js";
+import { registerCloudImportCommands, registerDataCommands } from "./cli/data.js";
 import { connectClient, findClient, listClients, serverCommand, CLIENTS } from "./mcp/clients.js";
 import { parseChecks } from "./checks/registry.js";
 import { hardwareTier, LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
-import { setCloudKey, deleteCloudKey, getCloudKey, getSecret } from "./relay/keychain.js";
+import { setCloudKey, deleteCloudKey, getCloudKey, getCloudToken, getSecret } from "./relay/keychain.js";
 import { LAYA_DOWNLOAD_MB, LayaManager } from "./models/laya.js";
 import { log } from "./util/log.js";
 
@@ -283,11 +283,11 @@ program
 
 // ------------------------------------------------------------------- cloud
 
-const cloud = program.command("cloud").description("Neatlogs Cloud: store your API key and forward runs");
+const cloud = program.command("cloud").description("Neatlogs Cloud: send runs (project API key) and import traces (service-account token)");
 
 cloud
   .command("login")
-  .description("Store your Neatlogs Cloud API key (macOS Keychain)")
+  .description("Store your Neatlogs Cloud project API key, for sending runs (macOS Keychain)")
   .action(async () => {
     const key = process.stdin.isTTY ? await ask("Paste your API key from app.neatlogs.com: ", true) : fs.readFileSync(0, "utf8").trim();
     if (!key) {
@@ -310,8 +310,11 @@ cloud
   .command("status")
   .action(async () => {
     const cfg = loadConfig();
-    console.log(`endpoint ${cfg.cloud.endpoint} · key ${(await getCloudKey()) ? "stored" : "not stored"}`);
+    console.log(`endpoint ${cfg.cloud.endpoint} · project API key (sending) ${(await getCloudKey()) ? "stored" : "not stored"}`);
+    console.log(`service-account token (importing) ${(await getCloudToken()) ? "stored" : "not stored"}${cfg.cloud.projectId ? ` · project ${cfg.cloud.projectId}` : ""}`);
   });
+
+registerCloudImportCommands(cloud);
 
 cloud
   .command("forward")

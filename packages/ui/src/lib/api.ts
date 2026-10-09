@@ -217,6 +217,20 @@ export interface ChatAgentInfo {
   installed: boolean;
   version: string | null;
   mcp_connected: boolean;
+  /** Where its CLI was found (the PATH, an install folder, or inside ChatGPT.app). */
+  bin?: string | null;
+}
+
+/** A coding agent neatroots connects over MCP that runs in its own app or terminal. */
+export interface OtherAgent {
+  id: string;
+  label: string;
+  detected: boolean;
+  connected: boolean;
+  /** A link that opens its desktop app (cursor://, vscode://, claude://). */
+  open: string | null;
+  /** The command that starts it in a terminal. */
+  run: string | null;
 }
 
 export interface SpanDetail {
@@ -269,7 +283,7 @@ export interface Status {
   steering: { enabled: boolean; hooks_connected: number };
   mcp?: { last_seen_ms: number | null };
   install?: { mode: "bundle" | "source" | "other"; root: string | null; steer_python: string | null; steer_ts: string | null; examples?: string | null };
-  cloud: { endpoint: string; has_key: boolean };
+  cloud: { endpoint: string; has_key: boolean; has_token?: boolean; project_id?: string | null };
   classifier?: {
     laya: { state: string; message: string | null; progress: number | null; url: string | null };
     trust: { question: string; n: number; agreement: number | null; trusted: boolean }[];

@@ -1,11 +1,21 @@
 import crypto from "node:crypto";
 import type { Roots } from "../../core.js";
-import { getCloudKey } from "../../relay/keychain.js";
+import { getCloudToken } from "../../relay/keychain.js";
 import { log } from "../../util/log.js";
-import { cloudApiBase, neatlogsCloudSource } from "./neatlogs-cloud.js";
+import { cloudApiBase, neatlogsCloudSource, type CloudAuth } from "./neatlogs-cloud.js";
 import { ImportError, type ImportSource } from "./types.js";
 
 export { parseTraceFile } from "./file.js";
+
+/** The stored service-account token and the chosen project, or undefined when no token is stored. */
+export async function cloudImportAuth(roots: Roots): Promise<CloudAuth | undefined> {
+  const token = await getCloudToken();
+  return token ? { token, projectId: roots.config.cloud.projectId || undefined } : undefined;
+}
+
+export function cloudImportBase(roots: Roots): string {
+  return cloudApiBase(roots.relay.endpoint(), roots.config.cloud.apiBase);
+}
 export { ImportError } from "./types.js";
 export type { ImportSource, ImportField } from "./types.js";
 
@@ -35,8 +45,8 @@ export class ImportJobs {
   constructor(private readonly roots: Roots) {
     this.sources = [
       neatlogsCloudSource(
-        () => cloudApiBase(roots.relay.endpoint(), roots.config.cloud.apiBase),
-        () => getCloudKey(),
+        () => cloudImportBase(roots),
+        () => cloudImportAuth(roots),
       ),
     ];
   }

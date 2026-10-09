@@ -2,8 +2,9 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import type { Roots } from "../core.js";
-import { findClient, clientStatus } from "../mcp/clients.js";
+import { findClient, clientStatus, listClients } from "../mcp/clients.js";
 import { log } from "../util/log.js";
 
 // Claude Code and Codex inside the app. Each turn runs the agent's own CLI headless in the
@@ -48,9 +49,50 @@ CREATE TABLE IF NOT EXISTS chat_events (session_id TEXT NOT NULL, seq INTEGER NO
 const READ_TOOLS = ["Read", "Grep", "Glob", "LS", "TodoWrite", "mcp__neatroots__*", "mcp__neatroots_app__*"];
 const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 
-function onPath(bin: string): boolean {
-  return spawnSync("sh", ["-c", `command -v ${bin}`], { stdio: "ignore" }).status === 0;
+/** Where agent CLIs get installed when they aren't on the PATH neatroots was started with. */
+function candidateDirs(): string[] {
+  const h = os.homedir();
+  const nvm = path.join(h, ".nvm", "versions", "node");
+  const nvmBins = fs.existsSync(nvm) ? fs.readdirSync(nvm).sort().reverse().map((v) => path.join(nvm, v, "bin")) : [];
+  return [path.join(h, ".local", "bin"), path.join(h, ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin", path.join(h, ".bun", "bin"), path.join(h, ".volta", "bin"), path.join(h, ".npm-global", "bin"), ...nvmBins];
 }
+
+/** CLIs that ship inside a desktop app: ChatGPT's Codex. */
+const APP_BINS: Record<ChatAgent, string[]> = {
+  claude: [],
+  codex: ["/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex", path.join(os.homedir(), "Applications", "ChatGPT.app", "Contents", "Resources", "codex-cli", "bin", "codex")],
+};
+
+const isExec = (f: string) => {
+  try {
+    fs.accessSync(f, fs.constants.X_OK);
+    return fs.statSync(f).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** The agent's CLI: NEATROOTS_<AGENT>_BIN, the PATH, the usual install folders, then a desktop app's copy. */
+export function agentBin(agent: ChatAgent): string | null {
+  const override = process.env[`NEATROOTS_${agent.toUpperCase()}_BIN`];
+  if (override) return isExec(override) ? override : null;
+  const r = spawnSync("sh", ["-c", `command -v ${agent}`], { encoding: "utf8" });
+  const found = r.status === 0 ? r.stdout.trim() : "";
+  if (found && isExec(found)) return found;
+  for (const d of candidateDirs()) if (isExec(path.join(d, agent))) return path.join(d, agent);
+  return APP_BINS[agent].find(isExec) ?? null;
+}
+
+/** How to use an agent neatroots connects but can't run inside the app. */
+const ELSEWHERE: Record<string, { open?: string; run?: string }> = {
+  cursor: { open: "cursor://" },
+  vscode: { open: "vscode://" },
+  "claude-desktop": { open: "claude://" },
+  windsurf: { open: "windsurf://" },
+  gemini: { run: "gemini" },
+  opencode: { run: "opencode" },
+  amp: { run: "amp" },
+};
 
 function version(bin: string): string | null {
   const r = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 10_000 });
@@ -58,6 +100,18 @@ function version(bin: string): string | null {
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : JSON.stringify(v));
+
+const AUTH_FAILURE = /authenticat|credential|log ?in|oauth|session (has )?expired|api key|unauthori[sz]ed|\b40[13]\b/i;
+
+/** A sign-in failure from the agent's own CLI, as what to do about it. */
+export function signInHelp(agent: ChatAgent, message: string): string | null {
+  if (!AUTH_FAILURE.test(message)) return null;
+  const name = agent === "claude" ? "Claude Code" : "Codex";
+  const how = /aws|bedrock/i.test(message)
+    ? `It uses Amazon Bedrock on this machine: refresh your AWS login, check that \`${agent}\` works in a terminal, then send your message again.`
+    : `Run \`${agent}\` in a terminal to sign in again, then send your message again.`;
+  return `${name} couldn't sign in, so it never reached neatroots. ${how}\n\n${message.trim().slice(0, 600)}`;
+}
 
 export class AgentChats {
   private readonly running = new Map<string, ChildProcess>();
@@ -67,18 +121,27 @@ export class AgentChats {
     roots.store.db.prepare("UPDATE chat_sessions SET state = 'idle' WHERE state = 'running'").run();
   }
 
-  agents(): { id: ChatAgent; label: string; installed: boolean; version: string | null; mcp_connected: boolean }[] {
+  /** Agents that chat inside the app (Claude Code, Codex), and where their CLI was found. */
+  agents(): { id: ChatAgent; label: string; installed: boolean; version: string | null; mcp_connected: boolean; bin: string | null }[] {
     return (["claude", "codex"] as const).map((id) => {
-      const installed = onPath(id);
+      const bin = agentBin(id);
       const client = findClient(id === "claude" ? "claude-code" : "codex");
       return {
         id,
         label: id === "claude" ? "Claude Code" : "Codex",
-        installed,
-        version: installed ? version(id) : null,
+        installed: !!bin,
+        version: bin ? version(bin) : null,
         mcp_connected: !!client && clientStatus(client).connected,
+        bin,
       };
     });
+  }
+
+  /** The other coding agents neatroots connects over MCP; they run in their own app or terminal. */
+  elsewhere(): { id: string; label: string; detected: boolean; connected: boolean; open: string | null; run: string | null }[] {
+    return listClients()
+      .filter((c) => c.id !== "claude-code" && c.id !== "codex")
+      .map((c) => ({ id: c.id, label: c.label, detected: c.detected, connected: c.connected, open: ELSEWHERE[c.id]?.open ?? null, run: ELSEWHERE[c.id]?.run ?? null }));
   }
 
   list(): ChatSession[] {
@@ -155,15 +218,16 @@ export class AgentChats {
     const s = this.get(id);
     if (!s) throw new Error("no such chat");
     if (this.running.has(id)) throw new Error("the agent is still answering; stop it or wait");
-    if (!onPath(s.agent)) throw new Error(`${s.agent === "claude" ? "Claude Code (claude)" : "Codex (codex)"} isn't installed or isn't on PATH`);
+    const bin = agentBin(s.agent);
+    if (!bin) throw new Error(`${s.agent === "claude" ? "Claude Code (claude)" : "Codex (codex)"} isn't installed, or neatroots can't find it. Set NEATROOTS_${s.agent.toUpperCase()}_BIN to its path.`);
     this.emit(id, { kind: "user", text });
     const first = !s.agent_session_id;
     if (first && s.title === "New chat") this.update(id, { title: text.slice(0, 60) });
     const prompt = first ? this.preamble(s) + text : text;
     this.update(id, { state: "running" });
-    const { cmd, args } = s.agent === "claude" ? this.claudeArgs(s, prompt) : this.codexArgs(s, prompt);
-    log.debug(`chat ${id}: ${cmd} ${args.slice(0, -1).join(" ")}`);
-    const child = spawn(cmd, args, { cwd: s.cwd, env: { ...process.env, NEATLOGS_ENDPOINT: `http://localhost:${this.roots.config.port}` }, stdio: ["ignore", "pipe", "pipe"] });
+    const { args } = s.agent === "claude" ? this.claudeArgs(s, prompt) : this.codexArgs(s, prompt);
+    log.debug(`chat ${id}: ${bin} ${args.slice(0, -1).join(" ")}`);
+    const child = spawn(bin, args, { cwd: s.cwd, env: { ...process.env, NEATLOGS_ENDPOINT: `http://localhost:${this.roots.config.port}` }, stdio: ["ignore", "pipe", "pipe"] });
     this.running.set(id, child);
     let buf = "";
     let stderr = "";
@@ -271,9 +335,11 @@ export class AgentChats {
     if (e.type === "result") {
       if (e.session_id) this.update(id, { agent_session_id: String(e.session_id) });
       const denials = (e.permission_denials as { tool_name: string }[] | undefined) ?? [];
+      const help = e.is_error ? signInHelp("claude", str(e.result)) : null;
+      if (help) this.emit(id, { kind: "error", text: help });
       this.emit(id, {
         kind: "result",
-        text: e.is_error ? str(e.result) : undefined,
+        text: e.is_error && !help ? str(e.result) : undefined,
         meta: { ok: !e.is_error, cost_usd: e.total_cost_usd, duration_ms: e.duration_ms, denied: [...new Set(denials.map((d) => d.tool_name))] },
       });
       return "result";
@@ -319,14 +385,14 @@ export class AgentChats {
       return "result";
     }
     if (e.type === "turn.failed" || e.type === "error") {
-      this.emit(id, { kind: "error", text: str((e.error as Record<string, unknown> | undefined)?.message ?? e.message) });
+      const message = str((e.error as Record<string, unknown> | undefined)?.message ?? e.message);
+      this.emit(id, { kind: "error", text: signInHelp("codex", message) ?? message });
       return "result";
     }
   }
 
   private explainFailure(agent: ChatAgent, stderr: string): string {
     const s = stderr.trim();
-    if (/auth|login|oauth|api key|unauthor/i.test(s)) return `${agent === "claude" ? "Claude Code" : "Codex"} isn't signed in. Run \`${agent}\` in a terminal once to sign in, then try again.\n\n${s.slice(-600)}`;
-    return s ? s.slice(-1200) : `${agent} exited without an answer`;
+    return signInHelp(agent, s) ?? (s ? s.slice(-1200) : `${agent} exited without an answer`);
   }
 }

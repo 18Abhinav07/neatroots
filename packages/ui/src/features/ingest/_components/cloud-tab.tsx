@@ -17,20 +17,20 @@ const HEAD = "h-9 px-3 text-eyebrow font-normal text-muted-foreground";
 
 /** Recent Neatlogs Cloud traces; import one to debug a production run on this machine. */
 export function CloudTab({ status }: { status?: Status }) {
-  const hasKey = !!status?.cloud.has_key;
-  const { data, error, isLoading } = useCloudTraces(hasKey);
+  const hasToken = !!status?.cloud.has_token;
+  const { data, error, isLoading } = useCloudTraces(hasToken);
   const { cloud } = useImportActions();
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  if (!hasKey) {
+  if (!hasToken) {
     return (
       <EmptyState
         variant="bordered"
         icon={CloudDownloadIcon}
         title="Connect Neatlogs Cloud"
-        description="Store your project API key and recent production traces show up here. Import one to explain, check and replay it locally."
+        description="Importing reads Neatlogs Cloud with a service-account token (nlsa_…), not the project API key that sends runs. Add one and choose its project, and recent production traces show up here to explain, check and replay locally."
         action={
           <Button size="sm" variant="secondary" onClick={() => go("settings/cloud")}>
-            Add API key
+            Add token
           </Button>
         }
       />

@@ -375,8 +375,18 @@ function disconnectMcp(c: ClientDef): ConnectResult {
 }
 
 /** Registers the MCP server and, for agents that read skills, installs neatroots' skills. */
+/** Claude Desktop keeps its config in memory and writes it back while it runs, dropping edits made meanwhile. */
+function claudeDesktopRunning(): boolean {
+  if (process.platform !== "darwin") return false;
+  const r = spawnSync("ps", ["-axo", "comm="], { encoding: "utf8" });
+  return r.status === 0 && r.stdout.split("\n").some((l) => l.trim().endsWith("/Claude.app/Contents/MacOS/Claude"));
+}
+
 export function connectClient(c: ClientDef, cmd = serverCommand()): ConnectResult {
   const r = connectMcp(c, cmd);
+  if (r.ok && c.id === "claude-desktop" && claudeDesktopRunning()) {
+    return { ...r, message: `${r.message}. Claude Desktop is open and rewrites this file while it runs, so the entry may be lost: quit it (⌘Q), run neatroots connect claude-desktop again, then reopen it` };
+  }
   if (!r.ok || !c.skills) return r;
   try {
     const n = installSkills(c);

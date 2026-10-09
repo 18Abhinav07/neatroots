@@ -2,8 +2,8 @@ import Database from "better-sqlite3";
 import { z } from "zod";
 import type { Roots } from "../core.js";
 import { loadTrace, type SpanInfo } from "../engine/trace.js";
-import { cloudApiBase, listCloudTraces } from "../ingest/importers/neatlogs-cloud.js";
-import { getCloudKey } from "../relay/keychain.js";
+import { listCloudTraces, NO_CLOUD_TOKEN } from "../ingest/importers/neatlogs-cloud.js";
+import { cloudImportAuth, cloudImportBase } from "../ingest/importers/index.js";
 import { preview } from "../semantics/view.js";
 import { runSummary } from "../server/api.js";
 import { clip, def, resolveSpan, resolveTrace, type ToolDef } from "./tools.js";
@@ -207,13 +207,13 @@ export const EXPLORE_TOOLS = [
   def({
     name: "list_cloud_traces",
     title: "Neatlogs Cloud traces",
-    description: "Recent traces in the user's Neatlogs Cloud project (needs the cloud API key stored in neatroots). Import one with import_cloud_trace to debug it locally.",
+    description: "Recent traces in the user's Neatlogs Cloud project (needs a Neatlogs service-account token stored in neatroots). Import one with import_cloud_trace to debug it locally.",
     readOnly: true,
     input: { limit: z.number().int().min(1).max(50).optional(), workflow: z.string().optional() },
     run: async (roots, a) => {
-      const key = await getCloudKey();
-      if (!key) throw new Error("no Neatlogs Cloud API key stored; the user can add one with neatroots cloud login");
-      const page = await listCloudTraces(cloudApiBase(roots.relay.endpoint(), roots.config.cloud.apiBase), key, { limit: a.limit ?? 20, workflowName: a.workflow });
+      const auth = await cloudImportAuth(roots);
+      if (!auth) throw new Error(NO_CLOUD_TOKEN);
+      const page = await listCloudTraces(cloudImportBase(roots), auth, { limit: a.limit ?? 20, workflowName: a.workflow });
       return page.traces;
     },
   }),

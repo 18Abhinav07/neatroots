@@ -165,7 +165,7 @@ Bring in runs you already have, to check, explain or replay them here:
 
 ```bash
 neatroots import traces.json export.jsonl       # OTLP JSON, Neatlogs trace exports, Neatlogs HTTP traces
-neatroots import neatlogs-cloud --since 24h     # your Neatlogs Cloud project (section 10)
+neatroots import neatlogs-cloud --since 24h     # your Neatlogs Cloud project (needs a service-account token, section 10)
 ```
 
 **Add data → Import files** in the app takes the same files by drag and drop. Imported runs are checked like any other.
@@ -288,19 +288,23 @@ Then ask, for example: *"Fix what neatroots found in my last run, and add a chec
 
 ### Inside the app
 
-**Coding agents** in the sidebar chats with Claude Code or Codex (whichever is installed) in a project folder you pick, with neatroots' tools attached. Each message runs the agent's own CLI on your machine with your own sign-in, and the chat resumes the same agent session. A chat is read-only until you switch on **Allow edits** or **Allow commands** for it. **Ask a coding agent** on a run (in the **More actions** menu) starts a chat about that run.
+**Coding agents** in the sidebar chats with Claude Code or Codex in a project folder you pick, with neatroots' tools attached. Each message runs the agent's own CLI on your machine with your own sign-in, and the chat resumes the same agent session. A chat is read-only until you switch on **Allow edits** or **Allow commands** for it. **Ask a coding agent** on a run (in the **More actions** menu) starts a chat about that run.
+
+- neatroots finds the CLIs on your PATH, in the usual install folders (`~/.local/bin`, Homebrew, npm under any nvm Node), and the Codex that ships inside the ChatGPT app. If yours is elsewhere, set `NEATROOTS_CLAUDE_BIN` or `NEATROOTS_CODEX_BIN` to its path.
+- If the agent can't sign in (an expired login, or an expired AWS session when Claude Code runs on Amazon Bedrock), the chat says so. Run `claude` or `codex` in a terminal until it works, then send the message again.
+- The other agents neatroots connects (Cursor, VS Code, Claude Desktop, Gemini CLI, OpenCode …) are listed below the chat: they run in their own app or terminal, with neatroots' tools already attached. **Open Cursor** and the like open the app.
 
 ## 10. Neatlogs Cloud
 
 To keep a run, or share it with your team, send it to Neatlogs Cloud:
 
 ```bash
-neatroots cloud login              # your app.neatlogs.com project API key, stored in the Keychain
+neatroots cloud login              # your app.neatlogs.com project API key (sends runs), stored in the Keychain
 ```
 
 Then click **Send to Cloud** on a run. neatroots shows what it will remove before it sends anything. To forward every run of a project as it finishes, run `neatroots cloud auto <project> on`.
 
-The same key lets you go the other way: **Add data → Neatlogs Cloud** lists your project's recent traces and imports the ones you pick, so you can explain, check and replay a production run locally. See [cloud.md](cloud.md).
+Importing goes the other way and needs a different credential: a Neatlogs service-account token (`nlsa_…`), because the project API key can only send. Store it with `neatroots cloud token` (or **Settings → Neatlogs Cloud → Import from Neatlogs Cloud**) and choose the project to read. **Add data → Neatlogs Cloud** then lists that project's recent traces and imports the ones you pick, so you can explain, check and replay a production run locally. See [cloud.md](cloud.md).
 
 ## What leaves your machine
 
@@ -310,7 +314,7 @@ The same key lets you go the other way: **Add data → Neatlogs Cloud** lists yo
 | Hosted LLM | Off | Run content each LLM task needs, minus secrets, to the provider you choose |
 | Jev cloud | Off | Span content a question needs, to api.typesafe.ai |
 | Neatlogs Cloud forward | Off | Runs you send or a project you forward, redacted first, to ingest.neatlogs.com |
-| Neatlogs Cloud import | Off | Requests to app.neatlogs.com with your project key |
+| Neatlogs Cloud import | Off | Requests to app.neatlogs.com with your service-account token |
 | Coding agents in the app | Off | Whatever Claude Code or Codex sends to their providers, as when you run them yourself |
 | Steering | Off | Notes go to your own agent's next LLM call; nothing leaves the machine |
 | Install and update | — | Downloads neatroots, Node.js, packages and Laya |
@@ -333,7 +337,8 @@ neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Lin
 | `neatroots models`, `neatroots laya install`, `neatroots jev login / on / off` | Decision models |
 | `neatroots steering <mode> --project <name>`, `neatroots steering stop` | Steering |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks |
-| `neatroots cloud login / forward / auto` | Neatlogs Cloud |
+| `neatroots cloud login / forward / auto` | Neatlogs Cloud: send runs |
+| `neatroots cloud token`, `neatroots cloud project` | Neatlogs Cloud: the service-account token and project imports read from |
 | `neatroots connect` | Give coding agents neatroots' MCP tools |
 | `neatroots mcp` | MCP over stdio for coding agents |
 | `neatroots update` | Update to the latest release |
@@ -362,6 +367,9 @@ Uninstalling keeps `~/.neatroots`, which holds your runs, settings and Laya. Del
 | Hosted LLM errors | `neatroots llm` shows the error. "Rejected the key": run `neatroots llm login <provider>` again. "Model not found": check `neatroots llm models <provider>` |
 | Replay says it doesn't know how to start the agent | Register a command or endpoint: `neatroots rerun add <project> "<command>"`, or Settings → Projects |
 | A file won't import | It must be OTLP JSON, a Neatlogs trace export or Neatlogs HTTP traces (one per line in .jsonl); the error says what didn't parse |
-| A Neatlogs Cloud import fails | Check the key: `neatroots cloud login`. The error names the request that failed |
+| A Neatlogs Cloud import fails | It needs a service-account token, not the project API key: `neatroots cloud token`. A 403 means the token can't read the chosen project: `neatroots cloud project` |
+| A chat with Claude Code or Codex says it couldn't sign in | Run `claude` or `codex` in a terminal until it answers (for Claude Code on Amazon Bedrock, refresh your AWS login), then send again |
+| Codex or Claude Code shows "not installed" | Set `NEATROOTS_CODEX_BIN` or `NEATROOTS_CLAUDE_BIN` to the CLI's path and restart neatroots |
+| Claude Desktop shows "Not connected" after connecting | Claude Desktop rewrites its settings while it runs. Quit it (⌘Q), run `neatroots connect claude-desktop`, then reopen it |
 | Steering notes never arrive | Turn steering on for the project, install the hook, and set `NEATROOTS_STEER_DEBUG=1` in the agent to see what the hook does |
 | Where are the logs? | The terminal running `neatroots start`, or `~/.neatroots/logs/neatroots.log` for the background service. `NEATROOTS_DEBUG=1` adds detail |

@@ -11,11 +11,12 @@ const SERVICE = "neatroots";
 const LEGACY_SERVICES = ["neatlogs-bolt", "neatlogs-bolts"];
 
 /** llm-api-key-<provider> holds the key for one external LLM provider. */
-export type SecretName = "cloud-api-key" | "jev-api-key" | `llm-api-key-${string}`;
+export type SecretName = "cloud-api-key" | "cloud-service-token" | "jev-api-key" | `llm-api-key-${string}`;
 
 /** Environment variables that override a stored secret, first match wins. */
 function envNames(name: SecretName): string[] {
   if (name === "cloud-api-key") return ["NEATLOGS_CLOUD_API_KEY"];
+  if (name === "cloud-service-token") return ["NEATLOGS_SERVICE_TOKEN"];
   if (name === "jev-api-key") return ["TYPESAFE_API_KEY"];
   const provider = name.slice("llm-api-key-".length);
   return ["NEATROOTS_LLM_API_KEY", ...(providerById(provider)?.keyEnv ?? [])];
@@ -91,3 +92,7 @@ export async function deleteSecret(name: SecretName): Promise<void> {
 export const getCloudKey = () => getSecret("cloud-api-key");
 export const setCloudKey = (key: string) => setSecret("cloud-api-key", key);
 export const deleteCloudKey = () => deleteSecret("cloud-api-key");
+/** Reading from Neatlogs Cloud (imports) takes a service-account token (nlsa_…), not the project key that sends runs. */
+export const getCloudToken = () => getSecret("cloud-service-token");
+export const setCloudToken = (token: string) => setSecret("cloud-service-token", token);
+export const deleteCloudToken = () => deleteSecret("cloud-service-token");

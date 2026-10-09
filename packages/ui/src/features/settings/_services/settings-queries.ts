@@ -130,3 +130,38 @@ export function useRerunTarget() {
     onSettled: () => void qc.invalidateQueries({ queryKey: appKeys.projects }),
   });
 }
+
+export interface CloudProject {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+}
+
+/** Projects the stored service-account token can read (imports come from one of them). */
+export function useCloudProjects(enabled: boolean) {
+  return useQuery({ queryKey: ["cloud-projects"], queryFn: () => api<{ projects: CloudProject[]; project_id: string | null }>("/api/cloud/projects"), enabled, retry: false, staleTime: 60_000 });
+}
+
+/** The service-account token and project that importing from Neatlogs Cloud reads with. */
+export function useCloudImportAuth() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: appKeys.status });
+    void qc.invalidateQueries({ queryKey: ["cloud-projects"] });
+    void qc.invalidateQueries({ queryKey: ["cloud-traces"] });
+  };
+  return {
+    storeToken: useMutation({
+      mutationFn: (token: string) => post<{ has_token: boolean }>("/api/cloud/import-auth", { token }),
+      onSuccess: () => toast.success("Service-account token stored in the macOS Keychain"),
+      onError: (e) => toast.error(`Couldn't store the token: ${(e as Error).message}`),
+      onSettled: refresh,
+    }),
+    setProject: useMutation({
+      mutationFn: (project_id: string) => post("/api/cloud/import-auth", { project_id }),
+      onSuccess: () => toast.success("Import project saved"),
+      onSettled: refresh,
+    }),
+    remove: useMutation({ mutationFn: () => del("/api/cloud/import-auth"), onSuccess: () => toast.success("Service-account token removed"), onSettled: refresh }),
+  };
+}

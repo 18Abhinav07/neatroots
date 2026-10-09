@@ -5,7 +5,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { Textarea } from "@/components/ui/textarea";
 import type { Status } from "@/lib/api";
 import { ago } from "@/lib/format";
-import { useForwards, useKeyActions, useSaveSettings } from "../_services/settings-queries";
+import { useCloudImportAuth, useCloudProjects, useForwards, useKeyActions, useSaveSettings } from "../_services/settings-queries";
 import { KeyInput, OptionSelect, SettingField } from "./form";
 import { SettingsCard, SettingsToggleCard } from "./settings-shell";
 
@@ -33,10 +33,10 @@ export function CloudSection({ status }: { status: Status }) {
             {connected ? "API key stored" : "Not connected"}
           </StatusPill>
         }
-        description="Send runs you want to keep or share, and import production traces to debug them here. Runs are redacted before they leave; nothing is sent unless you send it."
+        description="Send runs you want to keep or share. Runs are redacted before they leave; nothing is sent unless you send it."
         control={null}
       >
-        <SettingField label="Project API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in the neatroots database. The same key sends runs and imports traces.">
+        <SettingField label="Project API key from app.neatlogs.com" htmlFor="nl-key" hint="Sends runs, like the SDK does. Stored in the macOS Keychain, never in the neatroots database.">
           <KeyInput
             id="nl-key"
             label="Neatlogs Cloud API key"
@@ -46,12 +46,8 @@ export function CloudSection({ status }: { status: Status }) {
             onRemove={() => keys.remove.mutate()}
           />
         </SettingField>
-        {connected && (
-          <a href="#/add-data/cloud" className="text-sm text-foreground underline-offset-4 hover:underline">
-            Import traces from Neatlogs Cloud
-          </a>
-        )}
       </SettingsToggleCard>
+      <ImportAuthCard status={status} />
       <SettingsCard title="Region and redaction" description="Emails, phone numbers and keys are always redacted before a send.">
         <div className="grid gap-4 sm:grid-cols-2">
           <SettingField label="Ingest region" htmlFor="nl-endpoint">
@@ -97,5 +93,62 @@ export function CloudSection({ status }: { status: Status }) {
         )}
       </SettingsCard>
     </>
+  );
+}
+
+/** Reading traces back from Neatlogs Cloud: a service-account token and the project to read. */
+function ImportAuthCard({ status }: { status: Status }) {
+  const auth = useCloudImportAuth();
+  const hasToken = !!status.cloud.has_token;
+  const projects = useCloudProjects(hasToken);
+  const list = projects.data?.projects ?? [];
+  const current = status.cloud.project_id ?? "";
+  return (
+    <SettingsCard
+      title="Import from Neatlogs Cloud"
+      description="Bring production traces here to explain, check and replay them. Reading needs a service-account token (nlsa_…); the project API key above can only send."
+    >
+      <SettingField
+        label="Service-account token"
+        htmlFor="nl-token"
+        hint={
+          <>
+            Create one in Neatlogs (see the{" "}
+            <a href="https://docs.neatlogs.com/api-reference" target="_blank" rel="noreferrer" className="text-foreground underline-offset-4 hover:underline">
+              public API docs
+            </a>
+            ). Stored in the macOS Keychain.
+          </>
+        }
+      >
+        <KeyInput
+          id="nl-token"
+          label="Neatlogs service-account token"
+          noun="token"
+          placeholder="nlsa_…"
+          stored={hasToken}
+          storing={auth.storeToken.isPending}
+          onStore={(t, done) => auth.storeToken.mutate(t, { onSuccess: done })}
+          onRemove={() => auth.remove.mutate()}
+        />
+      </SettingField>
+      {hasToken && (
+        <SettingField label="Project to import from" htmlFor="nl-project" hint={projects.error ? (projects.error as Error).message : list.length ? undefined : projects.isLoading ? "Loading the token's projects…" : "The token can't read any project."}>
+          <OptionSelect
+            id="nl-project"
+            className="h-8 sm:max-w-sm"
+            label="Project to import from"
+            value={current || "none"}
+            onValueChange={(v) => v !== "none" && v !== current && auth.setProject.mutate(v)}
+            options={[...(current ? [] : [{ value: "none", label: list.length ? "Choose a project" : "No project" }]), ...list.map((p) => ({ value: p.id, label: `${p.name}${p.isDefault ? " (default)" : ""}` }))]}
+          />
+        </SettingField>
+      )}
+      {hasToken && (
+        <a href="#/add-data/cloud" className="text-sm text-foreground underline-offset-4 hover:underline">
+          Import traces from Neatlogs Cloud
+        </a>
+      )}
+    </SettingsCard>
   );
 }

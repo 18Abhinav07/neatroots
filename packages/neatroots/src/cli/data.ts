@@ -2,15 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
 import { loadConfig, saveConfig } from "../config.js";
+import { cloudApiBase, listCloudProjects } from "../ingest/importers/neatlogs-cloud.js";
+import { deleteCloudToken, getCloudToken, setCloudToken } from "../relay/keychain.js";
 import type { ImportSource } from "../ingest/importers/types.js";
-import { api, port, running } from "./util.js";
+import { api, ask, port, running } from "./util.js";
 
 // neatroots import, replay and rerun: bring runs in from files and Neatlogs Cloud, and re-run them.
 
 const CLOUD: Pick<ImportSource, "id" | "label" | "description" | "fields"> = {
   id: "neatlogs-cloud",
   label: "Neatlogs Cloud",
-  description: "Traces from your Neatlogs Cloud project, with the stored API key (neatroots cloud login).",
+  description: "Traces from your Neatlogs Cloud project, read with a service-account token (neatroots cloud token).",
   fields: [{ name: "traceIds", label: "Trace ids, comma-separated (default: the most recent)" }],
 };
 const SOURCES = [CLOUD];
@@ -154,5 +156,67 @@ export function registerDataCommands(program: Command): void {
         saveConfig(cfg);
       }
       console.log(`✓ removed ${project}`);
+    });
+}
+
+/** Sets the import project in the running neatroots, or in config.yaml when it isn't running. */
+async function setImportProject(projectId: string | null): Promise<void> {
+  const p = port();
+  if (await running(p)) await api(p, "/api/cloud/import-auth", { method: "POST", body: JSON.stringify({ project_id: projectId }) });
+  else {
+    const cfg = loadConfig();
+    cfg.cloud.projectId = projectId ?? undefined;
+    saveConfig(cfg);
+  }
+}
+
+/** neatroots cloud token / cloud project: what importing from Neatlogs Cloud reads with. */
+export function registerCloudImportCommands(cloud: Command): void {
+  cloud
+    .command("token")
+    .description("Store a Neatlogs service-account token (nlsa_…) for importing traces from Neatlogs Cloud")
+    .option("--remove", "remove the stored token")
+    .action(async (opts: { remove?: boolean }) => {
+      if (opts.remove) {
+        await deleteCloudToken();
+        await setImportProject(null);
+        console.log("✓ removed the service-account token");
+        return;
+      }
+      const token = process.stdin.isTTY ? await ask("Paste your Neatlogs service-account token (nlsa_…): ", true) : fs.readFileSync(0, "utf8").trim();
+      if (!token) throw new Error("no token given");
+      const where = await setCloudToken(token);
+      console.log(`✓ stored in the ${where === "keychain" ? "macOS Keychain" : "file ~/.neatroots/cloud-service-token"}`);
+      const cfg = loadConfig();
+      const projects = await listCloudProjects(cloudApiBase(cfg.cloud.endpoint, cfg.cloud.apiBase), token).catch((e: Error) => {
+        console.log(`! couldn't list its projects: ${e.message}`);
+        return null;
+      });
+      if (!projects) return;
+      if (projects.length === 1) {
+        await setImportProject(projects[0].id);
+        console.log(`✓ imports come from ${projects[0].name}`);
+      } else if (projects.length > 1) {
+        console.log("It can read several projects. Choose the one imports come from:  neatroots cloud project <id>");
+        for (const pr of projects) console.log(`  ${pr.id}  ${pr.name}${pr.isDefault ? "  (default)" : ""}`);
+      }
+    });
+
+  cloud
+    .command("project")
+    .argument("[id]", "the project's id")
+    .description("Show or choose the Neatlogs Cloud project imports come from")
+    .action(async (id: string | undefined) => {
+      if (id) {
+        await setImportProject(id);
+        console.log(`✓ imports come from project ${id}`);
+        return;
+      }
+      const token = await getCloudToken();
+      if (!token) throw new Error("no service-account token stored: run neatroots cloud token");
+      const cfg = loadConfig();
+      const projects = await listCloudProjects(cloudApiBase(cfg.cloud.endpoint, cfg.cloud.apiBase), token);
+      if (!projects.length) console.log("The token can't read any project.");
+      for (const pr of projects) console.log(`${pr.id === cfg.cloud.projectId ? "→" : " "} ${pr.id}  ${pr.name}${pr.isDefault ? "  (default)" : ""}`);
     });
 }

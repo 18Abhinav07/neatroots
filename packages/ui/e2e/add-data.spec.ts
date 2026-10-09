@@ -32,10 +32,12 @@ test.describe("add data", () => {
     await expect(page.getByRole("button", { name: "Set up import" })).toHaveCount(0);
   });
 
-  test("Neatlogs Cloud import asks for an API key first", async ({ page }) => {
+  test("Neatlogs Cloud import asks for a service-account token first", async ({ page }) => {
     await open(page, "add-data/cloud");
     await expect(page.getByText("Connect Neatlogs Cloud")).toBeVisible();
-    await page.getByRole("button", { name: "Add API key" }).click();
+    await expect(page.getByText(/service-account token/)).toBeVisible();
+    await page.getByRole("button", { name: "Add token" }).click();
     await expect(page).toHaveURL(/#\/settings\/cloud/);
+    await expect(page.getByRole("button", { name: "Store token" })).toBeDisabled();
   });
 });

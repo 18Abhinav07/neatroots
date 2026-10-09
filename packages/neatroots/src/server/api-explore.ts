@@ -2,9 +2,9 @@ import type { Hono } from "hono";
 import type { Roots } from "../core.js";
 import { loadTrace } from "../engine/trace.js";
 import { runGoal } from "../engine/trace.js";
-import { cloudApiBase, listCloudTraces } from "../ingest/importers/neatlogs-cloud.js";
-import { ImportError, parseTraceFile } from "../ingest/importers/index.js";
-import { getCloudKey } from "../relay/keychain.js";
+import { listCloudProjects, listCloudTraces, NO_CLOUD_TOKEN } from "../ingest/importers/neatlogs-cloud.js";
+import { cloudImportAuth, cloudImportBase, ImportError, parseTraceFile } from "../ingest/importers/index.js";
+import { deleteCloudToken, getCloudToken, setCloudToken } from "../relay/keychain.js";
 import { buildChat } from "../semantics/chat-view.js";
 import { body, err } from "./util.js";
 import { runSummary } from "./api.js";
@@ -128,15 +128,42 @@ export function mountExploreApi(app: Hono, roots: Roots): void {
     }
   });
 
-  app.get("/api/cloud/traces", async (c) => {
-    const key = await getCloudKey();
-    if (!key) return err(c, 400, "Store your Neatlogs Cloud API key first (Settings → Neatlogs Cloud).");
+  // Importing reads Neatlogs Cloud with a service-account token (Keychain) and a chosen project.
+  app.post("/api/cloud/import-auth", async (c) => {
+    const b = await body<{ token?: string; project_id?: string | null }>(c);
+    const token = b.token?.trim();
+    if (token) await setCloudToken(token);
+    if (b.project_id !== undefined) {
+      roots.config.cloud.projectId = b.project_id?.trim() || undefined;
+      roots.saveConfig();
+    }
+    return c.json({ has_token: !!(await getCloudToken()), project_id: roots.config.cloud.projectId ?? null });
+  });
+  app.delete("/api/cloud/import-auth", async (c) => {
+    await deleteCloudToken();
+    roots.config.cloud.projectId = undefined;
+    roots.saveConfig();
+    return c.json({ has_token: false, project_id: null });
+  });
+  app.get("/api/cloud/projects", async (c) => {
+    const token = await getCloudToken();
+    if (!token) return err(c, 400, NO_CLOUD_TOKEN);
     try {
-      const page = await listCloudTraces(cloudApiBase(roots.relay.endpoint(), roots.config.cloud.apiBase), key, { cursor: c.req.query("cursor") || undefined, limit: 50 });
+      return c.json({ projects: await listCloudProjects(cloudImportBase(roots), token), project_id: roots.config.cloud.projectId ?? null });
+    } catch (e) {
+      return err(c, 502, (e as Error).message);
+    }
+  });
+
+  app.get("/api/cloud/traces", async (c) => {
+    const auth = await cloudImportAuth(roots);
+    if (!auth) return err(c, 400, NO_CLOUD_TOKEN);
+    try {
+      const page = await listCloudTraces(cloudImportBase(roots), auth, { cursor: c.req.query("cursor") || undefined, limit: 50 });
       const local = new Set(page.traces.filter((t) => roots.store.getRun(t.traceId)).map((t) => t.traceId));
       return c.json({ traces: page.traces.map((t) => ({ ...t, local: local.has(t.traceId) })), next_cursor: page.nextCursor });
     } catch (e) {
-      return err(c, 502, `Neatlogs Cloud: ${(e as Error).message}`);
+      return err(c, 502, (e as Error).message);
     }
   });
   app.post("/api/cloud/import", async (c) => {
@@ -196,7 +223,7 @@ export function mountExploreApi(app: Hono, roots: Roots): void {
 
   // -------------------------------------------------------- coding agents
 
-  app.get("/api/chat/agents", (c) => c.json({ agents: roots.chats.agents() }));
+  app.get("/api/chat/agents", (c) => c.json({ agents: roots.chats.agents(), elsewhere: roots.chats.elsewhere() }));
   app.get("/api/chat/sessions", (c) => c.json({ sessions: roots.chats.list() }));
   app.post("/api/chat/sessions", async (c) => {
     const b = await body<{ agent: "claude" | "codex"; cwd?: string; trace_id?: string; allow_edits?: boolean; allow_commands?: boolean; title?: string }>(c);

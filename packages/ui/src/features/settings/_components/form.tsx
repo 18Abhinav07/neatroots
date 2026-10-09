@@ -58,6 +58,8 @@ export function KeyInput({
   storing,
   onStore,
   onRemove,
+  noun = "key",
+  placeholder = "Paste your API key",
 }: {
   id: string;
   label: string;
@@ -65,17 +67,20 @@ export function KeyInput({
   storing: boolean;
   onStore: (key: string, done: () => void) => void;
   onRemove?: () => void;
+  /** What is being stored, for the button labels ("Store token"). */
+  noun?: string;
+  placeholder?: string;
 }) {
   const [key, setKey] = useState("");
   return (
     <div className="flex items-center gap-2">
-      <Input id={id} aria-label={label} type="password" className="h-8" placeholder={stored ? "Key stored" : "Paste your API key"} value={key} onChange={(e) => setKey(e.target.value)} />
-      <PendingButton size="sm" variant="secondary" disabled={key.length < 8} pending={storing} onClick={() => onStore(key, () => setKey(""))}>
-        Store key
+      <Input id={id} aria-label={label} type="password" className="h-8 min-w-0 flex-1" placeholder={stored ? `${noun[0].toUpperCase()}${noun.slice(1)} stored` : placeholder} value={key} onChange={(e) => setKey(e.target.value)} />
+      <PendingButton size="sm" variant="secondary" className="shrink-0" disabled={key.length < 8} pending={storing} onClick={() => onStore(key, () => setKey(""))}>
+        Store {noun}
       </PendingButton>
       {stored && onRemove && (
-        <Button size="sm" variant="ghost" className="text-danger-fg" onClick={onRemove}>
-          Remove key
+        <Button size="sm" variant="ghost" className="shrink-0 text-danger-fg" onClick={onRemove}>
+          Remove {noun}
         </Button>
       )}
     </div>

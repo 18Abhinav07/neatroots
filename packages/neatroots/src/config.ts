@@ -86,6 +86,8 @@ export interface RootsConfig {
     appUrl: string;
     /** Public API base for importing traces; derived from the endpoint when unset. */
     apiBase?: string;
+    /** The Neatlogs Cloud project imports read from (x-project-id), for a service account that sees several. */
+    projectId?: string;
     /** User regexes to redact before forwarding, in addition to the built-ins. */
     redactPatterns: string[];
   };
