@@ -79,13 +79,25 @@ describe("replay", () => {
     const run = t.roots.store.getRun(r.new_trace_id!)!;
     expect(run.input_preview).toContain("3003");
     expect(run.output_preview).toContain("model=small-model");
-    expect(() => t!.roots.replays.startRun(x.traceId.replace(/./, "0"))).toThrow(/run not found/);
+    expect(() => t!.roots.replays.startRun(hex(16))).toThrow(/run not found/);
   }, 30_000);
 });
 
 describe("search and exploring tools", () => {
   it("parses filters and free text", () => {
     expect(parseSearch('project:support status:failed "order 1001" tool:lookup refund')).toEqual({ text: "order 1001 refund", filters: { project: "support", status: "failed", tool: "lookup" } });
+  });
+
+  it("status: takes the words people use (failed, succeeded) for what runs store", async () => {
+    t = await makeRoots({ noEngine: true, serve: true });
+    const ok = seed(t, "conv-ok");
+    const bad = hex(16);
+    t.roots.ingest([batch([span({ traceId: bad, name: "billing", kind: "workflow", status: 2, message: "gateway timeout" })], "billing-agent")]);
+    await until(() => t!.roots.store.getRun(bad)?.status === "error");
+    const ids = async (q: string) => ((await (await fetch(`${t!.url}/api/search/runs?q=${encodeURIComponent(q)}`)).json()) as { runs: { trace_id: string }[] }).runs.map((r) => r.trace_id);
+    expect(await ids("status:failed")).toEqual([bad]);
+    expect(await ids("status:error")).toEqual([bad]);
+    expect(await ids("status:succeeded")).toEqual([ok.traceId]);
   });
 
   it("answers context, in-run search, conversation, compare and read-only SQL", async () => {

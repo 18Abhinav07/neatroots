@@ -18,7 +18,7 @@ function Section({ title, badge, description, children }: { title: string; badge
     <Card className="shadow-none transition-colors duration-300 hover:border-border-strong">
       <CardHeader className="gap-1 pb-4">
         <CardTitle className="flex items-center gap-2 font-pixel text-2xs tracking-caps-wide text-muted-foreground uppercase">
-          {title}
+          <span>{title}</span>
           {badge && (
             <NeatBadge size="sm" variant="green">
               {badge}

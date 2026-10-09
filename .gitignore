@@ -14,3 +14,6 @@ coverage/
 .neatroots-installed
 docs/internal/
 release/
+packages/ui/e2e/.state.json
+test-results/
+playwright-report/

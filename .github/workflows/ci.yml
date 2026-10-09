@@ -37,3 +37,47 @@ jobs:
           NEATROOTS_INSTALL_DIR="$RUNNER_TEMP/nb" NEATROOTS_BIN_DIR="$RUNNER_TEMP/bin" sh install.sh --bundle release/neatroots.tar.gz --no-connect --no-modify-path
           "$RUNNER_TEMP/bin/neatroots" --version
           "$RUNNER_TEMP/bin/neatroots" connect --list
+
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @neatlogs/neatroots-ui exec playwright install --with-deps chromium
+      - name: UI end-to-end tests (real server, mock LLM, seeded runs)
+        run: pnpm --filter @neatlogs/neatroots-ui e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            packages/ui/playwright-report
+            packages/ui/test-results
+          retention-days: 7
+
+  examples:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v6
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Every example, against neatroots and the mock LLM (no API keys)
+        env:
+          NEATROOTS_HOME: ${{ runner.temp }}/neatroots-home
+          NEATROOTS_BIN: node ${{ github.workspace }}/packages/neatroots/dist/cli.js
+        run: |
+          node packages/neatroots/dist/cli.js start > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4100/api/status >/dev/null && break; sleep 1; done
+          sh examples/run-all.sh || { cat "$RUNNER_TEMP/server.log"; exit 1; }

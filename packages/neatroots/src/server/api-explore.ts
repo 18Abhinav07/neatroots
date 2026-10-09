@@ -32,6 +32,9 @@ export function parseSearch(q: string): { text: string; filters: Record<string, 
   return { text: words.join(" ").trim(), filters };
 }
 
+/** The words people type for a run's status, mapped to what runs store. */
+const STATUS: Record<string, string> = { failed: "error", failing: "error", error: "error", errored: "error", ok: "ok", succeeded: "ok", success: "ok", passed: "ok", running: "running", interrupted: "interrupted" };
+
 function sinceMs(v: string | undefined): number | undefined {
   if (!v) return undefined;
   const m = /^(\d+)([hdw])$/.exec(v);
@@ -85,7 +88,7 @@ export function mountExploreApi(app: Hono, roots: Roots): void {
       : roots.store.listRuns({ limit: 500, sinceMs: sinceMs(filters.since) });
     runs = runs.filter((r) => {
       if (filters.project && r.project !== filters.project) return false;
-      if (filters.status && r.status !== filters.status) return false;
+      if (filters.status && r.status !== (STATUS[filters.status.toLowerCase()] ?? filters.status)) return false;
       if (filters.session && r.session_id !== filters.session) return false;
       if (filters.has === "problems" && !r.open_finding_count) return false;
       if (filters.since && (r.started_ms ?? 0) < (sinceMs(filters.since) ?? 0)) return false;

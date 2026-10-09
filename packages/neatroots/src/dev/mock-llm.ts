@@ -86,6 +86,32 @@ export function mockReply(messages: Msg[], tools: Tool[], model: string): { cont
   return { content: ask ? `Here's a short answer about "${ask}". (This reply comes from neatroots' mock LLM; set REAL_LLM=1 to use a real model.)` : "Hello from neatroots' mock LLM." };
 }
 
+/** A small valid value for a JSON schema: what neatroots' own structured calls get from the mock. */
+export function fromSchema(schema: Record<string, unknown> | undefined, depth = 0): unknown {
+  if (!schema || depth > 6) return null;
+  if (Array.isArray(schema.enum)) return schema.enum.includes("no") ? "no" : schema.enum[0];
+  const type = Array.isArray(schema.type) ? schema.type.find((t) => t !== "null") : schema.type;
+  if (schema.anyOf || schema.oneOf) return fromSchema(((schema.anyOf ?? schema.oneOf) as Record<string, unknown>[])[0], depth + 1);
+  switch (type) {
+    case "object": {
+      const props = (schema.properties as Record<string, Record<string, unknown>> | undefined) ?? {};
+      return Object.fromEntries(Object.entries(props).map(([k, v]) => [k, fromSchema(v, depth + 1)]));
+    }
+    case "array":
+      return [];
+    case "string":
+      return "This is the mock LLM's answer.";
+    case "number":
+      return 0.1;
+    case "integer":
+      return 0;
+    case "boolean":
+      return false;
+    default:
+      return null;
+  }
+}
+
 function sse(res: http.ServerResponse, data: unknown, event?: string) {
   if (event) res.write(`event: ${event}\n`);
   res.write(`data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`);
@@ -93,6 +119,13 @@ function sse(res: http.ServerResponse, data: unknown, event?: string) {
 
 function openAi(body: Record<string, unknown>, res: http.ServerResponse) {
   const model = String(body.model ?? "mock");
+  const format = body.response_format as { type?: string; json_schema?: { schema?: Record<string, unknown> } } | undefined;
+  if (format?.type === "json_schema" || format?.type === "json_object") {
+    const content = JSON.stringify(fromSchema(format.json_schema?.schema) ?? {});
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ id: `chatcmpl-${crypto.randomBytes(6).toString("hex")}`, object: "chat.completion", created: Math.floor(Date.now() / 1000), model, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 40, completion_tokens: 10, total_tokens: 50 } }));
+    return;
+  }
   const tools = ((body.tools as { function: Tool }[] | undefined) ?? []).map((t) => t.function);
   const reply = mockReply((body.messages as Msg[]) ?? [], tools, model);
   const id = `chatcmpl-${crypto.randomBytes(6).toString("hex")}`;
