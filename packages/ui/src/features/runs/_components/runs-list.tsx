@@ -93,7 +93,7 @@ export function RunsList({
         {!runs.length && filtered && (
           <Empty className="py-10">
             <EmptyMedia icon={SearchAreaIcon} />
-            <EmptyHeader title="No runs match" description="Clear the filters to see every run Bolts has recorded." />
+            <EmptyHeader title="No runs match" description="Clear the filters to see every run Bolt has recorded." />
             <EmptyContent>
               <Button variant="outline" size="sm" onClick={() => setParams({ q: "", status: "", hasFinding: false, project: "" })}>
                 Clear filters
@@ -141,15 +141,15 @@ function RunRow({ run: r, active }: { run: Run; active: boolean }) {
   );
 }
 
-/** First run: Bolts has never received a trace. This surface owns setup. */
+/** First run: Bolt has never received a trace. This surface owns setup. */
 export function FirstRunEmpty({ port, llmOk, llmUrl }: { port: number; llmOk: boolean; llmUrl?: string }) {
   return (
     <Empty className="min-h-full">
       <EmptyMedia icon={Activity01Icon} />
-      <EmptyHeader title="No runs yet" description="Point the Neatlogs SDK at Bolts and run your agent. Its runs appear here as they happen, and nothing leaves this machine." />
+      <EmptyHeader title="No runs yet" description="Point the Neatlogs SDK at Bolt and run your agent. Its runs appear here as they happen, and nothing leaves this machine." />
       <EmptyContent>
         <div className="flex w-full flex-col gap-2 text-left">
-          <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=bolts-local`} />
+          <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=neatbolt-local`} />
           <CodeLine text={`neatlogs.init(workflow_name="my-agent", flush_interval=0.5)`} />
           <span className="text-caption text-foreground-subtle">
             Already instrumented? Setting the two variables is enough. Check the path with <code className="font-mono">neatlogs doctor --probe</code>.

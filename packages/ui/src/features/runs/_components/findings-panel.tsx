@@ -70,7 +70,7 @@ export function Problems({
       {live.length === 0 ? (
         <p className="flex items-center gap-2 py-2 text-body text-muted-foreground">
           <Icon icon={CheckmarkCircle02Icon} size="sm" className="text-success-fg" />
-          {running ? "Nothing found yet. Bolts checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
+          {running ? "Nothing found yet. Bolt checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
         </p>
       ) : (
         <ul className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">

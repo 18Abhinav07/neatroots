@@ -19,7 +19,7 @@ const NAV = [
 const NEXT: Record<ThemeChoice, ThemeChoice> = { system: "light", light: "dark", dark: "system" };
 const THEME_ICON = { system: ComputerIcon, light: Sun03Icon, dark: Moon02Icon };
 
-/** The one bar across the top: where you are, and whether Bolts is live and has a model. */
+/** The one bar across the top: where you are, and whether Bolt is live and has a model. */
 export function TopBar({
   page,
   status,
@@ -43,7 +43,7 @@ export function TopBar({
         <span className="flex size-6 items-center justify-center rounded-md bg-inverse-surface text-inverse-surface-foreground">
           <Icon icon={FlashIcon} size="xxs" />
         </span>
-        <span className="text-body-medium text-foreground">Bolts</span>
+        <span className="text-body-medium text-foreground">Bolt</span>
       </a>
       <nav aria-label="Main" className="flex items-center gap-1">
         {NAV.map((n) => (
@@ -61,7 +61,7 @@ export function TopBar({
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-4 text-caption text-muted-foreground max-md:hidden">
-        <span className="flex items-center gap-1.5" title={connected ? "Live updates connected" : "Reconnecting to Bolts"}>
+        <span className="flex items-center gap-1.5" title={connected ? "Live updates connected" : "Reconnecting to Bolt"}>
           <StatusDot tone={connected ? "success" : "danger"} label={connected ? "Live" : "Reconnecting"} />
           {connected ? "Live" : "Reconnecting…"}
         </span>

@@ -29,7 +29,7 @@ export function ChecksPage() {
       <PageHeader icon={CheckListIcon} title="Checks" actions={!editing && <Button onClick={() => setEditing(true)}>New check</Button>} />
       <div className="flex flex-col gap-6 px-6 pt-2">
         <p className="max-w-3xl text-body text-muted-foreground">
-          Everything Bolts watches for. Rules run in code on every span. Questions go to the decision model, and the LLM picks the ones that fit each agent.
+          Everything Bolt watches for. Rules run in code on every span. Questions go to the decision model, and the LLM picks the ones that fit each agent.
         </p>
         {!!data?.errors.length && (
           <div role="alert" className="flex flex-col gap-1 rounded-lg border border-danger-border bg-danger-surface px-4 py-3">
@@ -147,8 +147,8 @@ export function ChecksPage() {
                   </div>
                 )}
                 <p className="text-caption text-foreground-subtle">
-                  Saved to <span className="font-mono">{data?.user_dir ?? "~/.bolts/checks"}</span>. To share checks with your team, run{" "}
-                  <span className="font-mono">bolts init</span> in your repo and keep them in <span className="font-mono">.bolts/checks/</span>.
+                  Saved to <span className="font-mono">{data?.user_dir ?? "~/.neatbolt/checks"}</span>. To share checks with your team, run{" "}
+                  <span className="font-mono">neatbolt init</span> in your repo and keep them in <span className="font-mono">.neatbolt/checks/</span>.
                 </p>
               </div>
             </Panel>

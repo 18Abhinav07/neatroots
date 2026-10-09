@@ -59,7 +59,7 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
         const width = Math.max(0.5, (s.duration_ms / total) * 100);
         const isSel = selected === s.span_id;
         const failed = s.status_code === 2;
-        const guidance = s.name === "bolts.guidance";
+        const guidance = s.name === "neatbolt.guidance" || s.name === "bolts.guidance";
         const kind = spanKindBadge(s.span_kind);
         return (
           <div
@@ -79,7 +79,7 @@ export function TraceWaterfall({ spans, flagged, selected, onSelect }: { spans: 
             <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 12 }}>
               {guidance ? (
                 <NeatBadge variant="purple" size="micro">
-                  Bolts
+                  Bolt
                 </NeatBadge>
               ) : (
                 <NeatBadge variant={kind.variant} size="micro">

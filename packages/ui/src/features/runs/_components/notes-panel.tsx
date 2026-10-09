@@ -5,7 +5,7 @@ import type { Note } from "../../../lib/api";
 import { ago, pct } from "../../../lib/format";
 import { NOTE_STATE } from "../_libs/labels";
 
-/** Notes Bolts sent (or tried to send) to the running agent. Rendered only when there are some. */
+/** Notes Bolt sent (or tried to send) to the running agent. Rendered only when there are some. */
 export function SteeringNotes({ notes }: { notes: Note[] }) {
   if (!notes.length) return null;
   const delivered = notes.filter((n) => n.status === "delivered").length;

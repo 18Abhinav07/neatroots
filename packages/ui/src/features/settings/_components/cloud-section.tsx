@@ -18,10 +18,10 @@ export function CloudSection({ status }: { status: Status }) {
     <Panel title="Neatlogs Cloud" meta={status.cloud.has_key ? "API key stored" : "No API key"}>
       <div className="flex flex-col gap-4 px-4 py-4">
         <p className="text-body text-muted-foreground">
-          Bolts sends runs the way the SDK does: OTLP to the public ingest endpoint with your API key. Every send is redacted first and logged below. Nothing is sent unless you
+          Bolt sends runs the way the SDK does: OTLP to the public ingest endpoint with your API key. Every send is redacted first and logged below. Nothing is sent unless you
           send it or turn on forwarding for a project.
         </p>
-        <Field label="API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in Bolts' database.">
+        <Field label="API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in Bolt' database.">
           <div className="flex items-center gap-2">
             <Input id="nl-key" type="password" placeholder={status.cloud.has_key ? "Key stored" : "Paste your API key"} value={key} onChange={(e) => setKey(e.target.value)} />
             <Button size="sm" variant="outline" disabled={key.length < 8} pending={keys.store.isPending} onClick={() => keys.store.mutate(key, { onSuccess: () => setKey("") })}>

@@ -1,19 +1,19 @@
 #!/bin/sh
-# Neatlogs Bolts installer.
+# Neatlogs Bolt installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/neatlogs/bolts/main/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --service      # also start Bolts at login
+#   curl -fsSL https://raw.githubusercontent.com/neatlogs/neatlogs-bolt/main/install.sh | sh
+#   curl -fsSL .../install.sh | sh -s -- --service      # also start Bolt at login
 #
-# Installs into ~/.bolts (source and, if needed, a private Node.js) and puts `bolts` in
-# ~/.local/bin. No sudo. Your runs and settings also live in ~/.bolts and are kept on update.
+# Installs into ~/.neatbolt (source and, if needed, a private Node.js) and puts `neatbolt` in
+# ~/.local/bin. No sudo. Your runs and settings also live in ~/.neatbolt and are kept on update.
 #
 # Options (flags or environment variables):
-#   --service            start Bolts in the background now and at login   (BOLTS_SERVICE=1)
-#   --ref <ref>          branch or tag to install                         (BOLTS_REF, default main)
-#   --repo <url>         git URL or local path to install from            (BOLTS_REPO)
-#   --dir <path>         install directory                                (BOLTS_INSTALL_DIR, default ~/.bolts)
-#   --bin-dir <path>     where the `bolts` command goes                   (BOLTS_BIN_DIR, default ~/.local/bin)
-#   --no-modify-path     do not add the bin dir to your shell profile     (BOLTS_NO_MODIFY_PATH=1)
+#   --service            start Bolt in the background now and at login   (NEATBOLT_SERVICE=1)
+#   --ref <ref>          branch or tag to install                         (NEATBOLT_REF, default main)
+#   --repo <url>         git URL or local path to install from            (NEATBOLT_REPO)
+#   --dir <path>         install directory                                (NEATBOLT_INSTALL_DIR, default ~/.neatbolt)
+#   --bin-dir <path>     where the `neatbolt` command goes                   (NEATBOLT_BIN_DIR, default ~/.local/bin)
+#   --no-modify-path     do not add the bin dir to your shell profile     (NEATBOLT_NO_MODIFY_PATH=1)
 #   --uninstall          remove the command, service, source and private Node (keeps your data)
 #
 # The whole script is a function called on the last line, so a partial download runs nothing.
@@ -21,13 +21,13 @@
 set -eu
 
 main() {
-  REPO="${BOLTS_REPO:-https://github.com/neatlogs/bolts.git}"
-  REF="${BOLTS_REF:-main}"
-  DIR="${BOLTS_INSTALL_DIR:-$HOME/.bolts}"
-  BIN_DIR="${BOLTS_BIN_DIR:-$HOME/.local/bin}"
-  SERVICE="${BOLTS_SERVICE:-0}"
-  NO_MODIFY_PATH="${BOLTS_NO_MODIFY_PATH:-0}"
-  UPDATE="${BOLTS_UPDATE:-0}"
+  REPO="${NEATBOLT_REPO:-https://github.com/neatlogs/neatlogs-bolt.git}"
+  REF="${NEATBOLT_REF:-main}"
+  DIR="${NEATBOLT_INSTALL_DIR:-$HOME/.neatbolt}"
+  BIN_DIR="${NEATBOLT_BIN_DIR:-$HOME/.local/bin}"
+  SERVICE="${NEATBOLT_SERVICE:-0}"
+  NO_MODIFY_PATH="${NEATBOLT_NO_MODIFY_PATH:-0}"
+  UPDATE="${NEATBOLT_UPDATE:-0}"
   UNINSTALL=0
   NODE_VERSION="24.14.1"
   PNPM_VERSION="10.33.0"
@@ -47,7 +47,7 @@ main() {
     shift
   done
 
-  SRC="${BOLTS_SOURCE_DIR:-$DIR/src}"
+  SRC="${NEATBOLT_SOURCE_DIR:-$DIR/src}"
   LOG="$DIR/install.log"
 
   if [ "$UNINSTALL" = 1 ]; then uninstall; return; fi
@@ -58,13 +58,13 @@ main() {
   mkdir -p "$DIR" "$BIN_DIR"
   : >"$LOG"
 
-  if [ "$UPDATE" = 1 ]; then say "Updating Bolts in $SRC"; else say "Installing Neatlogs Bolts"; fi
+  if [ "$UPDATE" = 1 ]; then say "Updating Bolt in $SRC"; else say "Installing Neatlogs Bolt"; fi
   ensure_node
   fetch_source
   build
   if [ "$UPDATE" = 1 ]; then
-    [ -f "$BIN_DIR/bolts" ] && write_command
-    ok "Bolts updated ($(version))"
+    [ -f "$BIN_DIR/neatbolt" ] && write_command
+    ok "Bolt updated ($(version))"
     return
   fi
   write_command
@@ -111,7 +111,7 @@ node_major() { "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo
 
 ensure_node() {
   NODE=""
-  if [ "${BOLTS_FORCE_NODE:-0}" != 1 ] && command -v node >/dev/null 2>&1 && [ "$(node_major node)" -ge 22 ]; then
+  if [ "${NEATBOLT_FORCE_NODE:-0}" != 1 ] && command -v node >/dev/null 2>&1 && [ "$(node_major node)" -ge 22 ]; then
     NODE="$(command -v node)"
   elif [ -x "$DIR/node/bin/node" ] && [ "$(node_major "$DIR/node/bin/node")" -ge 22 ]; then
     NODE="$DIR/node/bin/node"
@@ -148,14 +148,14 @@ install_node() {
 # ------------------------------------------------------------------ source
 
 fetch_source() {
-  if [ -f "$SRC/.bolts-installed" ]; then
+  if [ -f "$SRC/.neatbolt-installed" ]; then
     # A checkout this script made: follow the requested branch or tag exactly.
     step "Fetching $REF"
     run git -C "$SRC" fetch --depth 1 origin "$REF"
     run git -C "$SRC" checkout -q -B "$REF" FETCH_HEAD
-  elif [ -n "${BOLTS_SOURCE_DIR:-}" ]; then
+  elif [ -n "${NEATBOLT_SOURCE_DIR:-}" ]; then
     # Your own checkout: never reset it; fast-forward only when it tracks a remote.
-    [ -f "$SRC/pnpm-workspace.yaml" ] || fail "$SRC is not a Bolts checkout"
+    [ -f "$SRC/pnpm-workspace.yaml" ] || fail "$SRC is not a Bolt checkout"
     if [ "$UPDATE" = 1 ] && git -C "$SRC" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
       step "Pulling"
       run git -C "$SRC" pull --ff-only
@@ -164,7 +164,7 @@ fetch_source() {
     step "Cloning $REPO ($REF)"
     rm -rf "$SRC"
     git clone -q --depth 1 --branch "$REF" "$REPO" "$SRC" >>"$LOG" 2>&1 || fail "could not clone $REPO. If the repository is private, check that git can reach it (gh auth login, or an SSH key)."
-    touch "$SRC/.bolts-installed"
+    touch "$SRC/.neatbolt-installed"
   fi
   ok "Source $(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo local) in $SRC"
 }
@@ -180,22 +180,22 @@ build() {
   pnpm install --frozen-lockfile >>"$LOG" 2>&1 || fail "pnpm install failed"
   step "Building"
   pnpm build >>"$LOG" 2>&1 || fail "build failed"
-  [ -f "$SRC/packages/bolts/dist/cli.js" ] || fail "build did not produce packages/bolts/dist/cli.js"
+  [ -f "$SRC/packages/bolt/dist/cli.js" ] || fail "build did not produce packages/bolt/dist/cli.js"
   ok "Built"
 }
 
-version() { "$NODE" "$SRC/packages/bolts/dist/cli.js" --version 2>/dev/null || echo "?"; }
+version() { "$NODE" "$SRC/packages/bolt/dist/cli.js" --version 2>/dev/null || echo "?"; }
 
 # ----------------------------------------------------------------- command
 
 write_command() {
-  cat >"$BIN_DIR/bolts" <<EOF
+  cat >"$BIN_DIR/neatbolt" <<EOF
 #!/bin/sh
-# Neatlogs Bolts (written by install.sh; rerun it or use \`bolts update\` to update)
-exec "$NODE" "$SRC/packages/bolts/dist/cli.js" "\$@"
+# Neatlogs Bolt (written by install.sh; rerun it or use \`neatbolt update\` to update)
+exec "$NODE" "$SRC/packages/bolt/dist/cli.js" "\$@"
 EOF
-  chmod +x "$BIN_DIR/bolts"
-  ok "Command: $BIN_DIR/bolts ($(version))"
+  chmod +x "$BIN_DIR/neatbolt"
+  ok "Command: $BIN_DIR/neatbolt ($(version))"
 }
 
 setup_path() {
@@ -215,43 +215,43 @@ setup_path() {
     PATH_NOTE="Add $BIN_DIR to your PATH:  fish_add_path $BIN_DIR"
     return
   fi
-  if ! grep -qs "# neatlogs-bolts" "$rc"; then
-    printf '\n%s  # neatlogs-bolts\n' "$line" >>"$rc"
+  if ! grep -qs "# neatlogs-bolt" "$rc"; then
+    printf '\n%s  # neatlogs-bolt\n' "$line" >>"$rc"
     ok "Added $BIN_DIR to PATH in $rc"
   fi
-  PATH_NOTE="Open a new terminal (or run: source $rc) so \`bolts\` is on your PATH."
+  PATH_NOTE="Open a new terminal (or run: source $rc) so \`neatbolt\` is on your PATH."
 }
 
 finish() {
   echo
   if [ "$SERVICE" = 1 ]; then
-    "$BIN_DIR/bolts" service install || true
+    "$BIN_DIR/neatbolt" service install || true
   fi
-  say "Bolts is installed."
+  say "Bolt is installed."
   [ -n "${PATH_NOTE:-}" ] && echo "  $PATH_NOTE"
   echo
   if [ "$SERVICE" != 1 ]; then
-    echo "  Start it:            bolts start            (or bolts service install to run it at login)"
+    echo "  Start it:            neatbolt start            (or neatbolt service install to run it at login)"
   fi
   echo "  Open the app:        http://localhost:4100"
-  echo "  Point your agent:    export NEATLOGS_ENDPOINT=http://localhost:4100 NEATLOGS_API_KEY=bolts-local"
-  echo "  Check everything:    bolts doctor"
+  echo "  Point your agent:    export NEATLOGS_ENDPOINT=http://localhost:4100 NEATLOGS_API_KEY=neatbolt-local"
+  echo "  Check everything:    neatbolt doctor"
   echo
   if ! command -v ollama >/dev/null 2>&1; then
     echo "  ${D}No Ollama found. Rules work without it; for questions and explanations install a local model"
-    echo "  (https://ollama.com, then: ollama pull qwen3:8b) or use a hosted one: bolts llm login anthropic${N}"
+    echo "  (https://ollama.com, then: ollama pull qwen3:8b) or use a hosted one: neatbolt llm login anthropic${N}"
   fi
-  echo "  ${D}Steering hooks: pip install \"$SRC/python/bolts-steer\"  ·  npm install \"$SRC/packages/steer-ts\"${N}"
+  echo "  ${D}Steering hooks: pip install \"$SRC/python/neatbolt-steer\"  ·  npm install \"$SRC/packages/steer-ts\"${N}"
   echo "  ${D}Guide: $SRC/docs/getting-started.md${N}"
 }
 
 # --------------------------------------------------------------- uninstall
 
 uninstall() {
-  if [ -x "$BIN_DIR/bolts" ]; then "$BIN_DIR/bolts" service uninstall >/dev/null 2>&1 || true; fi
-  rm -f "$BIN_DIR/bolts"
+  if [ -x "$BIN_DIR/neatbolt" ]; then "$BIN_DIR/neatbolt" service uninstall >/dev/null 2>&1 || true; fi
+  rm -f "$BIN_DIR/neatbolt"
   rm -rf "$DIR/src" "$DIR/node" "$DIR/install.log"
-  ok "Removed the bolts command, background service, source and private Node.js."
+  ok "Removed the neatbolt command, background service, source and private Node.js."
   echo "  Your runs, settings and Laya are still in $DIR. Delete that folder to remove them too."
   echo "  Stored API keys are in the macOS Keychain under \"neatlogs-bolts\" (Keychain Access to remove)."
 }

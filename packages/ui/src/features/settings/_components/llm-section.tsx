@@ -163,7 +163,7 @@ function HostedLlm({ llm }: { llm: LlmInfo }) {
       <Field
         label={`${preset.label} API key`}
         htmlFor="ext-key"
-        hint={preset.key?.startsWith("env:") ? `Read from $${preset.key.slice(4)}.` : "Stored in the macOS Keychain, never in Bolts' database."}
+        hint={preset.key?.startsWith("env:") ? `Read from $${preset.key.slice(4)}.` : "Stored in the macOS Keychain, never in Bolt' database."}
       >
         <div className="flex items-center gap-2">
           <Input id="ext-key" type="password" placeholder={hasKey ? "Key stored" : "Paste your API key"} value={key} onChange={(e) => setKey(e.target.value)} />

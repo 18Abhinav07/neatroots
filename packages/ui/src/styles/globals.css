@@ -1,5 +1,5 @@
 /*
- * Bolts uses the Neatlogs app design language: a two-tier OKLCH token system
+ * Bolt uses the Neatlogs app design language: a two-tier OKLCH token system
  * (semantic tokens in :root / .dark, exposed to Tailwind via @theme inline).
  * Components use semantic classes only (bg-card, text-muted-foreground,
  * text-danger-fg, …), never raw colors. Editing :root / .dark reskins the app.

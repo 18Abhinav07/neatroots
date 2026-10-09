@@ -34,7 +34,7 @@ export function RunDetail({ traceId }: { traceId: string }) {
   const selected = picked ?? (d ? firstSpan(d) : undefined);
   const names = useMemo(() => new Map((d?.spans ?? []).map((s) => [s.span_id, s.tool_name ?? s.name])), [d?.spans]);
 
-  // Tell Bolts what is in focus, for the coding agent's get_current_run.
+  // Tell Bolt what is in focus, for the coding agent's get_current_run.
   useEffect(() => {
     void post("/api/focus", { trace_id: traceId, span_id: selected ?? null }).catch(() => undefined);
   }, [traceId, selected]);

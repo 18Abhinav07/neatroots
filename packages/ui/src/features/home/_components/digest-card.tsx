@@ -82,7 +82,7 @@ export function DigestCard({ data, llmOk }: { data: Insights; llmOk: boolean | u
         <p className="text-body text-muted-foreground">Couldn't write a summary: {(write.error as Error).message}</p>
       ) : llmOk === undefined ? null : (
         <p className="text-body text-muted-foreground">
-          {llmOk ? "No summary for this period yet." : "With an LLM available, Bolts writes a short summary of what changed. The numbers below don't need one."}
+          {llmOk ? "No summary for this period yet." : "With an LLM available, Bolt writes a short summary of what changed. The numbers below don't need one."}
         </p>
       )}
     </section>

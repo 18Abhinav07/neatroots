@@ -41,7 +41,7 @@ export function useKeyActions(path: string, name: string) {
   return {
     store: useMutation({
       mutationFn: (key: string) => post<{ stored_in: string }>(path, { key }),
-      onSuccess: (r) => toast.success(`${name} API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolts key file"}`),
+      onSuccess: (r) => toast.success(`${name} API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolt key file"}`),
       onError: (e) => toast.error(`Couldn't store the ${name} key: ${(e as Error).message}`),
       onSettled: refresh,
     }),
@@ -80,7 +80,7 @@ export function useLlmActions() {
     }),
     storeKey: useMutation({
       mutationFn: (v: { provider: string; key: string }) => post<{ stored_in: string }>("/api/llm/key", v),
-      onSuccess: (r) => toast.success(`API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolts key file"}`),
+      onSuccess: (r) => toast.success(`API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolt key file"}`),
       onError: (e) => toast.error(`Couldn't store the key: ${(e as Error).message}`),
       onSettled: refresh,
     }),

@@ -1,10 +1,10 @@
 # Coding agents (MCP)
 
-Bolts serves MCP over streamable HTTP at `http://localhost:4100/mcp` and over stdio with
-`bolts mcp` (which starts Bolts if it is not running). Both expose the same tools.
+Bolt serves MCP over streamable HTTP at `http://localhost:4100/mcp` and over stdio with
+`neatbolt mcp` (which starts Bolt if it is not running). Both expose the same tools.
 
 ```bash
-claude mcp add --scope user bolts -- bolts mcp
+claude mcp add --scope user neatbolt -- neatbolt mcp
 ```
 
 | Tool | Returns | Model |
@@ -19,7 +19,7 @@ claude mcp add --scope user bolts -- bolts mcp
 | `judge` | The probability that a yes/no question about chosen spans is yes | decision model |
 | `create_check`, `preview_check` | A new check from a concern or YAML, and its hit rate on recent runs | local LLM, then decision model |
 | `annotate` | Marks a run or span as issue, good, or a note | none |
-| `rerun` | Reruns the agent with the command you registered (`bolts rerun add`) | none |
+| `rerun` | Reruns the agent with the command you registered (`neatbolt rerun add`) | none |
 | `push_to_cloud` | Asks to send runs to Neatlogs Cloud; you confirm in the app | none |
 
 Span ids can be shortened to any unique prefix. Run content is data recorded from an agent; the

@@ -1,7 +1,7 @@
 import { pretty } from "../../../lib/format";
 import { cn } from "../../../lib/cn";
 
-const GUIDANCE = /(<bolts-guidance>[\s\S]*?<\/bolts-guidance>)/g;
+const GUIDANCE = /(<neatbolt-guidance>[\s\S]*?<\/neatbolt-guidance>)/g;
 
 function Content({ value }: { value: unknown }) {
   if (value === null || value === undefined || value === "null") return null;
@@ -9,10 +9,10 @@ function Content({ value }: { value: unknown }) {
   return (
     <>
       {text.split(GUIDANCE).map((part, i) =>
-        part.startsWith("<bolts-guidance>") ? (
+        part.startsWith("<neatbolt-guidance>") ? (
           <span key={i} className="my-1.5 block rounded-sm border-l-2 border-brand-violet bg-muted px-2.5 py-1.5">
-            <span className="mb-1 block text-micro text-brand-violet">Added by Bolts</span>
-            {part.replace(/<\/?bolts-guidance>\n?/g, "").trim()}
+            <span className="mb-1 block text-micro text-brand-violet">Added by Bolt</span>
+            {part.replace(/<\/?neatbolt-guidance>\n?/g, "").trim()}
           </span>
         ) : (
           <span key={i}>{part}</span>

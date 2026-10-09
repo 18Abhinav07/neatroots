@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type ThemeChoice = "system" | "light" | "dark";
 
-const KEY = "bolts-theme";
+const KEY = "neatbolt-theme";
 
 function read(): ThemeChoice {
   try {

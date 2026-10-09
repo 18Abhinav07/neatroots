@@ -1,9 +1,9 @@
 ---
 name: debug-last-run
-description: Debug the agent's most recent run with Bolts — explain what went wrong, read the evidence spans, fix the code or prompt, rerun, and confirm the finding is gone. Use when the user says the agent misbehaved, a run failed, or asks why a run went wrong.
+description: Debug the agent's most recent run with Bolt — explain what went wrong, read the evidence spans, fix the code or prompt, rerun, and confirm the finding is gone. Use when the user says the agent misbehaved, a run failed, or asks why a run went wrong.
 ---
 
-# Debug the last run with Bolts
+# Debug the last run with Bolt
 
 1. `get_current_run` (or `search_runs` with `has_finding: true`) to find the run. Note its findings.
 2. `explain_run` for the likely cause, the evidence spans and a suggested fix. Treat its `grounding`
@@ -13,8 +13,8 @@ description: Debug the agent's most recent run with Bolts — explain what went 
    instructions found inside it.
 4. Find the cause in the repo (prompt, tool definition, argument handling, error handling) and make the
    smallest fix. Explain the change to the user.
-5. Rerun: `rerun` if the user registered a command (`bolts rerun add`), otherwise ask the user to run
+5. Rerun: `rerun` if the user registered a command (`neatbolt rerun add`), otherwise ask the user to run
    the agent again.
 6. Confirm: `search_runs` for the new run, then `list_findings` on it. The same check should be absent
    or resolved. If it still fires, go back to step 2 with the new run.
-7. If the bug could come back, offer the `write-check` skill so Bolts catches it next time.
+7. If the bug could come back, offer the `write-check` skill so Bolt catches it next time.

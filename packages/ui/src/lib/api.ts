@@ -1,4 +1,4 @@
-/** Typed client for the Bolts app API. */
+/** Typed client for the Bolt app API. */
 
 export type RunStatus = "running" | "ok" | "error" | "interrupted";
 
@@ -294,7 +294,7 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   } catch {
     data = text;
   }
-  if (!res.ok) throw new ApiError((data as { error?: string })?.error ?? `Bolts returned HTTP ${res.status}`, res.status);
+  if (!res.ok) throw new ApiError((data as { error?: string })?.error ?? `Bolt returned HTTP ${res.status}`, res.status);
   return data as T;
 }
 

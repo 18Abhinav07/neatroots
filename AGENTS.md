@@ -1,6 +1,6 @@
-# Working on Bolts
+# Working on Bolt
 
-Bolts checks AI agents on the developer's machine. Read `README.md` and `docs/architecture.md` first.
+Bolt checks AI agents on the developer's machine. Read `README.md` and `docs/architecture.md` first.
 
 ## Ground rules
 
@@ -16,17 +16,17 @@ Bolts checks AI agents on the developer's machine. Read `README.md` and `docs/ar
 
 ```bash
 pnpm install && pnpm build
-pnpm test                                  # packages/bolts (vitest)
+pnpm test                                  # packages/bolt (vitest)
 cd packages/steer-ts && pnpm test
-cd python/bolts-steer && python -m pytest  # needs a venv with pytest
-pnpm --filter @neatlogs/bolts typecheck && pnpm --filter @neatlogs/bolts-ui typecheck
+cd python/neatbolt-steer && python -m pytest  # needs a venv with pytest
+pnpm --filter @neatlogs/bolt typecheck && pnpm --filter @neatlogs/bolt-ui typecheck
 ```
 
 ## Conventions
 
 - Node ≥ 22, ESM, TypeScript strict. Files under 500 lines.
-- The server logs to stderr only (stdout belongs to `bolts mcp`).
+- The server logs to stderr only (stdout belongs to `neatbolt mcp`).
 - UI: Tailwind v4 semantic tokens only (no raw colors, no arbitrary type sizes), Hugeicons through
   `components/ui/icon.tsx`, StatusPill for state and NeatBadge for categories, one primary (default)
   Button per view, the Empty family for empty states, Verb + Noun labels on actions.
-- Checks: library YAML in `packages/bolts/library/`; yes/no questions are phrased as failures.
+- Checks: library YAML in `packages/bolt/library/`; yes/no questions are phrased as failures.

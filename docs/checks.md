@@ -1,10 +1,10 @@
 # Checks
 
-A check is anything Bolts watches for. Checks are YAML, loaded from (later wins on the same id):
+A check is anything Bolt watches for. Checks are YAML, loaded from (later wins on the same id):
 
-1. the shipped library (`packages/bolts/library/`),
-2. `~/.bolts/checks/`,
-3. each project's `.bolts/checks/` registered with `bolts init`,
+1. the shipped library (`packages/bolt/library/`),
+2. `~/.neatbolt/checks/`,
+3. each project's `.neatbolt/checks/` registered with `neatbolt init`,
 4. questions the planner or a coding agent wrote (kept in the database until you save them).
 
 ## Rules
@@ -80,7 +80,7 @@ counts as a pass. Dismissals feed each check's precision; noisy checks are flagg
 ## Which model answers
 
 With `classifier.backend: auto`: Jev cloud when you turned it on; otherwise the local LLM. Every LLM
-answer is also put to Laya in the background, and Bolts records whether Laya agreed. Once Laya agrees
+answer is also put to Laya in the background, and Bolt records whether Laya agreed. Once Laya agrees
 on at least 90% of 30 answers for a question, that question goes to Laya first (about 100 ms instead of
 seconds). With no local LLM, Laya answers everything. Settings → Models shows the agreement per question.
 

@@ -13,7 +13,7 @@ import { Activity, Kpis, PERIOD } from "./overview";
 import { ProjectsTable } from "./projects-table";
 import { SetupGuide } from "./setup-guide";
 
-const KEY = "bolts-home-window";
+const KEY = "neatbolt-home-window";
 
 function savedWindow(): InsightWindow {
   try {
@@ -24,7 +24,7 @@ function savedWindow(): InsightWindow {
   }
 }
 
-/** Home: how to use Bolts, and how the agents have been doing over a period. */
+/** Home: how to use Bolt, and how the agents have been doing over a period. */
 export function HomePage({ status }: { status?: Status }) {
   const [win, setWin] = useState<InsightWindow>(savedWindow);
   const { data, error } = useInsights(win);

@@ -30,7 +30,7 @@ function KeyValues({ entries }: { entries: [string, unknown][] }) {
   );
 }
 
-/** One span: what went in, what came out, and why Bolts flagged it. Sits beside the trace. */
+/** One span: what went in, what came out, and why Bolt flagged it. Sits beside the trace. */
 export function SpanDetail({ traceId, spanId, findings, annotations }: { traceId: string; spanId: string; findings: Finding[]; annotations: Annotation[] }) {
   const { data: d, isLoading, error } = useSpanDetail(traceId, spanId);
   const [tab, setTab] = useState<"io" | "attrs" | "raw">("io");
@@ -133,7 +133,7 @@ export function SpanDetail({ traceId, spanId, findings, annotations }: { traceId
               {a.text ? `: ${a.text}` : ""}
             </StatusPill>
           ))}
-          <span className="mr-auto text-caption text-foreground-subtle">Your labels teach Bolts which findings matter.</span>
+          <span className="mr-auto text-caption text-foreground-subtle">Your labels teach Bolt which findings matter.</span>
           <Button size="sm" variant="ghost" onClick={() => mark("issue")}>
             Mark as issue
           </Button>

@@ -2,7 +2,7 @@ import { Loading03Icon } from "@hugeicons/core-free-icons";
 import { cn } from "../../lib/cn";
 import { Icon, type IconSize } from "./icon";
 
-/** Brand-violet activity indicator: Bolts or its local models are working. */
+/** Brand-violet activity indicator: Bolt or its local models are working. */
 export function Spinner({ size = "sm", label = "Working", className }: { size?: IconSize; label?: string; className?: string }) {
   return (
     <span role={label ? "status" : undefined} className={cn("inline-flex text-brand-violet", className)}>

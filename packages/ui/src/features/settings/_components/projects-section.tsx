@@ -18,7 +18,7 @@ export function ProjectsSection({ hooks }: { hooks: number }) {
   return (
     <Panel title="Projects" meta="A project is the SDK's service name (workflow_name)">
       {projects.length === 0 ? (
-        <p className="px-4 py-4 text-body text-muted-foreground">Projects appear here after their first run reaches Bolts.</p>
+        <p className="px-4 py-4 text-body text-muted-foreground">Projects appear here after their first run reaches Bolt.</p>
       ) : (
         <table className="w-full text-body">
           <thead>
@@ -79,8 +79,8 @@ export function ProjectsSection({ hooks }: { hooks: number }) {
         </table>
       )}
       <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        Steering needs the hook in your agent: <span className="font-mono">pip install ~/.bolts/src/python/bolts-steer</span> then <span className="font-mono">bolts_steer.wrap(OpenAI())</span>, or{" "}
-        <span className="font-mono">npm install ~/.bolts/src/packages/steer-ts</span> for TypeScript. Hooks connected now: <span className="tabular-nums">{hooks}</span>.
+        Steering needs the hook in your agent: <span className="font-mono">pip install ~/.neatbolt/src/python/neatbolt-steer</span> then <span className="font-mono">neatbolt_steer.wrap(OpenAI())</span>, or{" "}
+        <span className="font-mono">npm install ~/.neatbolt/src/packages/steer-ts</span> for TypeScript. Hooks connected now: <span className="tabular-nums">{hooks}</span>.
       </p>
     </Panel>
   );

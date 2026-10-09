@@ -29,13 +29,13 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "runs",
       short: "Runs arriving",
-      title: "Send your agent's runs to Bolts",
+      title: "Send your agent's runs to Bolt",
       done: status.stats.runs > 0,
       state: `${status.stats.runs.toLocaleString()} runs from ${names.length} project${names.length === 1 ? "" : "s"}${names.length ? ` (${names.slice(0, 3).join(", ")})` : ""}`,
       body: (
         <>
-          <p>Bolts reads what the Neatlogs SDK already sends. Set two variables where your agent runs; no code change is needed.</p>
-          <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=bolts-local`} />
+          <p>Bolt reads what the Neatlogs SDK already sends. Set two variables where your agent runs; no code change is needed.</p>
+          <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=neatbolt-local`} />
           <p>Not using the SDK yet? Add it and name your agent; that name becomes the project here.</p>
           <CodeLine text={`neatlogs.init(workflow_name="my-agent", flush_interval=0.5)`} />
         </>
@@ -44,15 +44,15 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "llm",
       short: "LLM",
-      title: "Give Bolts an LLM to ask questions with",
+      title: "Give Bolt an LLM to ask questions with",
       done: !!llm?.ok,
       state: llm?.ok ? `${llm.model}${hosted ? ` (hosted: ${llm.where})` : " on this machine"}` : "",
       body: (
         <>
-          <p>Rules run without one. An LLM lets Bolts pick the questions that fit your agent, explain problems and summarize runs. Run one locally:</p>
+          <p>Rules run without one. An LLM lets Bolt pick the questions that fit your agent, explain problems and summarize runs. Run one locally:</p>
           <CodeLine text="ollama pull qwen3:8b" />
           <p>
-            Or use a hosted model (opt-in; run content is sent to it): <span className="font-mono">bolts llm use anthropic</span>, or{" "}
+            Or use a hosted model (opt-in; run content is sent to it): <span className="font-mono">neatbolt llm use anthropic</span>, or{" "}
             <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/models">
               Settings → Models
             </a>
@@ -64,31 +64,31 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "mcp",
       short: "Coding agent",
-      title: "Let your coding agent read what Bolts finds",
+      title: "Let your coding agent read what Bolt finds",
       optional: true,
       done: !!status.mcp?.last_seen_ms,
       state: status.mcp?.last_seen_ms ? `a coding agent last asked ${ago(status.mcp.last_seen_ms)}` : "",
       body: (
         <>
           <p>Claude Code, Cursor or Codex can read your runs and findings, fix the problem and add a check so it is caught next time.</p>
-          <CodeLine text="claude mcp add --scope user bolts -- bolts mcp" />
-          <p>Then ask it: “Fix what Bolts found in my last run.”</p>
+          <CodeLine text="claude mcp add --scope user neatbolt -- neatbolt mcp" />
+          <p>Then ask it: “Fix what Bolt found in my last run.”</p>
         </>
       ),
     },
     {
       id: "steering",
       short: "Steering",
-      title: "Let Bolts nudge the agent while it runs",
+      title: "Let Bolt nudge the agent while it runs",
       optional: true,
       done: steered.length > 0,
       state: steered.length ? `on for ${steered.map((p) => `${p.project} (${p.settings.steering})`).join(", ")}` : "",
       body: (
         <>
-          <p>When a check fires mid-run, Bolts can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
-          <CodeLine text={`pip install ~/.bolts/src/python/bolts-steer\nbolts steering advisory --project ${names[0] ?? "my-agent"}`} />
+          <p>When a check fires mid-run, Bolt can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
+          <CodeLine text={`pip install ~/.neatbolt/src/python/neatbolt-steer\nneatbolt steering advisory --project ${names[0] ?? "my-agent"}`} />
           <p>
-            Then wrap your client: <span className="font-mono">client = bolts_steer.wrap(OpenAI())</span>. Turn it on per project in{" "}
+            Then wrap your client: <span className="font-mono">client = neatbolt_steer.wrap(OpenAI())</span>. Turn it on per project in{" "}
             <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/projects">
               Settings → Projects
             </a>
@@ -106,8 +106,8 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
       state: status.cloud.has_key ? "API key stored" : "",
       body: (
         <>
-          <p>Send a run you want to keep or show your team. Bolts removes secrets and personal data first, and sends nothing unless you ask.</p>
-          <CodeLine text="bolts cloud login" />
+          <p>Send a run you want to keep or show your team. Bolt removes secrets and personal data first, and sends nothing unless you ask.</p>
+          <CodeLine text="neatbolt cloud login" />
         </>
       ),
     },
@@ -115,14 +115,14 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
 }
 
 const DAILY = [
-  "Run your agent as usual. Bolts checks every run as it happens.",
+  "Run your agent as usual. Bolt checks every run as it happens.",
   "Start here: see what is failing more or less often, and which tools and checks are behind it.",
   "Open a problem to see the cause, the suggested fix and the span that shows it, or ask your coding agent to fix it.",
-  "Dismiss findings that are wrong. Bolts counts them, so noisy checks show up.",
+  "Dismiss findings that are wrong. Bolt counts them, so noisy checks show up.",
 ];
 
 /**
- * How to use Bolts, as steps checked against what is actually set up. Expanded while the
+ * How to use Bolt, as steps checked against what is actually set up. Expanded while the
  * essentials are missing; one line once they are done.
  */
 export function SetupGuide({ status, projects }: { status: Status; projects: ProjectRow[] }) {
@@ -147,7 +147,7 @@ export function SetupGuide({ status, projects }: { status: Status; projects: Pro
           ))}
         </span>
         <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-          Show how to use Bolts
+          Show how to use Bolt
         </Button>
       </div>
     );
@@ -158,10 +158,10 @@ export function SetupGuide({ status, projects }: { status: Status; projects: Pro
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h2 id="setup" className="text-body-medium text-foreground">
-            How to use Bolts
+            How to use Bolt
           </h2>
           <p className="max-w-2xl text-body text-muted-foreground">
-            Bolts checks your agent's runs on this machine: rules on every step, questions the LLM picks for your agent, and an explanation when something goes wrong. Nothing
+            Bolt checks your agent's runs on this machine: rules on every step, questions the LLM picks for your agent, and an explanation when something goes wrong. Nothing
             leaves this machine unless you turn it on.
           </p>
         </div>

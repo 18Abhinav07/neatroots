@@ -1,9 +1,9 @@
 ---
 name: write-check
-description: Turn a bug or concern the user describes into a Bolts check, preview how often it fires on recent runs, and save it. Use when the user wants Bolts to watch for a specific failure from now on.
+description: Turn a bug or concern the user describes into a Bolt check, preview how often it fires on recent runs, and save it. Use when the user wants Bolt to watch for a specific failure from now on.
 ---
 
-# Write a Bolts check
+# Write a Bolt check
 
 1. Restate the failure as a yes/no question phrased as a failure ("Did the agent … without …?"), so
    that yes means a problem. Decide whether one span shows it (`scope: span`) or it needs the run
@@ -15,5 +15,5 @@ description: Turn a bug or concern the user describes into a Bolts check, previe
    others. If it fires everywhere, make the question more specific; if nowhere, check the evidence
    selector (span types and names).
 4. Show the user the YAML and the hit rate, then save: `create_check` with `save: true` (to
-   `~/.bolts/checks`) or `dir` set to the repo's `.bolts/checks` so the team gets it too.
+   `~/.neatbolt/checks`) or `dir` set to the repo's `.neatbolt/checks` so the team gets it too.
 5. Add a short `guidance` line if steering is on, so the agent gets a useful note when it fires.
