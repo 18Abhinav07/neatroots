@@ -24,12 +24,12 @@ test.describe("add data", () => {
     await expect(page.getByRole("cell", { name: "Plan a weekend in Kyoto" })).toBeVisible();
   });
 
-  test("each import source has its own form", async ({ page }) => {
+  test("the import tab takes trace files only", async ({ page }) => {
     await open(page, "add-data/import");
-    for (const s of ["Langfuse", "LangSmith", "Arize Phoenix", "Braintrust", "Raindrop", "Laminar"]) await expect(page.getByText(s, { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Set up import" }).first().click();
-    await expect(page.getByText("Public key")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Import from Langfuse" })).toBeDisabled();
+    await expect(page.getByRole("tab", { name: "Import files" })).toBeVisible();
+    await expect(page.getByText("Drop trace files here")).toBeVisible();
+    await expect(page.getByText(/neatroots import traces\.json/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Set up import" })).toHaveCount(0);
   });
 
   test("Neatlogs Cloud import asks for an API key first", async ({ page }) => {

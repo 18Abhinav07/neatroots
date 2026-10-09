@@ -7,7 +7,7 @@ that runs a model cascade, and the surfaces people and coding agents use.
 ```mermaid
 flowchart TB
   AGENT["Your agent"]
-  OTHER["Trace files · Neatlogs Cloud · Langfuse · LangSmith<br/>Phoenix · Braintrust · Raindrop · Laminar"]
+  OTHER["Trace files · Neatlogs Cloud"]
 
   subgraph roots["neatroots · localhost:4100"]
     direction TB
@@ -42,7 +42,7 @@ flowchart TB
 | `semantics/view.ts` | Span kind, input/output, model, tokens from public `neatlogs.*`, OpenInference and GenAI attributes |
 | `store/db.ts`, `store/blobs.ts` | SQLite (WAL): sessions, runs, spans, findings, notes, plans, checks, decisions, explanations, summaries, annotations, forwards; FTS5 search; retention |
 | `server/collector.ts`, `server/readback.ts` | `/v1/traces`, `/v1/logs`, `/v1/trace`, doctor read-back |
-| `ingest/` | The HTTP trace API and OTLP/gRPC (`http-trace.ts`, `grpc.ts`), span trees to OTLP (`build.ts`), and importers for files, Neatlogs Cloud, Langfuse, LangSmith, Phoenix, Braintrust, Raindrop and Laminar (`importers/`), run as cancellable jobs |
+| `ingest/` | The HTTP trace API and OTLP/gRPC (`http-trace.ts`, `grpc.ts`), span trees to OTLP (`build.ts`), and imports of trace files and Neatlogs Cloud traces (`importers/`; cloud imports run as cancellable jobs) |
 | `semantics/chat-view.ts` | A run as a conversation: system, user, assistant, tool and sub-agent items |
 | `replay/` | LLM-call replays through the configured LLM, and whole-agent replays through a registered command or endpoint, linked to the original run |
 | `agents/chat.ts` | Claude Code and Codex chats in the app: each turn runs the agent's CLI headless with neatroots' MCP server attached; events are stored and streamed |
@@ -101,7 +101,7 @@ primitives (`packages/ui/src/components/{ui,neat-ui,list-page,detail,kpi}`).
 
 ## Tests
 
-- `packages/neatroots/test`: the server (vitest), including ingestion, imports against mock services,
+- `packages/neatroots/test`: the server (vitest), including ingestion, Neatlogs Cloud import against a mock of its public API,
   replays through a real child process, MCP tools and the mock LLM.
 - `packages/ui/e2e`: Playwright against a real server built from the repo, with an isolated home
   folder, the mock LLM and seeded runs.

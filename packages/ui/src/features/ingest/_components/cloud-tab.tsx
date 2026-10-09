@@ -11,6 +11,7 @@ import type { Status } from "@/lib/api";
 import { dur, num, stamp } from "@/lib/format";
 import { go } from "@/lib/router";
 import { useCloudTraces, useImportActions } from "../_services/ingest-queries";
+import { ImportJobs } from "./import-jobs";
 
 const HEAD = "h-9 px-3 text-eyebrow font-normal text-muted-foreground";
 
@@ -99,6 +100,7 @@ export function CloudTab({ status }: { status?: Status }) {
         </Table>
         {!isLoading && !traces.length && <p className="px-4 py-6 text-sm text-muted-foreground">No traces in this project yet.</p>}
       </div>
+      <ImportJobs />
     </div>
   );
 }

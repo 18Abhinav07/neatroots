@@ -164,22 +164,11 @@ With OpenTelemetry, `OTEL_SERVICE_NAME` becomes the project. neatroots reads Nea
 Bring in runs you already have, to check, explain or replay them here:
 
 ```bash
-neatroots import traces.json export.jsonl               # files: OTLP JSON, Neatlogs exports, Neatlogs HTTP traces
-neatroots import langfuse --since 7d --limit 50         # keys from flags or the usual environment variables
-neatroots import --list                                 # every source and what it needs
+neatroots import traces.json export.jsonl       # OTLP JSON, Neatlogs trace exports, Neatlogs HTTP traces
+neatroots import neatlogs-cloud --since 24h     # your Neatlogs Cloud project (section 10)
 ```
 
-| Source | Needs |
-| --- | --- |
-| Neatlogs Cloud | The API key stored with `neatroots cloud login`; optionally trace ids |
-| Langfuse | Public and secret key; host (cloud.langfuse.com by default) |
-| LangSmith | API key and project |
-| Arize Phoenix | Phoenix URL and project; API key for Phoenix Cloud |
-| Braintrust | API key and project |
-| Raindrop | Query API key (not the write key) |
-| Laminar | Project API key |
-
-**Add data → Import** in the app does the same, with a form per source, progress as it runs, and a drop zone for files. Keys typed there are used for that import only and are not stored. Imported runs are checked like any other.
+**Add data → Import files** in the app takes the same files by drag and drop. Imported runs are checked like any other.
 
 ## 5. Read what neatroots found
 
@@ -321,7 +310,7 @@ The same key lets you go the other way: **Add data → Neatlogs Cloud** lists yo
 | Hosted LLM | Off | Run content each LLM task needs, minus secrets, to the provider you choose |
 | Jev cloud | Off | Span content a question needs, to api.typesafe.ai |
 | Neatlogs Cloud forward | Off | Runs you send or a project you forward, redacted first, to ingest.neatlogs.com |
-| Imports | Off | Requests to the service you import from, with the key you give |
+| Neatlogs Cloud import | Off | Requests to app.neatlogs.com with your project key |
 | Coding agents in the app | Off | Whatever Claude Code or Codex sends to their providers, as when you run them yourself |
 | Steering | Off | Notes go to your own agent's next LLM call; nothing leaves the machine |
 | Install and update | — | Downloads neatroots, Node.js, packages and Laya |
@@ -336,7 +325,7 @@ neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Lin
 | `neatroots service install / uninstall / status / restart` | Run in the background and start at login |
 | `neatroots status`, `neatroots doctor` | What is running; whether everything works |
 | `neatroots init` | Set up an agent's repository (`--project`, `--write-env`, `--steering`, `--mcp claude`) |
-| `neatroots import <files or source>` | Bring in runs (`--list`, `--since`, `--limit`, `--project`) |
+| `neatroots import <files>` | Bring in trace files, or `neatlogs-cloud` traces (`--since`, `--limit`, `--project`) |
 | `neatroots replay <trace-id>` | Replay a run (`--span`, `--input`, `--model`, `--system`) |
 | `neatroots rerun add / list / remove` | How neatroots starts your agent for replays |
 | `neatroots mock-llm` | A stand-in LLM on port 4110 for running agents without API keys |
@@ -372,6 +361,7 @@ Uninstalling keeps `~/.neatroots`, which holds your runs, settings and Laya. Del
 | Laya failed to install | Run `neatroots laya install` to see the error (it needs `uv` or Python 3.10+). neatroots works without Laya: the LLM answers instead |
 | Hosted LLM errors | `neatroots llm` shows the error. "Rejected the key": run `neatroots llm login <provider>` again. "Model not found": check `neatroots llm models <provider>` |
 | Replay says it doesn't know how to start the agent | Register a command or endpoint: `neatroots rerun add <project> "<command>"`, or Settings → Projects |
-| An import fails | The error names the request that failed; check the key and URL. Keys for imports are never stored, so enter them again |
+| A file won't import | It must be OTLP JSON, a Neatlogs trace export or Neatlogs HTTP traces (one per line in .jsonl); the error says what didn't parse |
+| A Neatlogs Cloud import fails | Check the key: `neatroots cloud login`. The error names the request that failed |
 | Steering notes never arrive | Turn steering on for the project, install the hook, and set `NEATROOTS_STEER_DEBUG=1` in the agent to see what the hook does |
 | Where are the logs? | The terminal running `neatroots start`, or `~/.neatroots/logs/neatroots.log` for the background service. `NEATROOTS_DEBUG=1` adds detail |

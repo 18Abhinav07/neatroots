@@ -25,12 +25,6 @@ import { SpanSheet } from "./span-sheet";
 
 const SOURCE_LABEL: Record<string, string> = {
   "neatlogs-cloud": "Neatlogs Cloud",
-  langfuse: "Langfuse",
-  langsmith: "LangSmith",
-  phoenix: "Arize Phoenix",
-  braintrust: "Braintrust",
-  raindrop: "Raindrop",
-  laminar: "Laminar",
   file: "a file",
 };
 

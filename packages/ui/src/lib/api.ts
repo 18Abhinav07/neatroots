@@ -119,7 +119,7 @@ export interface RunDetail {
   forwarded: boolean;
   replays: Replay[];
   replay_of: Replay | null;
-  /** Where an imported run came from (langfuse, neatlogs-cloud, file, …). */
+  /** Where an imported run came from (neatlogs-cloud or file). */
   import_source: string | null;
 }
 
@@ -157,13 +157,6 @@ export type ChatItem =
 
 export interface SearchRun extends Run {
   hits: { span_id: string; name: string; snippet: string; kind?: string }[];
-}
-
-export interface ImportSourceInfo {
-  id: string;
-  label: string;
-  description: string;
-  fields: { name: string; label: string; secret?: boolean; required?: boolean; placeholder?: string; default?: string }[];
 }
 
 export interface ImportJob {

@@ -2,13 +2,7 @@ import crypto from "node:crypto";
 import type { Roots } from "../../core.js";
 import { getCloudKey } from "../../relay/keychain.js";
 import { log } from "../../util/log.js";
-import { braintrust } from "./braintrust.js";
-import { laminar } from "./laminar.js";
-import { langfuse } from "./langfuse.js";
-import { langsmith } from "./langsmith.js";
 import { cloudApiBase, neatlogsCloudSource } from "./neatlogs-cloud.js";
-import { phoenix } from "./phoenix.js";
-import { raindrop } from "./raindrop.js";
 import { ImportError, type ImportSource } from "./types.js";
 
 export { parseTraceFile } from "./file.js";
@@ -32,7 +26,7 @@ export interface ImportJob {
   window: { since_ms: number; until_ms: number };
 }
 
-/** Imports from other observability tools and Neatlogs Cloud, run in the background one trace at a time. */
+/** Imports from Neatlogs Cloud, run in the background one trace at a time. */
 export class ImportJobs {
   private readonly jobs = new Map<string, ImportJob>();
   private readonly controllers = new Map<string, AbortController>();
@@ -44,12 +38,6 @@ export class ImportJobs {
         () => cloudApiBase(roots.relay.endpoint(), roots.config.cloud.apiBase),
         () => getCloudKey(),
       ),
-      langfuse,
-      langsmith,
-      phoenix,
-      braintrust,
-      raindrop,
-      laminar,
     ];
   }
 

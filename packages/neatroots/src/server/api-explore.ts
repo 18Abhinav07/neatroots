@@ -105,9 +105,6 @@ export function mountExploreApi(app: Hono, roots: Roots): void {
 
   // --------------------------------------------------------------- imports
 
-  app.get("/api/imports/sources", (c) =>
-    c.json({ sources: roots.imports.sources.map((s) => ({ id: s.id, label: s.label, description: s.description, fields: s.fields.map(({ env: _e, ...f }) => f) })) }),
-  );
   app.get("/api/imports", (c) => c.json({ jobs: roots.imports.list() }));
   app.post("/api/imports", async (c) => {
     const b = await body<{ source: string; values?: Record<string, string>; since_ms?: number; until_ms?: number; limit?: number; project?: string }>(c);

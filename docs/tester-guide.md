@@ -128,9 +128,8 @@ Then point the agent at neatroots. With the Neatlogs SDK it is two variables:
 export NEATLOGS_ENDPOINT=http://localhost:4100 NEATLOGS_API_KEY=neatroots-local
 ```
 
-With OpenTelemetry or no SDK, **Add data** in the app shows the other ways in. Already using
-Langfuse, LangSmith, Phoenix, Braintrust, Raindrop or Laminar? **Add data → Import** brings in your
-recent runs.
+With OpenTelemetry or no SDK, **Add data** in the app shows the other ways in. Trace files you
+already have go in through **Add data → Import files**.
 
 Run it several times, including at least once where you expect it to go wrong.
 
@@ -192,7 +191,5 @@ Please don't paste API keys or customer data from your runs.
   up to a minute on a local model.
 - **Steering and replay hooks** install from `~/.neatroots/app/steer` until they are published to
   PyPI and npm.
-- **Importers** are tested against each service's documented API, not yet against every real
-  account. Tell us if one fails.
 - **Coding agents in the app** need the Claude Code or Codex CLI installed and signed in.
 - **Windows:** only through WSL.

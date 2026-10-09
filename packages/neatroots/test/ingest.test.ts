@@ -4,12 +4,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { httpTraceToBatches, HttpTraceError } from "../src/ingest/http-trace.js";
 import { startGrpc } from "../src/ingest/grpc.js";
 import { parseTraceFile } from "../src/ingest/importers/file.js";
-import { langfuseNodes } from "../src/ingest/importers/langfuse.js";
-import { langsmithNodes } from "../src/ingest/importers/langsmith.js";
-import { braintrustNodes } from "../src/ingest/importers/braintrust.js";
-import { raindropNodes } from "../src/ingest/importers/raindrop.js";
-import { laminarNodes } from "../src/ingest/importers/laminar.js";
-import { phoenixSpan } from "../src/ingest/importers/phoenix.js";
 import { buildSpan, toNs } from "../src/ingest/build.js";
 import { encodeTraceRequest } from "../src/otlp/codec.js";
 import { buildView } from "../src/semantics/view.js";
@@ -115,37 +109,6 @@ describe("imports", () => {
     expect(toNs(1_700_000_000)).toBe(1_700_000_000_000_000_000n);
     expect(toNs("2026-10-09T10:00:00.123456789Z")).toBe(BigInt(Date.parse("2026-10-09T10:00:00.123Z")) * 1_000_000n + 456789n);
     expect(buildSpan({ traceId: "x", spanId: "y", name: "n", start: 1 }).traceId).toHaveLength(32);
-  });
-
-  it("maps Langfuse traces and observations", () => {
-    const nodes = langfuseNodes(
-      { id: "t1", timestamp: "2026-10-09T10:00:00Z", name: "chat", input: "q", output: "a", sessionId: "s" },
-      [
-        { id: "o1", traceId: "t1", type: "GENERATION", name: "llm", startTime: "2026-10-09T10:00:01Z", endTime: "2026-10-09T10:00:02Z", model: "gpt-4o", usage: { input: 3, output: 4 } },
-        { id: "o2", traceId: "t1", type: "TOOL", name: "search", startTime: "2026-10-09T10:00:02Z", endTime: "2026-10-09T10:00:03Z", parentObservationId: "o1", level: "ERROR", statusMessage: "timeout" },
-      ],
-    );
-    expect(nodes.map((n) => [n.kind, n.parentSpanId])).toEqual([["workflow", undefined], ["GENERATION", "trace:t1"], ["TOOL", "o1"]]);
-    const spans = nodes.map(buildSpan);
-    expect(buildView(spans[1], [])).toMatchObject({ kind: "LLM", model: "gpt-4o", promptTokens: 3 });
-    expect(buildView(spans[2], [])).toMatchObject({ kind: "TOOL", toolName: "search", error: "timeout" });
-  });
-
-  it("maps LangSmith, Braintrust, Raindrop, Laminar and Phoenix records", () => {
-    const ls = langsmithNodes([
-      { id: "r1", name: "agent", run_type: "chain", start_time: "2026-10-09T10:00:00", trace_id: "r1", inputs: { q: 1 } },
-      { id: "r2", name: "ChatOpenAI", run_type: "llm", start_time: "2026-10-09T10:00:01", end_time: "2026-10-09T10:00:02", trace_id: "r1", parent_run_id: "r1", extra: { invocation_params: { model: "gpt-4o" } }, prompt_tokens: 7 },
-    ]);
-    expect(buildView(buildSpan(ls[1]), [])).toMatchObject({ kind: "LLM", model: "gpt-4o", promptTokens: 7 });
-    const bt = braintrustNodes([{ id: "e1", span_id: "a", root_span_id: "a", span_attributes: { name: "root", type: "task" }, metrics: { start: 1_700_000_000, end: 1_700_000_001 } }, { id: "e2", span_id: "b", root_span_id: "a", span_parents: ["a"], span_attributes: { name: "gpt", type: "llm" }, metadata: { model: "gpt-4o" }, metrics: { start: 1_700_000_000.2, prompt_tokens: 9 } }]);
-    expect(bt.map((n) => n.kind)).toEqual(["workflow", "llm"]);
-    expect(buildView(buildSpan(bt[1]), [])).toMatchObject({ model: "gpt-4o", promptTokens: 9 });
-    const rd = raindropNodes({ id: "ev1", event_name: "chat", timestamp: "2026-10-09T10:00:00Z", user_input: "hi", assistant_output: "hello", tool_calls: [{ tool_name: "lookup", status: "error", duration_ms: 20 }] }, []);
-    expect(rd.map((n) => [n.kind, n.name])).toEqual([["agent", "chat"], ["tool", "lookup"]]);
-    const lm = laminarNodes([{ span_id: "11111111-1111-1111-1111-111111111111", trace_id: "22222222-2222-2222-2222-222222222222", parent_span_id: "00000000-0000-0000-0000-000000000000", name: "root", span_type: "DEFAULT", start_time: "2026-10-09 10:00:00.5" }], { session_id: "s9" });
-    expect(lm[0]).toMatchObject({ kind: "chain", parentSpanId: null, sessionId: "s9", start: "2026-10-09T10:00:00.5Z" });
-    const px = phoenixSpan({ name: "ChatCompletion", context: { trace_id: "abc", span_id: "def" }, span_kind: "LLM", start_time: "2026-10-09T10:00:00Z", status_code: "OK", attributes: { llm: { model_name: "gpt-4o" }, input: { value: "hi" } } });
-    expect(buildView(px, [])).toMatchObject({ kind: "LLM", model: "gpt-4o" });
   });
 
   it("reads OTLP JSON, Neatlogs exports and HTTP traces from files, one per line too", () => {

@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import type { KeyValue, OtlpSpan, ResourceSpansBatch } from "../otlp/types.js";
 import { plainToAny, STATUS_ERROR, STATUS_OK } from "../otlp/types.js";
 
-// Turns spans described in other shapes (the Neatlogs HTTP API, Langfuse, LangSmith, Neatlogs
-// Cloud exports, …) into OTLP spans with the public neatlogs.* attributes, so everything after
+// Turns spans described in other shapes (the Neatlogs HTTP API, Neatlogs Cloud exports, replays)
+// into OTLP spans with the public neatlogs.* attributes, so everything after
 // ingest (views, checks, search, cloud forwarding) treats them like SDK spans.
 
 export interface SpanNode {

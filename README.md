@@ -17,8 +17,7 @@ machine unless you send it.
 - **Takes runs from anywhere.** The [Neatlogs SDKs](https://github.com/neatlogs/neatlogs) (Python,
   TypeScript, Go, Browser), the Neatlogs HTTP trace API, or any OpenTelemetry exporter over OTLP
   HTTP or gRPC (OpenInference, OpenLLMetry, GenAI and Vercel AI SDK attributes). It also imports
-  trace files and pulls traces from Neatlogs Cloud, Langfuse, LangSmith, Arize Phoenix, Braintrust,
-  Raindrop and Laminar.
+  trace files, and pulls production traces from Neatlogs Cloud.
 - **Checks every run.** Rules in code on every span (loops, repeated tool calls, error streaks,
   leaked keys, failed or empty runs). Yes/no questions picked for your agent, each answered with a
   probability by a decision model. An explanation with a suggested fix when something goes wrong.
@@ -43,7 +42,7 @@ machine unless you send it.
 ```mermaid
 flowchart TB
   AGENT["Your agent"]
-  OTHER["Trace files · Neatlogs Cloud · Langfuse · LangSmith<br/>Phoenix · Braintrust · Raindrop · Laminar"]
+  OTHER["Trace files · Neatlogs Cloud"]
 
   subgraph roots["neatroots · localhost:4100"]
     direction TB
@@ -149,8 +148,7 @@ neatlogs.init(workflow_name="refund-agent", flush_interval=0.5)
 | Neatlogs HTTP trace API | `POST http://localhost:4100/v1/trace`, one JSON tree per trace |
 | OpenTelemetry, OTLP/HTTP | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4100/v1/traces` |
 | OpenTelemetry, OTLP/gRPC | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4317` |
-| Trace files (OTLP JSON, Neatlogs exports, JSONL) | `neatroots import traces.json`, or **Add data → Import** |
-| Other tools | `neatroots import langfuse` (or `langsmith`, `phoenix`, `braintrust`, `raindrop`, `laminar`) |
+| Trace files (OTLP JSON, Neatlogs exports, JSONL) | `neatroots import traces.json`, or **Add data → Import files** |
 | Neatlogs Cloud | `neatroots import neatlogs-cloud`, or **Add data → Neatlogs Cloud** |
 
 **Add data** in the app shows each of these with this machine's ports filled in.
@@ -234,7 +232,7 @@ note per call and three per run. See [docs/steering.md](docs/steering.md).
 | Hosted LLM | Off | The run content each LLM task needs, minus secrets, to the provider you pick |
 | Jev cloud | Off | Span content a question needs, to api.typesafe.ai |
 | Neatlogs Cloud forward | Off | Runs you send, redacted first, to ingest.neatlogs.com |
-| Imports | Off | Requests to the tool you import from, with the key you give |
+| Neatlogs Cloud import | Off | Requests to app.neatlogs.com with your project key |
 | Coding agents in the app | Off | Whatever Claude Code or Codex sends to their own providers |
 
 neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Linux, a file only you
@@ -248,7 +246,7 @@ can read) and never in the database.
 | `neatroots status`, `neatroots doctor` | What is running, and whether the trace path and models work |
 | `neatroots init` | In your agent's repo: `.env`, a `.neatroots/checks/` folder, steering and MCP setup |
 | `neatroots connect` | Give coding agents neatroots' MCP tools and skills |
-| `neatroots import <source or files>` | Bring in trace files or traces from other tools (`--list` shows sources) |
+| `neatroots import <files>` | Bring in trace files, or `neatroots import neatlogs-cloud` for your cloud project |
 | `neatroots replay <trace> [--span <id>]` | Replay a run, or one LLM call in it |
 | `neatroots rerun add <project> "<command>"` | How to start your agent for replays (`--url` for an HTTP endpoint) |
 | `neatroots mock-llm` | A stand-in LLM on port 4110, so agents run without API keys |
@@ -271,7 +269,7 @@ can read) and never in the database.
 
 | Path | Contents |
 | --- | --- |
-| `packages/neatroots` | The server and CLI: collectors, importers, store, checks, models, replay, steering, MCP, cloud relay |
+| `packages/neatroots` | The server and CLI: collectors, file and cloud import, store, checks, models, replay, steering, MCP, cloud relay |
 | `packages/ui` | The web app (React, Tailwind, the Neatlogs design system) and its Playwright tests |
 | `packages/steer-ts`, `python/neatroots-steer` | The steering and replay hooks for TypeScript and Python |
 | `packages/neatroots/library` | Starter rules and the open question library |

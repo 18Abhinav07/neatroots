@@ -10,7 +10,7 @@ import { SdkTab } from "./sdk-tab";
 
 type Tab = "send" | "import" | "cloud";
 
-/** Every way runs get into neatroots: live from your agent, from files and other tools, or from Neatlogs Cloud. */
+/** Every way runs get into neatroots: live from your agent, from trace files, or from Neatlogs Cloud. */
 export function AddDataPage({ status, tab: raw }: { status?: Status; tab?: string }) {
   const tab: Tab = raw === "import" || raw === "cloud" ? raw : "send";
   return (
@@ -23,7 +23,7 @@ export function AddDataPage({ status, tab: raw }: { status?: Status; tab?: strin
           onValueChange={(t) => go(t === "send" ? "add-data" : `add-data/${t}`)}
           items={[
             { value: "send", label: "From your agent" },
-            { value: "import", label: "Import" },
+            { value: "import", label: "Import files" },
             { value: "cloud", label: "Neatlogs Cloud" },
           ]}
         />

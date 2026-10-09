@@ -9,7 +9,7 @@ The name is the idea: an agent's roots are on the developer's laptop. neatroots 
 - Developers building agents that call tools (support, refunds, research, ops) and who use Claude Code, Cursor or Codex to write them.
 - Teams that cannot send dev traces to a hosted service because they hold customer data or keys.
 - Neatlogs SDK users who want a free, local first step.
-- Anyone already sending OpenTelemetry, or using Langfuse, LangSmith, Phoenix, Braintrust, Raindrop or Laminar, who wants checks and replays on their own runs without changing instrumentation.
+- Anyone already sending OpenTelemetry who wants checks and replays on their own runs without changing instrumentation.
 
 ## Four jobs it does better than the alternatives
 

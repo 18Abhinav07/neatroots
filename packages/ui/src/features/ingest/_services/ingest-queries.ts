@@ -1,10 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, post, type CloudTrace, type ImportJob, type ImportSourceInfo } from "@/lib/api";
-
-export function useImportSources() {
-  return useQuery({ queryKey: ["import-sources"], queryFn: () => api<{ sources: ImportSourceInfo[] }>("/api/imports/sources"), staleTime: Infinity });
-}
+import { api, post, type CloudTrace, type ImportJob } from "@/lib/api";
 
 export function useImportJobs() {
   return useQuery({ queryKey: ["imports"], queryFn: () => api<{ jobs: ImportJob[] }>("/api/imports"), refetchInterval: (q) => (q.state.data?.jobs.some((j) => j.state === "running") ? 1500 : false) });
@@ -26,12 +22,6 @@ export function useImportActions() {
     void qc.invalidateQueries({ queryKey: ["cloud-traces"] });
   };
   return {
-    start: useMutation({
-      mutationFn: (b: { source: string; values: Record<string, string>; since_ms?: number; limit?: number; project?: string }) => post<ImportJob>("/api/imports", b),
-      onSuccess: (j) => toast.success(`Importing from ${j.label}…`),
-      onError: (e) => toast.error(`Couldn't start the import: ${(e as Error).message}`),
-      onSettled: refresh,
-    }),
     cancel: useMutation({ mutationFn: (id: string) => post(`/api/imports/${id}/cancel`), onSettled: refresh }),
     file: useMutation({
       mutationFn: (b: { name: string; content: string; project?: string }) => post<{ traces: number; spans: number; trace_ids: string[] }>("/api/imports/file", b),

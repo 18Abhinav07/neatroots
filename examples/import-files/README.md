@@ -9,4 +9,4 @@ Traces you already have, as files:
 neatroots import otlp-trace.json http-traces.jsonl
 ```
 
-Or drop them on **Add data → Import** in the app. Neatlogs Cloud trace exports work the same way.
+Or drop them on **Add data → Import files** in the app. Neatlogs Cloud trace exports work the same way.

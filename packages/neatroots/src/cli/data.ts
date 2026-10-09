@@ -2,16 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
 import { loadConfig, saveConfig } from "../config.js";
-import { braintrust } from "../ingest/importers/braintrust.js";
-import { laminar } from "../ingest/importers/laminar.js";
-import { langfuse } from "../ingest/importers/langfuse.js";
-import { langsmith } from "../ingest/importers/langsmith.js";
-import { phoenix } from "../ingest/importers/phoenix.js";
-import { raindrop } from "../ingest/importers/raindrop.js";
 import type { ImportSource } from "../ingest/importers/types.js";
 import { api, port, running } from "./util.js";
 
-// neatroots import, replay and rerun: bring runs in from files and other tools, and re-run them.
+// neatroots import, replay and rerun: bring runs in from files and Neatlogs Cloud, and re-run them.
 
 const CLOUD: Pick<ImportSource, "id" | "label" | "description" | "fields"> = {
   id: "neatlogs-cloud",
@@ -19,7 +13,7 @@ const CLOUD: Pick<ImportSource, "id" | "label" | "description" | "fields"> = {
   description: "Traces from your Neatlogs Cloud project, with the stored API key (neatroots cloud login).",
   fields: [{ name: "traceIds", label: "Trace ids, comma-separated (default: the most recent)" }],
 };
-const SOURCES = [CLOUD, langfuse, langsmith, phoenix, braintrust, raindrop, laminar];
+const SOURCES = [CLOUD];
 
 function windowMs(v: string | undefined, fallbackDays: number): number {
   if (!v) return Date.now() - fallbackDays * 86_400_000;
@@ -41,12 +35,12 @@ const flag = (name: string) => `--${name.replace(/[A-Z]/g, (c) => `-${c.toLowerC
 export function registerDataCommands(program: Command): void {
   const imp = program
     .command("import")
-    .argument("[source-or-files...]", `a file (.json, .jsonl) or a source: ${SOURCES.map((s) => s.id).join(", ")}`)
-    .description("Bring traces into neatroots: files, Neatlogs Cloud, Langfuse, LangSmith, Phoenix, Braintrust, Raindrop, Laminar")
+    .argument("[files...]", "trace files (.json, .jsonl), or neatlogs-cloud")
+    .description("Bring traces into neatroots: trace files, or your Neatlogs Cloud project")
     .option("--since <when>", "earliest trace to import: 24h, 7d, 2w or a date (default 7d)")
     .option("--limit <n>", "most traces to import (default 100)")
     .option("--project <name>", "local project name for the imported runs")
-    .option("--list", "show the import sources and what each needs")
+    .option("--list", "show what each kind of import needs")
     .allowUnknownOption(true);
   for (const s of SOURCES) for (const f of s.fields) if (!imp.options.some((o) => o.long === flag(f.name))) imp.option(`${flag(f.name)} <value>`, `${s.label}: ${f.label}${f.env ? ` (or $${f.env})` : ""}`);
   imp.action(async (args: string[], opts: Record<string, string>) => {
@@ -63,7 +57,7 @@ export function registerDataCommands(program: Command): void {
     if (!source) {
       let traces = 0;
       for (const file of args) {
-        if (!fs.existsSync(file)) throw new Error(`no such file or import source: ${file}`);
+        if (!fs.existsSync(file)) throw new Error(`no such file: ${file} (to import from Neatlogs Cloud: neatroots import neatlogs-cloud)`);
         const r = await api<{ traces: number; spans: number }>(p, "/api/imports/file", {
           method: "POST",
           body: JSON.stringify({ name: path.basename(file), content: fs.readFileSync(file, "utf8"), project: opts.project }),
