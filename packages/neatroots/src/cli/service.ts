@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Command } from "commander";
 import { rootsHome, loadConfig } from "../config.js";
-import { port, running } from "./util.js";
+import { api, port, running } from "./util.js";
 import { bundleDir, cliPath, sourceDir } from "../util/install.js";
 
 const LABEL = "com.neatlogs.neatroots";
@@ -159,7 +159,7 @@ export function registerServiceCommands(program: Command): void {
     .description("Update neatroots to the latest version")
     .option("--version <tag>", "release to install, e.g. v0.2.0 (prebuilt installs)")
     .option("--ref <ref>", "branch or tag to build (source installs)")
-    .action((opts) => {
+    .action(async (opts) => {
       const bundle = bundleDir();
       const dir = bundle ? undefined : sourceDir();
       if (!bundle && !dir) throw new Error("this copy of neatroots wasn't installed with the install script; reinstall with it to get updates");
@@ -181,6 +181,14 @@ export function registerServiceCommands(program: Command): void {
       if (installed()) {
         restartService();
         console.log(`✓ restarted the background service on port ${loadConfig().port}`);
+        return;
       }
+      // A neatroots started by hand keeps running the old code until it's restarted; say so.
+      const p = loadConfig().port;
+      if (!(await running(p))) return;
+      const cli = bundle ? path.join(bundle, "neatroots", "dist", "cli.js") : path.join(dir!, "packages", "neatroots", "dist", "cli.js");
+      const fresh = spawnSync(process.execPath, [cli, "--version"], { encoding: "utf8" }).stdout.trim();
+      const live = await api<{ version: string }>(p, "/api/status").then((s) => s.version).catch(() => "");
+      if (fresh && live && live !== fresh) console.log(`! neatroots ${live} is still running on port ${p}. Restart it to use ${fresh}: Ctrl+C in its terminal, then neatroots start`);
     });
 }
