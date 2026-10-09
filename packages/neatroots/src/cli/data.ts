@@ -69,7 +69,7 @@ export function registerDataCommands(program: Command): void {
           body: JSON.stringify({ name: path.basename(file), content: fs.readFileSync(file, "utf8"), project: opts.project }),
         });
         traces += r.traces;
-        console.log(`✓ ${file}: ${r.traces} runs, ${r.spans} spans`);
+        console.log(`✓ ${file}: ${r.traces} run${r.traces === 1 ? "" : "s"}, ${r.spans} spans`);
       }
       console.log(`\nOpen http://localhost:${p}/#/runs to see ${traces === 1 ? "it" : "them"}.`);
       return;

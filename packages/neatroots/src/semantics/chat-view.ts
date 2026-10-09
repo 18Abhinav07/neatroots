@@ -86,7 +86,7 @@ export function buildChat(t: TraceSnapshot, rootSpanId?: string): { root: string
     } else if (s.kind === "AGENT" && s.id !== root.id) {
       items.push({
         type: "agent",
-        name: s.name,
+        name: s.name.replace(/^openai_agents\.agent\./, ""),
         span_id: s.id,
         status: s.status,
         duration_ms: Math.round(s.durationMs),

@@ -36,19 +36,31 @@ function pickTool(tools: Tool[], ask: string): Tool {
   return best;
 }
 
+const firstLine = (s: string) => s.split("\n").find((l) => l.trim())?.trim() ?? "";
+
 function argsFor(tool: Tool, ask: string): Record<string, unknown> {
   const props = tool.parameters?.properties ?? {};
-  const numbers = ask.match(/\d+(?:\.\d+)?/g) ?? [];
-  const quoted = ask.match(/"([^"]+)"|'([^']+)'/)?.slice(1).find(Boolean);
+  const line = firstLine(ask);
+  const numbers = line.match(/\d+(?:\.\d+)?/g) ?? [];
+  const quoted = line.match(/"([^"]+)"|'([^']+)'/)?.slice(1).find(Boolean);
+  // "weather in Paris" → Paris; otherwise the last capitalised word that doesn't start the sentence.
+  const place = /\b(?:in|at|for|to)\s+([A-Z][\w-]+(?:\s[A-Z][\w-]+)?)/.exec(line)?.[1] ?? line.split(/\s+/).slice(1).reverse().find((w) => /^[A-Z][a-z]/.test(w))?.replace(/[^\w-]/g, "");
   const out: Record<string, unknown> = {};
   let n = 0;
   for (const [k, p] of Object.entries(props)) {
     if (p.type === "number" || p.type === "integer") out[k] = numbers[n] !== undefined ? Number(numbers[n++]) : 1;
     else if (/id$|_id|number/i.test(k) && numbers[n] !== undefined) out[k] = numbers[n++];
     else if (p.type === "boolean") out[k] = true;
-    else out[k] = quoted ?? ask.replace(/\s+/g, " ").slice(0, 120);
+    else if (/city|location|place|country|destination/i.test(k) && place) out[k] = place;
+    else out[k] = quoted ?? line.replace(/[?.!]+$/, "").slice(0, 80);
   }
   return out;
+}
+
+/** The name of the tool a tool-result message answers, from the assistant turn that called it. */
+function toolNameFor(messages: Msg[], m: Msg): string | undefined {
+  for (const a of messages) for (const c of a.tool_calls ?? []) if (c.id === m.tool_call_id) return c.function.name;
+  return undefined;
 }
 
 /** What the mock says next, given the conversation and the tools on offer. */
@@ -57,7 +69,9 @@ export function mockReply(messages: Msg[], tools: Tool[], model: string): { cont
   const last = messages[messages.length - 1];
   const userAsk = text([...messages].reverse().find((m) => m.role === "user")?.content);
   const toolTurns = messages.filter((m) => m.role === "tool");
-  if (last && last.role !== "tool" && tools.length && !/^\[tool result/.test(text(last.content))) {
+  // A result from a tool this call doesn't offer (an agent handoff) starts a fresh turn.
+  const foreign = last?.role === "tool" && tools.length > 0 && !!toolNameFor(messages, last) && !tools.some((t) => t.name === toolNameFor(messages, last));
+  if (last && (last.role !== "tool" || foreign) && tools.length && !/^\[tool result/.test(text(last.content))) {
     const t = pickTool(tools, userAsk);
     return { content: "", toolCall: { name: t.name, args: argsFor(t, userAsk) } };
   }
@@ -68,7 +82,8 @@ export function mockReply(messages: Msg[], tools: Tool[], model: string): { cont
     if (failed && sloppy) return { content: "All done! Everything went through successfully." };
     return { content: `Here's what I found: ${result.slice(0, 300)}` };
   }
-  return { content: userAsk ? `You asked: "${userAsk.slice(0, 200)}". (This answer comes from neatroots' mock LLM.)` : "Hello from neatroots' mock LLM." };
+  const ask = firstLine(userAsk).slice(0, 120);
+  return { content: ask ? `Here's a short answer about "${ask}". (This reply comes from neatroots' mock LLM; set REAL_LLM=1 to use a real model.)` : "Hello from neatroots' mock LLM." };
 }
 
 function sse(res: http.ServerResponse, data: unknown, event?: string) {
