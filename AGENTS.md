@@ -1,6 +1,6 @@
-# Working on Bolt
+# Working on neatroots
 
-Bolt checks AI agents on the developer's machine. Read `README.md` and `docs/architecture.md` first.
+neatroots checks AI agents on the developer's machine. Read `README.md` and `docs/architecture.md` first.
 
 ## Ground rules
 
@@ -17,16 +17,16 @@ Bolt checks AI agents on the developer's machine. Read `README.md` and `docs/arc
 
 ```bash
 pnpm install && pnpm build
-pnpm test                                  # packages/bolt (vitest)
+pnpm test                                  # packages/neatroots (vitest)
 cd packages/steer-ts && pnpm test
-cd python/neatbolt-steer && python -m pytest  # needs a venv with pytest
-pnpm --filter @neatlogs/bolt typecheck && pnpm --filter @neatlogs/bolt-ui typecheck
+cd python/neatroots-steer && python -m pytest  # needs a venv with pytest
+pnpm --filter @neatlogs/neatroots typecheck && pnpm --filter @neatlogs/neatroots-ui typecheck
 ```
 
 ## Conventions
 
 - Node ≥ 22, ESM, TypeScript strict. Files under 500 lines (shared UI primitives are kept as the app has them).
-- The server logs to stderr only (stdout belongs to `neatbolt mcp`).
+- The server logs to stderr only (stdout belongs to `neatroots mcp`).
 - UI: build pages from the shared primitives: `ListPageLayout` (+ `ListPageTable`) for list pages,
   `DetailLayout` with a property rail for a run, `Panel`, `Sheet` for one item's detail, `EmptyState`.
   Tailwind v4 semantic tokens only (no raw colors), Hugeicons through `components/ui/icon.tsx`,
@@ -35,4 +35,4 @@ pnpm --filter @neatlogs/bolt typecheck && pnpm --filter @neatlogs/bolt-ui typech
 - UI layout: rows in a list share one fixed height; anything that can grow (problem lists, traces,
   panels on Home, sheet bodies) sits in a fixed-height box that scrolls inside, so neighbours stay
   aligned. Check light, dark and a 390px width with screenshots before calling UI work done.
-- Checks: library YAML in `packages/bolt/library/`; yes/no questions are phrased as failures.
+- Checks: library YAML in `packages/neatroots/library/`; yes/no questions are phrased as failures.

@@ -1,6 +1,6 @@
 """A scripted OpenAI-compatible chat server for testing steering without a real model.
 
-It keeps asking for the same failing tool call until a <neatbolt-guidance> note shows up in
+It keeps asking for the same failing tool call until a <neatroots-guidance> note shows up in
 the request, then gives up politely. Every request is appended to requests.jsonl.
 """
 
@@ -22,7 +22,7 @@ class Handler(BaseHTTPRequestHandler):
             f.write(json.dumps(body) + "\n")
         messages = body.get("messages", [])
         text = json.dumps(messages)
-        guided = "<neatbolt-guidance>" in text
+        guided = "<neatroots-guidance>" in text
         if guided:
             message = {"role": "assistant", "content": "I could not find order 4512 after several lookups. Please check the order id."}
             finish = "stop"

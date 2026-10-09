@@ -1,19 +1,19 @@
 /**
- * @neatlogs/bolt-steer: get Neatlogs Bolt findings back into a running agent.
+ * @neatlogs/neatroots-steer: get neatroots findings back into a running agent.
  *
- * When Bolt finds a problem in a run that is still going, this hook adds its short note
- * to the agent's next LLM call inside a <neatbolt-guidance> block and records a neatbolt.guidance
- * span. It never edits tool calls or model output, and does nothing when Bolt is not running.
+ * When neatroots finds a problem in a run that is still going, this hook adds its short note
+ * to the agent's next LLM call inside a <neatroots-guidance> block and records a neatroots.guidance
+ * span. It never edits tool calls or model output, and does nothing when neatroots is not running.
  *
- *   import { wrapOpenAI } from "@neatlogs/bolt-steer";
+ *   import { wrapOpenAI } from "@neatlogs/neatroots-steer";
  *   const client = wrapOpenAI(new OpenAI());
  *
  *   import { wrapLanguageModel } from "ai";
- *   const model = wrapLanguageModel({ model: openai("gpt-4o"), middleware: boltMiddleware() });
+ *   const model = wrapLanguageModel({ model: openai("gpt-4o"), middleware: rootsMiddleware() });
  */
 
-export const GUIDANCE_OPEN = "<neatbolt-guidance>";
-export const GUIDANCE_CLOSE = "</neatbolt-guidance>";
+export const GUIDANCE_OPEN = "<neatroots-guidance>";
+export const GUIDANCE_CLOSE = "</neatroots-guidance>";
 
 export interface Note {
   id: string;
@@ -22,11 +22,11 @@ export interface Note {
   finding_id: string | null;
 }
 
-/** Raised before an LLM call when one of your own Bolt rules says to stop the run. */
-export class BoltHalt extends Error {
+/** Raised before an LLM call when one of your own neatroots rules says to stop the run. */
+export class NeatrootsHalt extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "BoltHalt";
+    this.name = "NeatrootsHalt";
   }
 }
 
@@ -34,7 +34,7 @@ const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 function defaultUrl(): string {
   const env = typeof process !== "undefined" ? process.env : ({} as Record<string, string | undefined>);
-  if (env.NEATBOLT_URL) return env.NEATBOLT_URL.replace(/\/+$/, "");
+  if (env.NEATROOTS_URL) return env.NEATROOTS_URL.replace(/\/+$/, "");
   if (env.NEATLOGS_ENDPOINT) {
     try {
       const u = new URL(env.NEATLOGS_ENDPOINT);
@@ -59,14 +59,14 @@ interface State {
 
 const state: State = {
   url: defaultUrl(),
-  disabled: typeof process !== "undefined" && ["0", "off", "false", "no"].includes(String(process.env.NEATBOLT_STEER ?? "").toLowerCase()),
+  disabled: typeof process !== "undefined" && ["0", "off", "false", "no"].includes(String(process.env.NEATROOTS_STEER ?? "").toLowerCase()),
   mode: "unknown",
   modeCheckedAt: 0,
   downUntil: 0,
 };
 
 /**
- * Points the hook at a Bolt app other than the default (NEATBOLT_URL or localhost:4100), or
+ * Points the hook at a neatroots app other than the default (NEATROOTS_URL or localhost:4100), or
  * supplies the current trace id yourself when you do not use the Neatlogs SDK's context.
  */
 export function configure(opts: { url?: string; disabled?: boolean; traceId?: () => string | undefined; neatlogs?: unknown }): void {
@@ -81,10 +81,10 @@ export function configure(opts: { url?: string; disabled?: boolean; traceId?: ()
   state.downUntil = 0;
 }
 
-const DEBUG = typeof process !== "undefined" && !!process.env.NEATBOLT_STEER_DEBUG;
+const DEBUG = typeof process !== "undefined" && !!process.env.NEATROOTS_STEER_DEBUG;
 
 function debug(...args: unknown[]): void {
-  if (DEBUG) console.error("[neatbolt-steer]", ...args);
+  if (DEBUG) console.error("[neatroots-steer]", ...args);
 }
 
 async function post<T>(path: string, body: unknown, timeoutMs: number): Promise<T | undefined> {
@@ -108,7 +108,7 @@ async function post<T>(path: string, body: unknown, timeoutMs: number): Promise<
     return out;
   } catch (err) {
     debug(path, "failed:", (err as Error).message);
-    // A stopped Bolt costs nothing per call for a while.
+    // A stopped neatroots costs nothing per call for a while.
     state.downUntil = Date.now() + 5000;
     return undefined;
   }
@@ -185,16 +185,16 @@ async function record(note: Note): Promise<void> {
   try {
     await nl?.trace?.(
       {
-        name: "neatbolt.guidance",
+        name: "neatroots.guidance",
         kind: "GUARDRAIL",
         input: note.text,
         attributes: {
-          "neatlogs.guardrail.name": "neatbolt",
+          "neatlogs.guardrail.name": "neatroots",
           "neatlogs.guardrail.triggered": true,
           "neatlogs.guardrail.action": note.kind === "halt" ? "halt" : "guide",
-          "neatbolt.note.id": note.id,
-          "neatbolt.note.kind": note.kind,
-          "neatbolt.finding.id": note.finding_id ?? "",
+          "neatroots.note.id": note.id,
+          "neatroots.note.kind": note.kind,
+          "neatroots.finding.id": note.finding_id ?? "",
         },
       },
       () => undefined,
@@ -206,7 +206,7 @@ async function record(note: Note): Promise<void> {
 
 // -------------------------------------------------------------------- notes
 
-/** Claims the next pending note for the current run (at most one per LLM call). Throws BoltHalt for halt notes. */
+/** Claims the next pending note for the current run (at most one per LLM call). Throws NeatrootsHalt for halt notes. */
 export async function guidance(traceId?: string): Promise<Note | undefined> {
   if (state.disabled) return undefined;
   let spanId: string | undefined;
@@ -227,12 +227,12 @@ export async function guidance(traceId?: string): Promise<Note | undefined> {
   state.modeCheckedAt = Date.now();
   if (!res.note) return undefined;
   await record(res.note);
-  if (res.note.kind === "halt") throw new BoltHalt(res.note.text);
+  if (res.note.kind === "halt") throw new NeatrootsHalt(res.note.text);
   return res.note;
 }
 
 export function guidanceBlock(note: Note): string {
-  return `${GUIDANCE_OPEN}\nNote from Bolt, a local checker watching this run: ${note.text}\n${GUIDANCE_CLOSE}`;
+  return `${GUIDANCE_OPEN}\nNote from neatroots, a local checker watching this run: ${note.text}\n${GUIDANCE_CLOSE}`;
 }
 
 type Msg = { role: string; content?: unknown; [k: string]: unknown };
@@ -270,8 +270,8 @@ export async function applyAnthropic<M extends Msg>(messages: M[], note?: Note):
 
 function wrapMethod(owner: Record<string, unknown> | undefined, name: string, transform: (args: Record<string, unknown>, note: Note) => Record<string, unknown>): void {
   if (!owner) return;
-  const original = owner[name] as ((...a: unknown[]) => unknown) & { __neatbolt?: boolean };
-  if (typeof original !== "function" || original.__neatbolt) return;
+  const original = owner[name] as ((...a: unknown[]) => unknown) & { __neatroots?: boolean };
+  if (typeof original !== "function" || original.__neatroots) return;
   const wrapped = async function (this: unknown, ...args: unknown[]) {
     const params = (args[0] ?? {}) as Record<string, unknown>;
     let next = params;
@@ -279,15 +279,15 @@ function wrapMethod(owner: Record<string, unknown> | undefined, name: string, tr
       const note = await guidance();
       if (note) next = transform({ ...params }, note);
     } catch (err) {
-      if (err instanceof BoltHalt) throw err;
+      if (err instanceof NeatrootsHalt) throw err;
     }
     return original.apply(owner, [next, ...args.slice(1)]);
   } as typeof original;
-  wrapped.__neatbolt = true;
+  wrapped.__neatroots = true;
   owner[name] = wrapped;
 }
 
-/** Adds Bolt guidance to an OpenAI client (chat.completions.create and responses.create), in place. */
+/** Adds neatroots guidance to an OpenAI client (chat.completions.create and responses.create), in place. */
 export function wrapOpenAI<T extends object>(client: T): T {
   const c = client as unknown as { chat?: { completions?: Record<string, unknown> }; responses?: Record<string, unknown> };
   wrapMethod(c.chat?.completions, "create", (p, note) => {
@@ -305,7 +305,7 @@ export function wrapOpenAI<T extends object>(client: T): T {
   return client;
 }
 
-/** Adds Bolt guidance to an Anthropic client (messages.create), in place. */
+/** Adds neatroots guidance to an Anthropic client (messages.create), in place. */
 export function wrapAnthropic<T extends object>(client: T): T {
   const c = client as unknown as { messages?: Record<string, unknown> };
   wrapMethod(c.messages, "create", (p, note) => {
@@ -318,11 +318,11 @@ export function wrapAnthropic<T extends object>(client: T): T {
 }
 
 /**
- * Vercel AI SDK middleware: `wrapLanguageModel({ model, middleware: boltMiddleware() })`.
+ * Vercel AI SDK middleware: `wrapLanguageModel({ model, middleware: rootsMiddleware() })`.
  * Adds the pending note as a final user message in the call's prompt. AI SDK 7 uses
  * middleware spec "v4" (the default); pass "v3" for AI SDK 6.
  */
-export function boltMiddleware<V extends "v3" | "v4" = "v4">(version?: V) {
+export function rootsMiddleware<V extends "v3" | "v4" = "v4">(version?: V) {
   return {
     specificationVersion: (version ?? "v4") as V,
     // Typed loosely so it fits the middleware types of several AI SDK versions.
@@ -338,7 +338,7 @@ export function boltMiddleware<V extends "v3" | "v4" = "v4">(version?: V) {
 // --------------------------------------------------------------- self-check
 
 export const CHECK_MY_WORK_DESCRIPTION =
-  "Ask Bolt, a local checker that watches this run, a yes/no question about your own work so far (for example: 'Did I confirm the customer owns the order before refunding?'). Returns the probability that the answer is yes, judged from this run's recorded steps.";
+  "Ask neatroots, a local checker that watches this run, a yes/no question about your own work so far (for example: 'Did I confirm the customer owns the order before refunding?'). Returns the probability that the answer is yes, judged from this run's recorded steps.";
 
 export const CHECK_MY_WORK_PARAMETERS = {
   type: "object",
@@ -362,13 +362,13 @@ export interface CheckResult {
   reason?: string;
 }
 
-/** Asks Bolt a yes/no question about the current run. */
+/** Asks neatroots a yes/no question about the current run. */
 export async function checkMyWork(question: string, opts: { traceId?: string; timeoutMs?: number } = {}): Promise<CheckResult> {
   const traceId = opts.traceId ?? (await currentTrace())[0];
   if (!traceId) return { answer: "unknown", probability_yes: null, evidence_span_ids: [], reason: "no active trace; is the Neatlogs SDK initialized?" };
   await flushSdk();
   const res = await post<{ answer?: string; probability?: number | null; evidence_span_ids?: string[]; reason?: string }>("/api/steer/check", { trace_id: traceId, question }, opts.timeoutMs ?? 30_000);
-  if (!res) return { answer: "unknown", probability_yes: null, evidence_span_ids: [], reason: "Bolt is not reachable" };
+  if (!res) return { answer: "unknown", probability_yes: null, evidence_span_ids: [], reason: "neatroots is not reachable" };
   return {
     answer: (res.answer as CheckResult["answer"]) ?? "unknown",
     probability_yes: res.probability ?? null,

@@ -6,7 +6,7 @@ import "@fontsource-variable/geist-mono";
 import "./styles/globals.css";
 import { App } from "./app/app";
 
-// Bolt is served from this machine, so the browser's online state is irrelevant: keep
+// neatroots is served from this machine, so the browser's online state is irrelevant: keep
 // querying with no internet connection ("always" instead of pausing while offline).
 const queryClient = new QueryClient({
   defaultOptions: {

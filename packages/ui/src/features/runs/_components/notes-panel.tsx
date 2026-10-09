@@ -6,7 +6,7 @@ import type { Note } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { NOTE_STATE } from "../_libs/labels";
 
-/** Notes Neatlogs Bolt sent, or tried to send, to the running agent. Shown only when there are some. */
+/** Notes neatroots sent, or tried to send, to the running agent. Shown only when there are some. */
 export function SteeringNotes({ notes }: { notes: Note[] }) {
   if (!notes.length) return null;
   const delivered = notes.filter((n) => n.status === "delivered").length;

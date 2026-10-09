@@ -1,4 +1,4 @@
-"""A small refund agent instrumented with the public Neatlogs SDK and steered by Bolt.
+"""A small refund agent instrumented with the public Neatlogs SDK and steered by neatroots.
 
     python agent.py "Refund order 4512"                 # uses Ollama (gemma4 or $MODEL)
     LLM_BASE_URL=http://127.0.0.1:4199/v1 python agent.py   # the scripted fake LLM
@@ -15,14 +15,14 @@ import neatlogs
 from neatlogs import span
 
 os.environ.setdefault("NEATLOGS_ENDPOINT", "http://localhost:4100")
-os.environ.setdefault("NEATLOGS_API_KEY", "neatbolt-local")
+os.environ.setdefault("NEATLOGS_API_KEY", "neatroots-local")
 neatlogs.init(workflow_name=os.environ.get("WORKFLOW", "refund-agent"), instrumentations=["openai"], flush_interval=0.2)
 
 from openai import OpenAI  # noqa: E402  (import after neatlogs.init)
 
-import neatbolt_steer  # noqa: E402
+import neatroots_steer  # noqa: E402
 
-client = neatbolt_steer.wrap(OpenAI(base_url=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"), api_key="local"))
+client = neatroots_steer.wrap(OpenAI(base_url=os.environ.get("LLM_BASE_URL", "http://localhost:11434/v1"), api_key="local"))
 MODEL = os.environ.get("MODEL", "gemma4:latest")
 STEP_DELAY = float(os.environ.get("STEP_DELAY", "0"))
 
@@ -36,7 +36,7 @@ TOOLS = [
      "parameters": {"type": "object", "properties": {"order_id": {"type": "string"}}, "required": ["order_id"]}}},
     {"type": "function", "function": {"name": "issue_refund", "description": "Refund an order",
      "parameters": {"type": "object", "properties": {"order_id": {"type": "string"}, "amount": {"type": "number"}}, "required": ["order_id", "amount"]}}},
-    neatbolt_steer.CHECK_MY_WORK_TOOL,
+    neatroots_steer.CHECK_MY_WORK_TOOL,
 ]
 ORDERS = {"1001": {"order_id": "1001", "owner": "cust_9", "amount": 42.0}}
 
@@ -54,7 +54,7 @@ def issue_refund(order_id: str, amount: float):
 
 
 def call_tool(name, args):
-    handled = neatbolt_steer.handle_tool_call(name, args)
+    handled = neatroots_steer.handle_tool_call(name, args)
     if handled is not None:
         return handled
     fn = {"lookup_order": lookup_order, "issue_refund": issue_refund}[name]
@@ -84,8 +84,8 @@ def run(request: str, max_steps: int = 8):
 if __name__ == "__main__":
     try:
         print(run(sys.argv[1] if len(sys.argv) > 1 else "Please refund order 4512 for customer cust_9."))
-    except neatbolt_steer.BoltHalt as exc:
-        print(f"halted by Bolt: {exc}")
+    except neatroots_steer.NeatrootsHalt as exc:
+        print(f"halted by neatroots: {exc}")
     finally:
         neatlogs.flush()
         neatlogs.shutdown()

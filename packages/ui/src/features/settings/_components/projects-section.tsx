@@ -20,7 +20,7 @@ export function ProjectsSection({ hooks, steerPython, steerTs }: { hooks: number
   return (
     <SettingsPanel title="Projects" meta="a project is the SDK's workflow_name">
       {projects.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Projects appear here after their first run reaches Neatlogs Bolt.</p>
+        <p className="text-sm text-muted-foreground">Projects appear here after their first run reaches neatroots.</p>
       ) : (
         <div className="-mx-6 max-h-[28rem] overflow-auto border-y border-border">
           <Table className="min-w-[44rem] table-fixed">
@@ -81,8 +81,8 @@ export function ProjectsSection({ hooks, steerPython, steerTs }: { hooks: number
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        Steering needs the hook in your agent: <span className="font-mono">pip install {steerPython ?? "~/.neatbolt/app/steer/python/neatbolt-steer"}</span> then{" "}
-        <span className="font-mono">neatbolt_steer.wrap(OpenAI())</span>, or <span className="font-mono">npm install {steerTs ?? "~/.neatbolt/app/steer/ts"}</span> for TypeScript.
+        Steering needs the hook in your agent: <span className="font-mono">pip install {steerPython ?? "~/.neatroots/app/steer/python/neatroots-steer"}</span> then{" "}
+        <span className="font-mono">neatroots_steer.wrap(OpenAI())</span>, or <span className="font-mono">npm install {steerTs ?? "~/.neatroots/app/steer/ts"}</span> for TypeScript.
         Hooks connected now: <span className="tabular-nums">{hooks}</span>.
       </p>
     </SettingsPanel>

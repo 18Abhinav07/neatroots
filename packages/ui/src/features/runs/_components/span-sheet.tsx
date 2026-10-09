@@ -143,7 +143,7 @@ export function SpanSheet({
               {a.text ? `: ${a.text}` : ""}
             </StatusPill>
           ))}
-          <span className="mr-auto text-xs text-muted-foreground">Your labels teach Neatlogs Bolt which findings matter.</span>
+          <span className="mr-auto text-xs text-muted-foreground">Your labels teach neatroots which findings matter.</span>
           <Button size="sm" variant="ghost" onClick={() => mark("issue")}>
             Mark as issue
           </Button>

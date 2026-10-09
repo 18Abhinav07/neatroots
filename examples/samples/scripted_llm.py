@@ -1,7 +1,7 @@
 """An OpenAI-compatible chat server that plays back scripted assistant turns.
 
 The request's `model` names the scenario; the number of assistant turns already in the
-conversation picks the next scripted turn. If a <neatbolt-guidance> note appears in the
+conversation picks the next scripted turn. If a <neatroots-guidance> note appears in the
 request, the scenario's `on_guidance` reply is used instead, so steering is visible.
 """
 
@@ -16,7 +16,7 @@ def call(name, **args):
 
 
 SCENARIOS = {
-    # Retries a missing order until Bolt steers it.
+    # Retries a missing order until neatroots steers it.
     "loop-404": {
         "turns": [call("lookup_order", order_id="4512")] * 6 + ["I could not find that order."],
         "on_guidance": "I couldn't find order 4512 after several lookups. Could you double-check the order number?",
@@ -56,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
         scenario = SCENARIOS.get(body.get("model", ""), SCENARIOS["happy"])
         messages = body.get("messages", [])
-        if "<neatbolt-guidance>" in json.dumps(messages) and "on_guidance" in scenario:
+        if "<neatroots-guidance>" in json.dumps(messages) and "on_guidance" in scenario:
             step = scenario["on_guidance"]
         else:
             n = sum(1 for m in messages if m.get("role") == "assistant")

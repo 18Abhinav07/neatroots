@@ -20,7 +20,7 @@ export function CheckEditor({ open, initialYaml, userDir, onClose }: { open: boo
         <SheetHeader className="gap-1 border-b border-border px-6 py-4 pr-12">
           <SheetTitle className="text-base font-normal">{initialYaml ? "Edit a copy" : "New check"}</SheetTitle>
           <SheetDescription className="text-xs">
-            Saved to <span className="font-mono">{userDir ?? "~/.neatbolt/checks"}</span>. To share checks with your team, run <span className="font-mono">neatbolt init</span> in
+            Saved to <span className="font-mono">{userDir ?? "~/.neatroots/checks"}</span>. To share checks with your team, run <span className="font-mono">neatroots init</span> in
             your repo.
           </SheetDescription>
         </SheetHeader>

@@ -21,7 +21,7 @@ function fromQuery(q: URLSearchParams): Partial<RunListParams> {
   return { project: q.get("project") ?? "", check: q.get("check") ?? undefined, label: q.get("label") ?? undefined };
 }
 
-/** Every run Neatlogs Bolt recorded, as a full-bleed table like the Neatlogs traces page. */
+/** Every run neatroots recorded, as a full-bleed table like the Neatlogs traces page. */
 export function RunsPage({ status, query }: { status?: Status; query: URLSearchParams }) {
   const [params, setParams] = useState<RunListParams>(() => ({ q: "", status: "", hasFinding: false, project: "", ...fromQuery(query) }));
   const qs = query.toString();
@@ -44,10 +44,10 @@ export function RunsPage({ status, query }: { status?: Status; query: URLSearchP
             variant="inline"
             icon={BarChartHorizontalIcon}
             title="No runs yet"
-            description="Point the Neatlogs SDK at Neatlogs Bolt and run your agent. Its runs appear here as they happen."
+            description="Point the Neatlogs SDK at neatroots and run your agent. Its runs appear here as they happen."
           >
             <div className="mt-4 flex w-full max-w-lg flex-col gap-2 text-left">
-              <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${status?.port ?? 4100}\nexport NEATLOGS_API_KEY=neatbolt-local`} />
+              <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${status?.port ?? 4100}\nexport NEATLOGS_API_KEY=neatroots-local`} />
               <CodeLine text={`neatlogs.init(workflow_name="my-agent", flush_interval=0.5)`} />
             </div>
           </EmptyState>
@@ -112,7 +112,7 @@ export function RunsPage({ status, query }: { status?: Status; query: URLSearchP
     >
       {!isLoading && !runs.length && filtered ? (
         <div className="px-6 py-12">
-          <EmptyState state="no-results" variant="inline" title="No runs match these filters" description="Clear the filters to see every run Neatlogs Bolt has recorded." action={<Button variant="outline" onClick={clear}>Clear filters</Button>} />
+          <EmptyState state="no-results" variant="inline" title="No runs match these filters" description="Clear the filters to see every run neatroots has recorded." action={<Button variant="outline" onClick={clear}>Clear filters</Button>} />
         </div>
       ) : (
         <RunsTable runs={runs} loading={isLoading} />

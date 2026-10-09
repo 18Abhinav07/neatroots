@@ -35,7 +35,7 @@ export function RunDetail({ traceId }: { traceId: string }) {
   const highlighted = open ?? (d ? firstSpan(d) : undefined);
   const names = useMemo(() => new Map((d?.spans ?? []).map((s) => [s.span_id, s.tool_name ?? s.name])), [d?.spans]);
 
-  // Tell Neatlogs Bolt what is in focus, for the coding agent's get_current_run.
+  // Tell neatroots what is in focus, for the coding agent's get_current_run.
   useEffect(() => {
     void post("/api/focus", { trace_id: traceId, span_id: highlighted ?? null }).catch(() => undefined);
   }, [traceId, highlighted]);
@@ -126,7 +126,7 @@ export function RunDetail({ traceId }: { traceId: string }) {
       <DetailRailGroup label="Checks">
         <PropertyRow label="Open problems" value={openFindings.length} />
         {d.plan && <PropertyRow label="Questions" value={d.plan.check_ids.length} tooltip="Questions picked for this agent. Rules run on every span as well." />}
-        <PropertyRow label="Steering" value={r.steering === "off" ? "off" : r.steering} tooltip="Whether Neatlogs Bolt could add notes to this run while it ran." />
+        <PropertyRow label="Steering" value={r.steering === "off" ? "off" : r.steering} tooltip="Whether neatroots could add notes to this run while it ran." />
         <PropertyRow label="Sent to Cloud" value={d.forwarded ? "yes" : "no"} />
       </DetailRailGroup>
       <DetailRailGroup label="IDs">

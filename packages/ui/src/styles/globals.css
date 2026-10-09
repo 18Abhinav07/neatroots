@@ -1,9 +1,9 @@
 /*
- * Neatlogs Bolt uses the Neatlogs app design system: this file is the app's token and
+ * neatroots uses the Neatlogs app design system: this file is the app's token and
  * utility stylesheet (globals.css), with Next.js font loading replaced by bundled fonts.
  */
 @import "tailwindcss";
-/* Fonts: the app loads these through next/font; Bolt bundles them with @fontsource. */
+/* Fonts: the app loads these through next/font; neatroots bundles them with @fontsource. */
 :root {
   --font-instrument-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
   --font-geist-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
@@ -2433,7 +2433,7 @@ html:active-view-transition-type(trace-viewmode-back)
   }
 }
 
-/* ── Neatlogs Bolt additions ──────────────────────────────────────────── */
+/* ── neatroots additions ──────────────────────────────────────────── */
 @utility focus-ring {
   &:focus-visible {
     outline: none;

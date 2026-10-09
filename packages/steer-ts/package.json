@@ -1,7 +1,7 @@
 {
-  "name": "@neatlogs/bolt-steer",
+  "name": "@neatlogs/neatroots-steer",
   "version": "0.1.0",
-  "description": "Steering hook for Neatlogs Bolt: adds Bolt' guidance notes to your agent's next LLM call and gives it a check_my_work tool.",
+  "description": "Steering hook for neatroots: adds neatroots' guidance notes to your agent's next LLM call and gives it a check_my_work tool.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.cjs",

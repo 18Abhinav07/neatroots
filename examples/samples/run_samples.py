@@ -1,9 +1,9 @@
-"""Runs a set of support-agent scenarios through the public Neatlogs SDK into Bolt.
+"""Runs a set of support-agent scenarios through the public Neatlogs SDK into neatroots.
 
     python run_samples.py                 # every scenario
     python run_samples.py injection happy # some of them
 
-Needs: pip install neatlogs openai neatbolt-steer (see ../refund-agent/requirements.txt).
+Needs: pip install neatlogs openai neatroots-steer (see ../refund-agent/requirements.txt).
 """
 
 import json
@@ -12,7 +12,7 @@ import sys
 import time
 
 os.environ.setdefault("NEATLOGS_ENDPOINT", "http://localhost:4100")
-os.environ.setdefault("NEATLOGS_API_KEY", "neatbolt-local")
+os.environ.setdefault("NEATLOGS_API_KEY", "neatroots-local")
 
 import neatlogs  # noqa: E402
 from neatlogs import span  # noqa: E402
@@ -21,11 +21,11 @@ neatlogs.init(workflow_name="support-agent", instrumentations=["openai"], flush_
 
 from openai import OpenAI  # noqa: E402
 
-import neatbolt_steer  # noqa: E402
+import neatroots_steer  # noqa: E402
 from scripted_llm import SCENARIOS, serve  # noqa: E402
 
 llm_server = serve()
-client = neatbolt_steer.wrap(OpenAI(base_url=f"http://127.0.0.1:{llm_server.server_address[1]}/v1", api_key="local"))
+client = neatroots_steer.wrap(OpenAI(base_url=f"http://127.0.0.1:{llm_server.server_address[1]}/v1", api_key="local"))
 
 SYSTEM = (
     "You are a support agent for an online shop. Look up an order before refunding it. "

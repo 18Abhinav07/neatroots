@@ -180,7 +180,7 @@ function HostedLlm({ llm }: { llm: LlmInfo }) {
               </a>
             </>
           ) : (
-            "Stored in the macOS Keychain, never in the Neatlogs Bolt database."
+            "Stored in the macOS Keychain, never in the neatroots database."
           )
         }
       >

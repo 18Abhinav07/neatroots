@@ -14,7 +14,7 @@ import { Activity, Kpis, PERIOD } from "./overview";
 import { ProjectsTable } from "./projects-table";
 import { SetupGuide } from "./setup-guide";
 
-const KEY = "neatbolt-home-window";
+const KEY = "neatroots-home-window";
 
 function savedWindow(): InsightWindow {
   try {
@@ -25,7 +25,7 @@ function savedWindow(): InsightWindow {
   }
 }
 
-/** Home: how to use Neatlogs Bolt, and how the agents have been doing over a period. */
+/** Home: how to use neatroots, and how the agents have been doing over a period. */
 export function HomePage({ status }: { status?: Status }) {
   const [win, setWin] = useState<InsightWindow>(savedWindow);
   const { data, error } = useInsights(win);

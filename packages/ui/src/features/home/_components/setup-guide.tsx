@@ -28,18 +28,18 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
   const names = projects.map((p) => p.project);
   const connected = agents.filter((a) => a.connected).map((a) => a.label);
   const found = agents.filter((a) => a.detected && !a.connected).map((a) => a.label);
-  const steerPy = status.install?.steer_python ?? "~/.neatbolt/app/steer/python/neatbolt-steer";
+  const steerPy = status.install?.steer_python ?? "~/.neatroots/app/steer/python/neatroots-steer";
   return [
     {
       id: "runs",
       short: "Runs arriving",
-      title: "Send your agent's runs to Neatlogs Bolt",
+      title: "Send your agent's runs to neatroots",
       done: status.stats.runs > 0,
       state: `${status.stats.runs.toLocaleString()} runs from ${names.length} project${names.length === 1 ? "" : "s"}${names.length ? ` (${names.slice(0, 3).join(", ")})` : ""}`,
       body: (
         <>
-          <p>Neatlogs Bolt reads what the Neatlogs SDK already sends. Set two variables where your agent runs; no code change is needed.</p>
-          <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=neatbolt-local`} />
+          <p>neatroots reads what the Neatlogs SDK already sends. Set two variables where your agent runs; no code change is needed.</p>
+          <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=neatroots-local`} />
           <p>Not using the SDK yet? Add it and name your agent; that name becomes the project here.</p>
           <CodeLine text={`neatlogs.init(workflow_name="my-agent", flush_interval=0.5)`} />
         </>
@@ -48,7 +48,7 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
     {
       id: "llm",
       short: "LLM",
-      title: "Give Neatlogs Bolt an LLM to ask questions with",
+      title: "Give neatroots an LLM to ask questions with",
       done: !!llm?.ok,
       state: llm?.ok ? `${llm.model}${hosted ? ` (hosted: ${llm.where})` : " on this machine"}` : "",
       body: (
@@ -56,7 +56,7 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
           <p>Rules run without one. An LLM lets it pick the questions that fit your agent, explain problems and summarize runs. Run one locally:</p>
           <CodeLine text="ollama pull qwen3:8b" />
           <p>
-            Or use a hosted model (opt-in; run content is sent to it): <span className="font-mono">neatbolt llm use anthropic</span>, or{" "}
+            Or use a hosted model (opt-in; run content is sent to it): <span className="font-mono">neatroots llm use anthropic</span>, or{" "}
             <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/models">
               Settings → Models
             </a>
@@ -68,7 +68,7 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
     {
       id: "mcp",
       short: "Coding agent",
-      title: "Let your coding agent read what Neatlogs Bolt finds",
+      title: "Let your coding agent read what neatroots finds",
       optional: true,
       done: connected.length > 0 || !!status.mcp?.last_seen_ms,
       state: status.mcp?.last_seen_ms
@@ -82,13 +82,13 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
             Claude Code, Codex, Cursor and other coding agents can read your runs and findings, fix the problem and add a check so it is caught next time.
             {found.length ? ` Found here: ${found.join(", ")}.` : ""}
           </p>
-          <CodeLine text="neatbolt connect --detected" />
+          <CodeLine text="neatroots connect --detected" />
           <p>
             Or connect them one at a time in{" "}
             <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/agents">
               Settings → Coding agents
             </a>
-            . Then ask your agent: “Fix what Neatlogs Bolt found in my last run.”
+            . Then ask your agent: “Fix what neatroots found in my last run.”
           </p>
         </>
       ),
@@ -96,16 +96,16 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
     {
       id: "steering",
       short: "Steering",
-      title: "Let Neatlogs Bolt nudge the agent while it runs",
+      title: "Let neatroots nudge the agent while it runs",
       optional: true,
       done: steered.length > 0,
       state: steered.length ? `on for ${steered.map((p) => `${p.project} (${p.settings.steering})`).join(", ")}` : "",
       body: (
         <>
-          <p>When a check fires mid-run, Neatlogs Bolt can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
-          <CodeLine text={`pip install ${steerPy}\nneatbolt steering advisory --project ${names[0] ?? "my-agent"}`} />
+          <p>When a check fires mid-run, neatroots can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
+          <CodeLine text={`pip install ${steerPy}\nneatroots steering advisory --project ${names[0] ?? "my-agent"}`} />
           <p>
-            Then wrap your client: <span className="font-mono">client = neatbolt_steer.wrap(OpenAI())</span>. Turn it on per project in{" "}
+            Then wrap your client: <span className="font-mono">client = neatroots_steer.wrap(OpenAI())</span>. Turn it on per project in{" "}
             <a className="text-foreground underline-offset-4 hover:underline" href="#/settings/projects">
               Settings → Projects
             </a>
@@ -123,8 +123,8 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
       state: status.cloud.has_key ? "API key stored" : "",
       body: (
         <>
-          <p>Send a run you want to keep or show your team. Neatlogs Bolt removes secrets and personal data first, and sends nothing unless you ask.</p>
-          <CodeLine text="neatbolt cloud login" />
+          <p>Send a run you want to keep or show your team. neatroots removes secrets and personal data first, and sends nothing unless you ask.</p>
+          <CodeLine text="neatroots cloud login" />
         </>
       ),
     },
@@ -132,14 +132,14 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
 }
 
 const DAILY = [
-  "Run your agent as usual. Neatlogs Bolt checks every run as it happens.",
+  "Run your agent as usual. neatroots checks every run as it happens.",
   "Start here: see what is failing more or less often, and which tools and checks are behind it.",
   "Open a problem to see the cause, the suggested fix and the span that shows it, or ask your coding agent to fix it.",
-  "Dismiss findings that are wrong. Neatlogs Bolt counts them, so noisy checks show up.",
+  "Dismiss findings that are wrong. neatroots counts them, so noisy checks show up.",
 ];
 
 /**
- * How to use Neatlogs Bolt, as steps checked against what is actually set up. Expanded while the
+ * How to use neatroots, as steps checked against what is actually set up. Expanded while the
  * essentials are missing; one line once they are done.
  */
 export function SetupGuide({ status, projects, agents }: { status: Status; projects: ProjectRow[]; agents: AgentClient[] }) {
@@ -173,7 +173,7 @@ export function SetupGuide({ status, projects, agents }: { status: Status; proje
   return (
     <Panel>
       <PanelHeader
-        title="How to use Neatlogs Bolt"
+        title="How to use neatroots"
         actions={
           <span className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground tabular-nums">
@@ -189,7 +189,7 @@ export function SetupGuide({ status, projects, agents }: { status: Status; proje
       />
       <PanelContent className="flex flex-col gap-4">
         <p className="max-w-2xl text-sm text-muted-foreground">
-          Neatlogs Bolt checks your agent's runs on this machine: rules on every step, questions the LLM picks for your agent, and an explanation when something goes
+          neatroots checks your agent's runs on this machine: rules on every step, questions the LLM picks for your agent, and an explanation when something goes
           wrong. Nothing leaves this machine unless you turn it on.
         </p>
         <ol className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">

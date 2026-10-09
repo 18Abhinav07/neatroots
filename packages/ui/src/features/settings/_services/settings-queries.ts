@@ -41,7 +41,7 @@ export function useKeyActions(path: string, name: string) {
   return {
     store: useMutation({
       mutationFn: (key: string) => post<{ stored_in: string }>(path, { key }),
-      onSuccess: (r) => toast.success(`${name} API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolt key file"}`),
+      onSuccess: (r) => toast.success(`${name} API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "neatroots key file"}`),
       onError: (e) => toast.error(`Couldn't store the ${name} key: ${(e as Error).message}`),
       onSettled: refresh,
     }),
@@ -80,7 +80,7 @@ export function useLlmActions() {
     }),
     storeKey: useMutation({
       mutationFn: (v: { provider: string; key: string }) => post<{ stored_in: string }>("/api/llm/key", v),
-      onSuccess: (r) => toast.success(`API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "Bolt key file"}`),
+      onSuccess: (r) => toast.success(`API key stored in the ${r.stored_in === "keychain" ? "macOS Keychain" : "neatroots key file"}`),
       onError: (e) => toast.error(`Couldn't store the key: ${(e as Error).message}`),
       onSettled: refresh,
     }),
@@ -105,13 +105,13 @@ export function useAgents() {
   return useQuery({ queryKey: ["agents"], queryFn: () => api<{ command: string[]; agents: AgentClient[] }>("/api/agents") });
 }
 
-/** Connects or disconnects a coding agent: Bolt edits that agent's own MCP config. */
+/** Connects or disconnects a coding agent: neatroots edits that agent's own MCP config. */
 export function useAgentAction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: { id: string; action: "connect" | "disconnect" }) =>
       post<{ ok: boolean; message: string; note: string | null }>(`/api/agents/${v.id}/${v.action}`),
-    onSuccess: (r, v) => toast.success(v.action === "connect" ? `Connected. ${r.note ?? "Start a new session in it to load Neatlogs Bolt."}` : "Disconnected"),
+    onSuccess: (r, v) => toast.success(v.action === "connect" ? `Connected. ${r.note ?? "Start a new session in it to load neatroots."}` : "Disconnected"),
     onError: (e) => toast.error(`Couldn't change it: ${(e as Error).message}`),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["agents"] });

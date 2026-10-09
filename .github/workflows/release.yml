@@ -1,6 +1,6 @@
 name: release
 
-# Push a tag like v0.1.0 to publish neatbolt.tar.gz, the bundle install.sh downloads.
+# Push a tag like v0.1.0 to publish neatroots.tar.gz, the bundle install.sh downloads.
 # Tags with a suffix (v0.1.0-rc.1) are published as pre-releases, which `latest` skips.
 
 on:
@@ -25,13 +25,13 @@ jobs:
       - run: pnpm test
       - name: Version matches the tag
         run: |
-          v="$(node -p 'require("./packages/bolt/package.json").version')"
+          v="$(node -p 'require("./packages/neatroots/package.json").version')"
           case "$GITHUB_REF_NAME" in "v$v"|"v$v"-*) ;; *) echo "tag $GITHUB_REF_NAME does not match package version $v"; exit 1 ;; esac
       - run: node scripts/package.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: bundle
-          path: release/neatbolt.tar.gz*
+          path: release/neatroots.tar.gz*
 
   # The one bundle must start on every platform install.sh supports. Publishing waits for the
   # runners every repository has; arm64 Linux and Intel macOS runners may be unavailable while the
@@ -51,12 +51,12 @@ jobs:
           path: release
       - name: Install with no Node on PATH (the installer downloads its own)
         run: |
-          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin NEATBOLT_INSTALL_DIR="$RUNNER_TEMP/nb" NEATBOLT_BIN_DIR="$RUNNER_TEMP/bin" \
-            sh install.sh --bundle release/neatbolt.tar.gz --no-connect --no-modify-path
-          "$RUNNER_TEMP/bin/neatbolt" --version
+          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin NEATROOTS_INSTALL_DIR="$RUNNER_TEMP/nb" NEATROOTS_BIN_DIR="$RUNNER_TEMP/bin" \
+            sh install.sh --bundle release/neatroots.tar.gz --no-connect --no-modify-path
+          "$RUNNER_TEMP/bin/neatroots" --version
       - name: Start, store a trace, read it back
         run: |
-          NEATBOLT_HOME="$RUNNER_TEMP/home" "$RUNNER_TEMP/bin/neatbolt" start --port 4199 --no-laya --no-engine &
+          NEATROOTS_HOME="$RUNNER_TEMP/home" "$RUNNER_TEMP/bin/neatroots" start --port 4199 --no-laya --no-engine &
           for i in $(seq 1 30); do curl -sf localhost:4199/api/status >/dev/null && break; sleep 1; done
           now=$(date +%s)000000000
           curl -sf -X POST localhost:4199/v1/traces -H 'content-type: application/json' \
@@ -80,12 +80,12 @@ jobs:
           path: release
       - name: Install with no Node on PATH (the installer downloads its own)
         run: |
-          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin NEATBOLT_INSTALL_DIR="$RUNNER_TEMP/nb" NEATBOLT_BIN_DIR="$RUNNER_TEMP/bin" \
-            sh install.sh --bundle release/neatbolt.tar.gz --no-connect --no-modify-path
-          "$RUNNER_TEMP/bin/neatbolt" --version
+          env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin NEATROOTS_INSTALL_DIR="$RUNNER_TEMP/nb" NEATROOTS_BIN_DIR="$RUNNER_TEMP/bin" \
+            sh install.sh --bundle release/neatroots.tar.gz --no-connect --no-modify-path
+          "$RUNNER_TEMP/bin/neatroots" --version
       - name: Start, store a trace, read it back
         run: |
-          NEATBOLT_HOME="$RUNNER_TEMP/home" "$RUNNER_TEMP/bin/neatbolt" start --port 4199 --no-laya --no-engine &
+          NEATROOTS_HOME="$RUNNER_TEMP/home" "$RUNNER_TEMP/bin/neatroots" start --port 4199 --no-laya --no-engine &
           for i in $(seq 1 30); do curl -sf localhost:4199/api/status >/dev/null && break; sleep 1; done
           now=$(date +%s)000000000
           curl -sf -X POST localhost:4199/v1/traces -H 'content-type: application/json' \
@@ -107,5 +107,5 @@ jobs:
         run: |
           pre=""
           case "$GITHUB_REF_NAME" in *-*) pre="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" release/neatbolt.tar.gz release/neatbolt.tar.gz.sha256 \
-            --repo "$GITHUB_REPOSITORY" --title "Neatlogs Bolt $GITHUB_REF_NAME" --generate-notes $pre
+          gh release create "$GITHUB_REF_NAME" release/neatroots.tar.gz release/neatroots.tar.gz.sha256 \
+            --repo "$GITHUB_REPOSITORY" --title "neatroots $GITHUB_REF_NAME" --generate-notes $pre

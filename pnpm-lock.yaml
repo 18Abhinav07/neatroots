@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  packages/bolt:
+  packages/neatroots:
     dependencies:
       '@anthropic-ai/sdk':
         specifier: 0.128.0

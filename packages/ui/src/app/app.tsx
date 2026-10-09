@@ -39,7 +39,7 @@ export function App() {
         <SidebarInset className="md:peer-data-[variant=inset]:overflow-hidden">
           <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-3 md:hidden">
             <SidebarTrigger aria-label="Open navigation" />
-            <span className="text-sm text-foreground">neatlogs bolt</span>
+            <span className="text-sm text-foreground">neatroots</span>
           </div>
           <PushBanner />
           <div className="min-h-0 flex-1">

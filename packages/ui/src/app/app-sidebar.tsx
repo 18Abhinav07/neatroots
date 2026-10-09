@@ -1,4 +1,4 @@
-import { BarChartHorizontalIcon, ComputerIcon, FlashIcon, Home01Icon, Moon02Icon, SearchAreaIcon, Settings02Icon, SidebarLeftIcon, Sun03Icon } from "@hugeicons/core-free-icons";
+import { BarChartHorizontalIcon, ComputerIcon, Home01Icon, Moon02Icon, Plant02Icon, SearchAreaIcon, Settings02Icon, SidebarLeftIcon, Sun03Icon } from "@hugeicons/core-free-icons";
 import type { IconSvgElement } from "@hugeicons/react";
 import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
@@ -54,13 +54,13 @@ export function AppSidebar({
     <Sidebar className="bg-surface-subtle" collapsible="icon" variant="inset">
       <SidebarHeader className="mt-2 px-3 pt-1 pb-4 group-data-[collapsible=icon]:mt-1 group-data-[collapsible=icon]:px-2">
         <div className={cn("flex w-full", open ? "items-center gap-2" : "justify-center pt-1")}>
-          <a href="#/home" className="flex min-w-0 flex-1 items-center gap-2 rounded-md" aria-label="Neatlogs Bolt home">
+          <a href="#/home" className="flex min-w-0 flex-1 items-center gap-2 rounded-md" aria-label="neatroots home">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-inverse-surface text-inverse-surface-foreground">
-              <Icon icon={FlashIcon} size="sm" />
+              <Icon icon={Plant02Icon} size="sm" />
             </span>
             {open && (
               <span className="flex min-w-0 flex-col">
-                <span className="truncate font-pixel text-sm text-foreground">neatlogs bolt</span>
+                <span className="truncate font-pixel text-sm text-foreground">neatroots</span>
                 <span className="truncate text-2xs text-muted-foreground">local · this machine</span>
               </span>
             )}
@@ -104,7 +104,7 @@ export function AppSidebar({
       <SidebarFooter className="gap-2 px-4 pb-3 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-2">
         {open && (
           <div className="flex flex-col gap-1.5 px-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-2" title={connected ? "Live updates connected" : "Reconnecting to Neatlogs Bolt"}>
+            <span className="flex items-center gap-2" title={connected ? "Live updates connected" : "Reconnecting to neatroots"}>
               <span aria-hidden className={cn("size-1.5 rounded-full", connected ? "bg-success-fg" : "bg-danger-fg")} />
               {connected ? "live" : "reconnecting…"}
             </span>

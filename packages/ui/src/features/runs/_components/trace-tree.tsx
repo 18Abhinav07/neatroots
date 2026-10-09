@@ -21,7 +21,7 @@ const KIND_ICON: Record<string, IconSvgElement> = {
   GUARDRAIL: Shield01Icon,
 };
 
-const isGuidance = (s: Span) => s.name === "neatbolt.guidance" || s.name === "bolts.guidance";
+const isGuidance = (s: Span) => s.name === "neatroots.guidance" || s.name === "roots.guidance";
 
 function treeOrder(spans: Span[]): { span: Span; depth: number }[] {
   const ids = new Set(spans.map((s) => s.span_id));

@@ -1,14 +1,14 @@
 # Coding agents (MCP)
 
-Bolt serves MCP over streamable HTTP at `http://localhost:4100/mcp` and over stdio with
-`neatbolt mcp` (which starts Bolt if it is not running). Both expose the same tools.
+neatroots serves MCP over streamable HTTP at `http://localhost:4100/mcp` and over stdio with
+`neatroots mcp` (which starts neatroots if it is not running). Both expose the same tools.
 
 ```bash
-neatbolt connect             # Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code, Claude Desktop
-neatbolt connect --print cursor   # what to add by hand
+neatroots connect             # Claude Code, Codex, Cursor, OpenCode, Windsurf, Amp, Gemini CLI, VS Code, Claude Desktop
+neatroots connect --print cursor   # what to add by hand
 ```
 
-`neatbolt connect` registers `~/.local/bin/neatbolt mcp` (the installer's command, which survives
+`neatroots connect` registers `~/.local/bin/neatroots mcp` (the installer's command, which survives
 updates) with each agent, in that agent's own settings file or, for Claude Code, through `claude mcp add
 --scope user`.
 
@@ -24,7 +24,7 @@ updates) with each agent, in that agent's own settings file or, for Claude Code,
 | `judge` | The probability that a yes/no question about chosen spans is yes | decision model |
 | `create_check`, `preview_check` | A new check from a concern or YAML, and its hit rate on recent runs | local LLM, then decision model |
 | `annotate` | Marks a run or span as issue, good, or a note | none |
-| `rerun` | Reruns the agent with the command you registered (`neatbolt rerun add`) | none |
+| `rerun` | Reruns the agent with the command you registered (`neatroots rerun add`) | none |
 | `push_to_cloud` | Asks to send runs to Neatlogs Cloud; you confirm in the app | none |
 
 Span ids can be shortened to any unique prefix. Run content is data recorded from an agent; the

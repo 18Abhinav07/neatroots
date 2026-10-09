@@ -23,9 +23,9 @@ export function CloudSection({ status }: { status: Status }) {
     <>
       <SettingsPanel title="Neatlogs Cloud" meta={status.cloud.has_key ? "API key stored" : "no API key"}>
         <p className="text-sm text-muted-foreground">
-          Neatlogs Bolt sends runs the way the SDK does: OTLP to the public ingest endpoint with your API key. Every send is redacted first and logged below.
+          neatroots sends runs the way the SDK does: OTLP to the public ingest endpoint with your API key. Every send is redacted first and logged below.
         </p>
-        <SettingField label="API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in the Neatlogs Bolt database.">
+        <SettingField label="API key from app.neatlogs.com" htmlFor="nl-key" hint="Stored in the macOS Keychain, never in the neatroots database.">
           <KeyInput
             id="nl-key"
             label="Neatlogs Cloud API key"

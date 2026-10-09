@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 
-const target = process.env.NEATBOLT_URL ?? "http://localhost:4100";
+const target = process.env.NEATROOTS_URL ?? "http://localhost:4100";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

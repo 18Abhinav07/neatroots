@@ -63,7 +63,7 @@ export function ProblemsPanel({
         {live.length === 0 ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Icon icon={CheckmarkCircle02Icon} size="sm" className="text-success-fg" />
-            {running ? "Nothing found yet. Neatlogs Bolt checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
+            {running ? "Nothing found yet. neatroots checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
           </p>
         ) : (
           <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { generateText, wrapLanguageModel } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { applyAnthropic, applyMessages, BoltHalt, boltMiddleware, checkMyWork, configure, handleToolCall, wrapOpenAI, type Note } from "../src/index.js";
+import { applyAnthropic, applyMessages, NeatrootsHalt, rootsMiddleware, checkMyWork, configure, handleToolCall, wrapOpenAI, type Note } from "../src/index.js";
 
 const notes: (Note | null)[] = [];
 const claims: any[] = [];
@@ -37,11 +37,11 @@ beforeEach(() => {
 
 const note = (text = "Stop retrying.", kind: Note["kind"] = "template"): Note => ({ id: "n1", kind, text, finding_id: "f1" });
 
-describe("neatbolt-steer (ts)", () => {
+describe("neatroots-steer (ts)", () => {
   it("adds the note to OpenAI-style messages", async () => {
     notes.push(note());
     const out = await applyMessages([{ role: "user", content: "hi" }]);
-    expect(out[0].content).toContain("<neatbolt-guidance>");
+    expect(out[0].content).toContain("<neatroots-guidance>");
     expect(claims[0].trace_id).toBe("a".repeat(32));
     const after = await applyMessages([{ role: "tool", content: "{}" }], note());
     expect(after).toHaveLength(2);
@@ -58,13 +58,13 @@ describe("neatbolt-steer (ts)", () => {
     let seen: any;
     const client = wrapOpenAI({ chat: { completions: { create: async (p: any) => ((seen = p), "ok") } } });
     expect(await client.chat.completions.create({ model: "m", messages: [{ role: "user", content: "q" }] })).toBe("ok");
-    expect(seen.messages[0].content).toContain("<neatbolt-guidance>");
+    expect(seen.messages[0].content).toContain("<neatroots-guidance>");
   });
 
-  it("raises BoltHalt for halt notes", async () => {
+  it("raises NeatrootsHalt for halt notes", async () => {
     notes.push(note("Your rule says stop.", "halt"));
     const client = wrapOpenAI({ chat: { completions: { create: async (_p: unknown) => "should not run" } } });
-    await expect(client.chat.completions.create({ messages: [{ role: "user", content: "q" }] })).rejects.toBeInstanceOf(BoltHalt);
+    await expect(client.chat.completions.create({ messages: [{ role: "user", content: "q" }] })).rejects.toBeInstanceOf(NeatrootsHalt);
   });
 
   it("works as AI SDK 7 middleware", async () => {
@@ -77,20 +77,20 @@ describe("neatbolt-steer (ts)", () => {
           return { content: [{ type: "text", text: "done" }], finishReason: { unified: "stop", raw: "stop" }, usage: { inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 1, text: 1, reasoning: 0 } }, warnings: [] } as any;
         },
       }),
-      middleware: boltMiddleware(),
+      middleware: rootsMiddleware(),
     });
     const r = await generateText({ model, prompt: "refund 4512" });
     expect(r.text).toBe("done");
     expect(JSON.stringify(prompt)).toContain("Check the order id first.");
   });
 
-  it("asks Bolt about the run and answers tool calls", async () => {
+  it("asks neatroots about the run and answers tool calls", async () => {
     expect((await checkMyWork("Did I verify?")).probability_yes).toBe(0.2);
     expect(JSON.parse((await handleToolCall("check_my_work", '{"question":"Q?"}'))!).answer).toBe("no");
     expect(await handleToolCall("other", "{}")).toBeUndefined();
   });
 
-  it("is silent when Bolt is unreachable", async () => {
+  it("is silent when neatroots is unreachable", async () => {
     configure({ url: "http://127.0.0.1:9", traceId: () => "b".repeat(32) });
     const msgs = [{ role: "user", content: "q" }];
     expect(await applyMessages(msgs)).toBe(msgs);

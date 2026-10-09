@@ -23,7 +23,7 @@ const MATCH: Record<Group, (c: CheckRow) => boolean> = {
   library: (c) => c.kind !== "rule" && c.source === "library",
 };
 
-/** Everything Neatlogs Bolt watches for, as one table; a check opens in a side sheet. */
+/** Everything neatroots watches for, as one table; a check opens in a side sheet. */
 export function ChecksPage() {
   const { data, isLoading } = useChecks();
   const a = useCheckActions();

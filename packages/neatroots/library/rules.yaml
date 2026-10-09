@@ -1,0 +1,78 @@
+# neatroots starter rules. Rules run in code with no model, on every span, in microseconds.
+# Copy any of these into ~/.neatroots/checks/ or <repo>/.neatroots/checks/ to change them;
+# a check with the same id there replaces the one here.
+
+- id: repeated-tool-call
+  kind: rule
+  title: Same tool called repeatedly with identical arguments
+  rule:
+    type: repeat
+    span: { type: [tool, mcp_tool] }
+    same: [tool, input]
+    at_least: 3
+  guidance: >-
+    You have called {tool} {count} times with the same arguments ({args}) and the result did
+    not change. Do not call it again with these arguments. Check whether the arguments are
+    right, try a different approach, or tell the user what is blocking you.
+
+- id: tool-error-streak
+  kind: rule
+  title: Several tool calls failed in a row
+  rule:
+    type: errors
+    span: { type: [tool, mcp_tool] }
+    consecutive: 3
+  guidance: >-
+    Your last {count} tool calls failed (latest: {tool}: {error}). Stop and work out why before
+    calling more tools, or explain the problem to the user.
+
+- id: llm-call-failed
+  kind: rule
+  title: An LLM call returned an error
+  rule:
+    type: errors
+    span: { type: llm }
+    consecutive: 1
+
+- id: runaway-loop
+  kind: rule
+  title: Unusually many LLM calls in one run
+  rule:
+    type: count
+    span: { type: llm }
+    at_least: 25
+  guidance: >-
+    This run has made {count} LLM calls. Check whether you are making progress; if not, stop and
+    summarize what you have for the user.
+
+- id: token-budget
+  kind: rule
+  title: Run used more than 200k tokens
+  rule:
+    type: threshold
+    metric: total_tokens
+    at_least: 200000
+
+- id: secret-in-output
+  kind: rule
+  title: Something that looks like a secret key in model output
+  rule:
+    type: match
+    span: { type: llm }
+    field: output
+    pattern: '(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
+  guidance: Do not repeat credentials or keys in your replies. Refer to them by name instead.
+
+- id: run-failed
+  kind: rule
+  title: Run ended with an error
+  rule:
+    type: run_end
+    when: error
+
+- id: empty-final-answer
+  kind: rule
+  title: Run ended without an answer
+  rule:
+    type: run_end
+    when: no_output

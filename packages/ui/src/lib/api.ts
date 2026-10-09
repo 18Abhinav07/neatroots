@@ -1,4 +1,4 @@
-/** Typed client for the Bolt app API. */
+/** Typed client for the neatroots app API. */
 
 export type RunStatus = "running" | "ok" | "error" | "interrupted";
 
@@ -150,7 +150,7 @@ export interface AgentClient {
   connected: boolean;
   where: string;
   note?: string;
-  /** Bolt's skills are installed (agents that read skills: Claude Code, Codex). */
+  /** neatroots' skills are installed (agents that read skills: Claude Code, Codex). */
   skills?: boolean;
 }
 
@@ -306,7 +306,7 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   } catch {
     data = text;
   }
-  if (!res.ok) throw new ApiError((data as { error?: string })?.error ?? `Bolt returned HTTP ${res.status}`, res.status);
+  if (!res.ok) throw new ApiError((data as { error?: string })?.error ?? `neatroots returned HTTP ${res.status}`, res.status);
   return data as T;
 }
 

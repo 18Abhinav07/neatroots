@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { appKeys, runKeys } from "../features/runs/_services/run-keys";
 
 /**
- * Subscribes to Bolt' event stream and refreshes the affected queries. Returns whether
+ * Subscribes to neatroots' event stream and refreshes the affected queries. Returns whether
  * the stream is connected and a counter that ticks when new spans arrive.
  */
 export function useLiveEvents(): { connected: boolean; spanTick: number } {
