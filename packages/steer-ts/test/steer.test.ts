@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { generateText, wrapLanguageModel } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import { applyAnthropic, applyMessages, NeatrootsHalt, rootsMiddleware, checkMyWork, configure, handleToolCall, wrapOpenAI, type Note } from "../src/index.js";
+import { applyAnthropic, applyMessages, NeatrootsHalt, rootsMiddleware, checkMyWork, configure, handleToolCall, replayInput, wrapOpenAI, type Note } from "../src/index.js";
 
 const notes: (Note | null)[] = [];
 const claims: any[] = [];
@@ -59,6 +59,25 @@ describe("neatroots-steer (ts)", () => {
     const client = wrapOpenAI({ chat: { completions: { create: async (p: any) => ((seen = p), "ok") } } });
     expect(await client.chat.completions.create({ model: "m", messages: [{ role: "user", content: "q" }] })).toBe("ok");
     expect(seen.messages[0].content).toContain("<neatroots-guidance>");
+  });
+
+  it("applies a replay's input, model and system prompt", async () => {
+    expect(replayInput("original")).toBe("original");
+    process.env.NEATROOTS_REPLAY_INPUT = "edited";
+    process.env.NEATROOTS_REPLAY_MODEL = "small-model";
+    process.env.NEATROOTS_REPLAY_SYSTEM_PROMPT = "Be brief.";
+    try {
+      expect(replayInput("original")).toBe("edited");
+      let seen: any;
+      const client = wrapOpenAI({ chat: { completions: { create: async (p: unknown) => (seen = p) } } });
+      await client.chat.completions.create({ model: "big", messages: [{ role: "user", content: "hi" }] });
+      expect(seen.model).toBe("small-model");
+      expect(seen.messages[0]).toEqual({ role: "system", content: "Be brief." });
+    } finally {
+      delete process.env.NEATROOTS_REPLAY_INPUT;
+      delete process.env.NEATROOTS_REPLAY_MODEL;
+      delete process.env.NEATROOTS_REPLAY_SYSTEM_PROMPT;
+    }
   });
 
   it("raises NeatrootsHalt for halt notes", async () => {

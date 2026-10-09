@@ -13,6 +13,8 @@ exactly what was added. It never edits tool calls or model output.
     tools = [*my_tools, neatroots_steer.CHECK_MY_WORK_TOOL]   # let the agent ask neatroots
     neatroots_steer.check_my_work("Did I verify the order id before refunding?")
 
+    question = neatroots_steer.replay_input("Is order 1001 ok?")   # replays from the app
+
 Steering is opt-in per project in neatroots (neatroots steering advisory --project <name>).
 """
 
@@ -22,6 +24,7 @@ import copy
 import functools
 import inspect
 import logging
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ._client import RootsClient, Note, configure, get_client
@@ -40,6 +43,8 @@ __all__ = [
     "current_trace",
     "Note",
     "RootsClient",
+    "replay_input",
+    "replay_overrides",
 ]
 
 __version__ = "0.1.0"
@@ -223,15 +228,78 @@ def _apply_responses_input(value: Any, note: Note) -> Any:
     return value
 
 
+# ------------------------------------------------------------------ replay
+
+
+def replay_input(default: Any = None) -> Any:
+    """The input to run with when neatroots replays this agent (NEATROOTS_REPLAY_INPUT), else ``default``.
+
+    Use it where the agent reads its question, so "Replay with a different input" in the app works.
+    """
+    value = os.environ.get("NEATROOTS_REPLAY_INPUT")
+    return value if value else default
+
+
+def replay_overrides() -> Dict[str, str]:
+    """The model and system prompt a neatroots replay asked for, if any. ``wrap`` applies them for you."""
+    out: Dict[str, str] = {}
+    if os.environ.get("NEATROOTS_REPLAY_MODEL"):
+        out["model"] = os.environ["NEATROOTS_REPLAY_MODEL"]
+    if os.environ.get("NEATROOTS_REPLAY_SYSTEM_PROMPT"):
+        out["system"] = os.environ["NEATROOTS_REPLAY_SYSTEM_PROMPT"]
+    return out
+
+
+def _override_chat(kw: Dict[str, Any]) -> Dict[str, Any]:
+    o = replay_overrides()
+    if "model" in o:
+        kw["model"] = o["model"]
+    if "system" in o:
+        msgs = [dict(m) if isinstance(m, dict) else m for m in (kw.get("messages") or [])]
+        for m in msgs:
+            if isinstance(m, dict) and m.get("role") in ("system", "developer"):
+                m["content"] = o["system"]
+                break
+        else:
+            msgs.insert(0, {"role": "system", "content": o["system"]})
+        kw["messages"] = msgs
+    return kw
+
+
+def _override_responses(kw: Dict[str, Any]) -> Dict[str, Any]:
+    o = replay_overrides()
+    if "model" in o:
+        kw["model"] = o["model"]
+    if "system" in o:
+        kw["instructions"] = o["system"]
+    return kw
+
+
+def _override_anthropic(kw: Dict[str, Any]) -> Dict[str, Any]:
+    o = replay_overrides()
+    if "model" in o:
+        kw["model"] = o["model"]
+    if "system" in o:
+        kw["system"] = o["system"]
+    return kw
+
+
 # -------------------------------------------------------------------- wrap
 
 
-def _wrap_method(owner: Any, name: str, transform: Callable[[Dict[str, Any], Note], Dict[str, Any]]) -> None:
+def _wrap_method(
+    owner: Any,
+    name: str,
+    transform: Callable[[Dict[str, Any], Note], Dict[str, Any]],
+    override: Callable[[Dict[str, Any]], Dict[str, Any]] = lambda kw: kw,
+) -> None:
     original = getattr(owner, name, None)
     if original is None or getattr(original, "__neatroots_wrapped__", False):
         return
 
     def prepare(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        if replay_overrides():
+            kwargs = override(dict(kwargs))
         try:
             note = guidance()
         except NeatrootsHalt:
@@ -264,19 +332,21 @@ def _wrap_method(owner: Any, name: str, transform: Callable[[Dict[str, Any], Not
 def wrap(client: Any) -> Any:
     """Adds neatroots guidance to an OpenAI or Anthropic client (sync or async), in place, and returns it.
 
+    During a neatroots replay it also applies the model and system prompt the replay asked for.
+
     Covers chat.completions.create, responses.create (OpenAI) and messages.create (Anthropic).
     Wrap the client you pass to your agent; tracing by the Neatlogs SDK still records the call.
     """
     chat = getattr(client, "chat", None)
     completions = getattr(chat, "completions", None) if chat is not None else None
     if completions is not None:
-        _wrap_method(completions, "create", lambda kw, note: {**kw, "messages": apply(list(kw.get("messages") or []), note)})
+        _wrap_method(completions, "create", lambda kw, note: {**kw, "messages": apply(list(kw.get("messages") or []), note)}, _override_chat)
     responses = getattr(client, "responses", None)
     if responses is not None and hasattr(responses, "create"):
-        _wrap_method(responses, "create", lambda kw, note: {**kw, "input": _apply_responses_input(kw.get("input"), note)})
+        _wrap_method(responses, "create", lambda kw, note: {**kw, "input": _apply_responses_input(kw.get("input"), note)}, _override_responses)
     messages = getattr(client, "messages", None)
     if messages is not None and hasattr(messages, "create") and completions is None:
-        _wrap_method(messages, "create", lambda kw, note: {**kw, "messages": apply_anthropic(copy.copy(list(kw.get("messages") or [])), note)})
+        _wrap_method(messages, "create", lambda kw, note: {**kw, "messages": apply_anthropic(copy.copy(list(kw.get("messages") or [])), note)}, _override_anthropic)
     return client
 
 

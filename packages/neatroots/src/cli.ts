@@ -12,6 +12,7 @@ import { api, ask, port, running } from "./cli/util.js";
 import { registerModelCommands } from "./cli/models.js";
 import { registerServiceCommands } from "./cli/service.js";
 import { registerConnectCommand } from "./cli/connect.js";
+import { registerDataCommands } from "./cli/data.js";
 import { connectClient, findClient, listClients, serverCommand, CLIENTS } from "./mcp/clients.js";
 import { parseChecks } from "./checks/registry.js";
 import { hardwareTier, LlmClient } from "./models/llm.js";
@@ -352,35 +353,6 @@ cloud
 
 // ------------------------------------------------------------------- rerun
 
-const rerun = program.command("rerun").description("Commands coding agents may use to rerun your agent (MCP rerun tool)");
-
-rerun
-  .command("add")
-  .argument("<project>")
-  .argument("<command>")
-  .option("--cwd <dir>", "working directory (default: current)")
-  .action((project: string, command: string, opts) => {
-    const cfg = loadConfig();
-    cfg.rerun[project] = { command, cwd: path.resolve(opts.cwd ?? process.cwd()) };
-    saveConfig(cfg);
-    console.log(`✓ ${project}: ${command} (in ${cfg.rerun[project].cwd}). Restart neatroots to pick it up.`);
-  });
-
-rerun.command("list").action(() => {
-  const cfg = loadConfig();
-  for (const [k, v] of Object.entries(cfg.rerun)) console.log(`${k}: ${v.command}  (cwd ${v.cwd ?? "."})`);
-});
-
-rerun
-  .command("remove")
-  .argument("<project>")
-  .action((project: string) => {
-    const cfg = loadConfig();
-    delete cfg.rerun[project];
-    saveConfig(cfg);
-    console.log(`✓ removed ${project}`);
-  });
-
 // ------------------------------------------------------------------ checks
 
 const checks = program.command("checks").description("List and validate checks");
@@ -417,6 +389,20 @@ checks
 registerModelCommands(program);
 registerServiceCommands(program);
 registerConnectCommand(program);
+registerDataCommands(program);
+
+program
+  .command("mock-llm")
+  .description("Serve a predictable stand-in LLM (OpenAI and Anthropic APIs) so examples run without API keys")
+  .option("-p, --port <port>", "port (default 4110)")
+  .action(async (opts) => {
+    const { startMockLlm } = await import("./dev/mock-llm.js");
+    const p = Number(opts.port ?? 4110);
+    await startMockLlm(p);
+    console.log(`mock LLM on http://127.0.0.1:${p}/v1  (models: mock, mock-sloppy)`);
+    console.log(`  export OPENAI_BASE_URL=http://127.0.0.1:${p}/v1 OPENAI_API_KEY=mock`);
+    console.log(`  export ANTHROPIC_BASE_URL=http://127.0.0.1:${p} ANTHROPIC_API_KEY=mock`);
+  });
 
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : err);

@@ -144,3 +144,28 @@ def test_default_url_follows_local_endpoint(monkeypatch):
     assert _client._default_url() == "http://localhost:4123"
     monkeypatch.setenv("NEATLOGS_ENDPOINT", "https://ingest.neatlogs.com")
     assert _client._default_url() == "http://localhost:4100"
+
+
+def test_replay_input_and_overrides(monkeypatch, stub):
+    assert neatroots_steer.replay_input("original") == "original"
+    monkeypatch.setenv("NEATROOTS_REPLAY_INPUT", "edited question")
+    monkeypatch.setenv("NEATROOTS_REPLAY_MODEL", "small-model")
+    monkeypatch.setenv("NEATROOTS_REPLAY_SYSTEM_PROMPT", "Be brief.")
+    assert neatroots_steer.replay_input("original") == "edited question"
+    seen = {}
+
+    class Completions:
+        def create(self, **kw):
+            seen.update(kw)
+            return "ok"
+
+    class Chat:
+        completions = Completions()
+
+    class Client:
+        chat = Chat()
+
+    client = neatroots_steer.wrap(Client())
+    client.chat.completions.create(model="big-model", messages=[{"role": "system", "content": "Long rules"}, {"role": "user", "content": "hi"}])
+    assert seen["model"] == "small-model"
+    assert seen["messages"][0] == {"role": "system", "content": "Be brief."}

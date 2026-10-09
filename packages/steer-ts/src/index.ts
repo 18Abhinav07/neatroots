@@ -266,14 +266,56 @@ export async function applyAnthropic<M extends Msg>(messages: M[], note?: Note):
   return out;
 }
 
+// ------------------------------------------------------------------- replay
+
+const env = (k: string): string | undefined => (typeof process !== "undefined" ? process.env?.[k] || undefined : undefined);
+
+/** The input to run with when neatroots replays this agent (NEATROOTS_REPLAY_INPUT), else `fallback`. */
+export function replayInput<T>(fallback: T): string | T {
+  return env("NEATROOTS_REPLAY_INPUT") ?? fallback;
+}
+
+/** The model and system prompt a neatroots replay asked for. The wrappers apply them for you. */
+export function replayOverrides(): { model?: string; system?: string } {
+  const out: { model?: string; system?: string } = {};
+  const model = env("NEATROOTS_REPLAY_MODEL");
+  const system = env("NEATROOTS_REPLAY_SYSTEM_PROMPT");
+  if (model) out.model = model;
+  if (system) out.system = system;
+  return out;
+}
+
+type Override = (p: Record<string, unknown>, o: { model?: string; system?: string }) => Record<string, unknown>;
+
+const overrideChat: Override = (p, o) => {
+  const next = { ...p };
+  if (o.model) next.model = o.model;
+  if (o.system) {
+    const msgs = [...((p.messages as Msg[]) ?? [])];
+    const i = msgs.findIndex((m) => m.role === "system" || m.role === "developer");
+    if (i >= 0) msgs[i] = { ...msgs[i], content: o.system };
+    else msgs.unshift({ role: "system", content: o.system });
+    next.messages = msgs;
+  }
+  return next;
+};
+const overrideResponses: Override = (p, o) => ({ ...p, ...(o.model ? { model: o.model } : {}), ...(o.system ? { instructions: o.system } : {}) });
+const overrideAnthropic: Override = (p, o) => ({ ...p, ...(o.model ? { model: o.model } : {}), ...(o.system ? { system: o.system } : {}) });
+
 // --------------------------------------------------------------------- wrap
 
-function wrapMethod(owner: Record<string, unknown> | undefined, name: string, transform: (args: Record<string, unknown>, note: Note) => Record<string, unknown>): void {
+function wrapMethod(
+  owner: Record<string, unknown> | undefined,
+  name: string,
+  transform: (args: Record<string, unknown>, note: Note) => Record<string, unknown>,
+  override: Override = (p) => p,
+): void {
   if (!owner) return;
   const original = owner[name] as ((...a: unknown[]) => unknown) & { __neatroots?: boolean };
   if (typeof original !== "function" || original.__neatroots) return;
   const wrapped = async function (this: unknown, ...args: unknown[]) {
-    const params = (args[0] ?? {}) as Record<string, unknown>;
+    const o = replayOverrides();
+    const params = o.model || o.system ? override((args[0] ?? {}) as Record<string, unknown>, o) : ((args[0] ?? {}) as Record<string, unknown>);
     let next = params;
     try {
       const note = await guidance();
@@ -295,13 +337,13 @@ export function wrapOpenAI<T extends object>(client: T): T {
     const last = msgs[msgs.length - 1];
     const next = last?.role === "user" ? [...msgs.slice(0, -1), appendText(last, guidanceBlock(note))] : [...msgs, { role: "user", content: guidanceBlock(note) }];
     return { ...p, messages: next };
-  });
+  }, overrideChat);
   wrapMethod(c.responses, "create", (p, note) => {
     const input = p.input;
     if (typeof input === "string") return { ...p, input: `${input}\n\n${guidanceBlock(note)}` };
     if (Array.isArray(input)) return { ...p, input: [...input, { role: "user", content: guidanceBlock(note) }] };
     return p;
-  });
+  }, overrideResponses);
   return client;
 }
 
@@ -313,7 +355,7 @@ export function wrapAnthropic<T extends object>(client: T): T {
     const last = msgs[msgs.length - 1];
     const next = last?.role === "user" ? [...msgs.slice(0, -1), appendText(last, guidanceBlock(note))] : [...msgs, { role: "user", content: [{ type: "text", text: guidanceBlock(note) }] }];
     return { ...p, messages: next };
-  });
+  }, overrideAnthropic);
   return client;
 }
 
