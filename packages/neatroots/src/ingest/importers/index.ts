@@ -1,0 +1,134 @@
+import crypto from "node:crypto";
+import type { Roots } from "../../core.js";
+import { getCloudKey } from "../../relay/keychain.js";
+import { log } from "../../util/log.js";
+import { braintrust } from "./braintrust.js";
+import { laminar } from "./laminar.js";
+import { langfuse } from "./langfuse.js";
+import { langsmith } from "./langsmith.js";
+import { cloudApiBase, neatlogsCloudSource } from "./neatlogs-cloud.js";
+import { phoenix } from "./phoenix.js";
+import { raindrop } from "./raindrop.js";
+import { ImportError, type ImportSource } from "./types.js";
+
+export { parseTraceFile } from "./file.js";
+export { ImportError } from "./types.js";
+export type { ImportSource, ImportField } from "./types.js";
+
+export interface ImportJob {
+  id: string;
+  source: string;
+  label: string;
+  state: "running" | "succeeded" | "failed" | "cancelled";
+  started_ms: number;
+  finished_ms: number | null;
+  traces: number;
+  spans: number;
+  failed: number;
+  last_error: string | null;
+  /** Local trace ids of the first runs imported, for links. */
+  trace_ids: string[];
+  project: string | null;
+  window: { since_ms: number; until_ms: number };
+}
+
+/** Imports from other observability tools and Neatlogs Cloud, run in the background one trace at a time. */
+export class ImportJobs {
+  private readonly jobs = new Map<string, ImportJob>();
+  private readonly controllers = new Map<string, AbortController>();
+  readonly sources: ImportSource[];
+
+  constructor(private readonly roots: Roots) {
+    this.sources = [
+      neatlogsCloudSource(
+        () => cloudApiBase(roots.relay.endpoint(), roots.config.cloud.apiBase),
+        () => getCloudKey(),
+      ),
+      langfuse,
+      langsmith,
+      phoenix,
+      braintrust,
+      raindrop,
+      laminar,
+    ];
+  }
+
+  source(id: string): ImportSource | undefined {
+    return this.sources.find((s) => s.id === id);
+  }
+
+  list(): ImportJob[] {
+    return [...this.jobs.values()].sort((a, b) => b.started_ms - a.started_ms);
+  }
+
+  get(id: string): ImportJob | undefined {
+    return this.jobs.get(id);
+  }
+
+  cancel(id: string): boolean {
+    const c = this.controllers.get(id);
+    if (!c) return false;
+    c.abort();
+    return true;
+  }
+
+  /** Starts an import; resolves when it finishes. The job is visible in list() as it runs. */
+  start(
+    sourceId: string,
+    values: Record<string, string>,
+    opts: { sinceMs?: number; untilMs?: number; limit?: number; project?: string } = {},
+  ): { job: ImportJob; done: Promise<ImportJob> } {
+    const source = this.source(sourceId);
+    if (!source) throw new ImportError(`unknown import source "${sourceId}"`);
+    const missing = source.fields.filter((f) => f.required && !values[f.name]?.trim()).map((f) => f.label);
+    if (missing.length) throw new ImportError(`${source.label} needs: ${missing.join(", ")}`);
+    const filled = { ...Object.fromEntries(source.fields.filter((f) => f.default).map((f) => [f.name, f.default!])), ...values };
+    const untilMs = opts.untilMs ?? Date.now();
+    const job: ImportJob = {
+      id: crypto.randomUUID(),
+      source: source.id,
+      label: source.label,
+      state: "running",
+      started_ms: Date.now(),
+      finished_ms: null,
+      traces: 0,
+      spans: 0,
+      failed: 0,
+      last_error: null,
+      trace_ids: [],
+      project: opts.project ?? null,
+      window: { since_ms: opts.sinceMs ?? untilMs - 7 * 86_400_000, until_ms: untilMs },
+    };
+    this.jobs.set(job.id, job);
+    while (this.jobs.size > 50) this.jobs.delete(this.list().at(-1)!.id);
+    const controller = new AbortController();
+    this.controllers.set(job.id, controller);
+    const done = (async () => {
+      try {
+        for await (const t of source.traces({ values: filled, sinceMs: job.window.since_ms, untilMs, limit: opts.limit ?? 100, project: opts.project, signal: controller.signal })) {
+          try {
+            const updates = this.roots.ingest(t.batches);
+            job.traces += 1;
+            job.spans += t.batches.reduce((n, b) => n + b.spans.length, 0);
+            for (const u of updates) if (job.trace_ids.length < 20 && !job.trace_ids.includes(u.traceId)) job.trace_ids.push(u.traceId);
+          } catch (err) {
+            job.failed += 1;
+            job.last_error = `trace ${t.sourceId}: ${(err as Error).message}`;
+          }
+          this.roots.bus.emit("import", { ...job });
+        }
+        job.state = controller.signal.aborted ? "cancelled" : "succeeded";
+      } catch (err) {
+        job.state = controller.signal.aborted ? "cancelled" : "failed";
+        if (!controller.signal.aborted) job.last_error = (err as Error).message;
+        if (job.state === "failed") log.warn(`${source.label} import failed: ${job.last_error}`);
+      } finally {
+        job.finished_ms = Date.now();
+        this.controllers.delete(job.id);
+        this.roots.bus.emit("import", { ...job });
+      }
+      return job;
+    })();
+    return { job, done };
+  }
+}

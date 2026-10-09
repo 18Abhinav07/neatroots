@@ -1,0 +1,332 @@
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import type { Roots } from "../core.js";
+import { findClient, clientStatus } from "../mcp/clients.js";
+import { log } from "../util/log.js";
+
+// Claude Code and Codex inside the app. Each turn runs the agent's own CLI headless in the
+// user's project folder (claude -p --output-format stream-json; codex exec --json), resuming
+// the same agent session, with neatroots' MCP server attached. Events are normalised, stored and
+// streamed to the app. Read-only unless the user allows edits or commands for the session.
+
+export type ChatAgent = "claude" | "codex";
+
+export interface ChatEvent {
+  seq: number;
+  at: number;
+  kind: "user" | "text" | "tool" | "tool_result" | "status" | "result" | "error";
+  text?: string;
+  tool?: { id: string; name: string; input?: unknown; output?: string; is_error?: boolean };
+  meta?: Record<string, unknown>;
+}
+
+export interface ChatSession {
+  id: string;
+  agent: ChatAgent;
+  cwd: string;
+  title: string;
+  trace_id: string | null;
+  allow_edits: boolean;
+  allow_commands: boolean;
+  agent_session_id: string | null;
+  state: "idle" | "running" | "error";
+  created_ms: number;
+  updated_ms: number;
+}
+
+const SCHEMA = `
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY, agent TEXT NOT NULL, cwd TEXT NOT NULL, title TEXT NOT NULL, trace_id TEXT,
+  allow_edits INTEGER NOT NULL DEFAULT 0, allow_commands INTEGER NOT NULL DEFAULT 0, agent_session_id TEXT,
+  state TEXT NOT NULL, created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_events (session_id TEXT NOT NULL, seq INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (session_id, seq));
+`;
+
+const READ_TOOLS = ["Read", "Grep", "Glob", "LS", "TodoWrite", "mcp__neatroots__*", "mcp__neatroots_app__*"];
+const EDIT_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
+
+function onPath(bin: string): boolean {
+  return spawnSync("sh", ["-c", `command -v ${bin}`], { stdio: "ignore" }).status === 0;
+}
+
+function version(bin: string): string | null {
+  const r = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 10_000 });
+  return r.status === 0 ? r.stdout.trim().split("\n")[0] : null;
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : JSON.stringify(v));
+
+export class AgentChats {
+  private readonly running = new Map<string, ChildProcess>();
+
+  constructor(private readonly roots: Roots) {
+    roots.store.db.exec(SCHEMA);
+    roots.store.db.prepare("UPDATE chat_sessions SET state = 'idle' WHERE state = 'running'").run();
+  }
+
+  agents(): { id: ChatAgent; label: string; installed: boolean; version: string | null; mcp_connected: boolean }[] {
+    return (["claude", "codex"] as const).map((id) => {
+      const installed = onPath(id);
+      const client = findClient(id === "claude" ? "claude-code" : "codex");
+      return {
+        id,
+        label: id === "claude" ? "Claude Code" : "Codex",
+        installed,
+        version: installed ? version(id) : null,
+        mcp_connected: !!client && clientStatus(client).connected,
+      };
+    });
+  }
+
+  list(): ChatSession[] {
+    return (this.roots.store.db.prepare("SELECT * FROM chat_sessions ORDER BY updated_ms DESC LIMIT 100").all() as Record<string, unknown>[]).map(this.row);
+  }
+
+  get(id: string): ChatSession | undefined {
+    const r = this.roots.store.db.prepare("SELECT * FROM chat_sessions WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return r ? this.row(r) : undefined;
+  }
+
+  events(id: string, afterSeq = 0): ChatEvent[] {
+    return (this.roots.store.db.prepare("SELECT json FROM chat_events WHERE session_id = ? AND seq > ? ORDER BY seq").all(id, afterSeq) as { json: string }[]).map((r) => JSON.parse(r.json) as ChatEvent);
+  }
+
+  private row = (r: Record<string, unknown>): ChatSession => ({ ...(r as unknown as ChatSession), allow_edits: !!r.allow_edits, allow_commands: !!r.allow_commands });
+
+  create(opts: { agent: ChatAgent; cwd?: string; trace_id?: string | null; allow_edits?: boolean; allow_commands?: boolean; title?: string }): ChatSession {
+    const cwd = opts.cwd?.trim() || (opts.trace_id ? this.roots.config.rerun[this.roots.store.getRun(opts.trace_id)?.project ?? ""]?.cwd : undefined) || os.homedir();
+    if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new Error(`no such folder: ${cwd}`);
+    const now = Date.now();
+    const s: ChatSession = {
+      id: `chat_${crypto.randomBytes(6).toString("hex")}`,
+      agent: opts.agent,
+      cwd,
+      title: opts.title?.trim() || (opts.trace_id ? `Run ${opts.trace_id.slice(0, 8)}` : "New chat"),
+      trace_id: opts.trace_id ?? null,
+      allow_edits: !!opts.allow_edits,
+      allow_commands: !!opts.allow_commands,
+      agent_session_id: null,
+      state: "idle",
+      created_ms: now,
+      updated_ms: now,
+    };
+    this.roots.store.db
+      .prepare("INSERT INTO chat_sessions VALUES (@id, @agent, @cwd, @title, @trace_id, @allow_edits, @allow_commands, @agent_session_id, @state, @created_ms, @updated_ms)")
+      .run({ ...s, allow_edits: s.allow_edits ? 1 : 0, allow_commands: s.allow_commands ? 1 : 0 });
+    return s;
+  }
+
+  update(id: string, patch: Partial<Pick<ChatSession, "allow_edits" | "allow_commands" | "title" | "agent_session_id" | "state">>): ChatSession {
+    const s = this.get(id);
+    if (!s) throw new Error("no such chat");
+    const next = { ...s, ...patch, updated_ms: Date.now() };
+    this.roots.store.db
+      .prepare("UPDATE chat_sessions SET title = ?, allow_edits = ?, allow_commands = ?, agent_session_id = ?, state = ?, updated_ms = ? WHERE id = ?")
+      .run(next.title, next.allow_edits ? 1 : 0, next.allow_commands ? 1 : 0, next.agent_session_id, next.state, next.updated_ms, id);
+    return next;
+  }
+
+  remove(id: string): void {
+    this.stop(id);
+    this.roots.store.db.prepare("DELETE FROM chat_events WHERE session_id = ?").run(id);
+    this.roots.store.db.prepare("DELETE FROM chat_sessions WHERE id = ?").run(id);
+  }
+
+  stop(id: string): boolean {
+    const p = this.running.get(id);
+    if (!p) return false;
+    p.kill("SIGTERM");
+    return true;
+  }
+
+  private emit(id: string, e: Omit<ChatEvent, "seq" | "at">): ChatEvent {
+    const row = this.roots.store.db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM chat_events WHERE session_id = ?").get(id) as { n: number };
+    const ev: ChatEvent = { ...e, seq: row.n + 1, at: Date.now() };
+    this.roots.store.db.prepare("INSERT INTO chat_events (session_id, seq, json) VALUES (?, ?, ?)").run(id, ev.seq, JSON.stringify(ev));
+    this.roots.bus.emit("chat", { session_id: id, event: ev as unknown as Record<string, unknown> });
+    return ev;
+  }
+
+  /** Sends one message; the agent's reply streams in as events. Resolves when the turn ends. */
+  async send(id: string, text: string): Promise<void> {
+    const s = this.get(id);
+    if (!s) throw new Error("no such chat");
+    if (this.running.has(id)) throw new Error("the agent is still answering; stop it or wait");
+    if (!onPath(s.agent)) throw new Error(`${s.agent === "claude" ? "Claude Code (claude)" : "Codex (codex)"} isn't installed or isn't on PATH`);
+    this.emit(id, { kind: "user", text });
+    const first = !s.agent_session_id;
+    if (first && s.title === "New chat") this.update(id, { title: text.slice(0, 60) });
+    const prompt = first ? this.preamble(s) + text : text;
+    this.update(id, { state: "running" });
+    const { cmd, args } = s.agent === "claude" ? this.claudeArgs(s, prompt) : this.codexArgs(s, prompt);
+    log.debug(`chat ${id}: ${cmd} ${args.slice(0, -1).join(" ")}`);
+    const child = spawn(cmd, args, { cwd: s.cwd, env: { ...process.env, NEATLOGS_ENDPOINT: `http://localhost:${this.roots.config.port}` }, stdio: ["ignore", "pipe", "pipe"] });
+    this.running.set(id, child);
+    let buf = "";
+    let stderr = "";
+    let sawResult = false;
+    child.stdout!.on("data", (b: Buffer) => {
+      buf += b.toString();
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const ev = JSON.parse(line) as Record<string, unknown>;
+          if ((s.agent === "claude" ? this.onClaude(id, ev) : this.onCodex(id, ev)) === "result") sawResult = true;
+        } catch {
+          /* not an event line */
+        }
+      }
+    });
+    child.stderr!.on("data", (b: Buffer) => {
+      stderr = (stderr + b.toString()).slice(-4000);
+    });
+    await new Promise<void>((resolve) => {
+      child.on("close", (code, signal) => {
+        this.running.delete(id);
+        if (signal) this.emit(id, { kind: "status", text: "Stopped" });
+        else if (code !== 0 && !sawResult) this.emit(id, { kind: "error", text: this.explainFailure(s.agent, stderr) });
+        this.update(id, { state: code === 0 || signal || sawResult ? "idle" : "error" });
+        resolve();
+      });
+      child.on("error", (err) => {
+        this.running.delete(id);
+        this.emit(id, { kind: "error", text: err.message });
+        this.update(id, { state: "error" });
+        resolve();
+      });
+    });
+  }
+
+  private preamble(s: ChatSession): string {
+    const port = this.roots.config.port;
+    const run = s.trace_id ? this.roots.store.getRun(s.trace_id) : undefined;
+    if (s.trace_id) this.roots.focus = { trace_id: s.trace_id, span_id: null, at: Date.now() };
+    const lines = [
+      `You are working with neatroots, which records and checks this developer's AI agent runs at http://localhost:${port}. Its MCP tools (get_current_run, explain_run, get_run_outline, get_span, search_in_run, compare_runs, replay, rerun, create_check …) are available to you.`,
+      run ? `The run in question is ${run.trace_id} (project ${run.project ?? "?"}, ${run.status}${run.open_finding_count ? `, ${run.open_finding_count} open problems` : ""}). Start from it.` : "",
+      s.allow_edits ? "" : "You may read files but not edit them in this session; propose changes as diffs.",
+      "",
+    ];
+    return lines.filter((l, i) => l || i === lines.length - 1).join("\n") + "\n";
+  }
+
+  private mcpUrl(): string {
+    return `http://localhost:${this.roots.config.port}/mcp`;
+  }
+
+  private claudeArgs(s: ChatSession, prompt: string): { cmd: string; args: string[] } {
+    const args = ["-p", "--output-format", "stream-json", "--verbose"];
+    if (s.agent_session_id) args.push("--resume", s.agent_session_id);
+    // A neatroots entry the user connected already provides the tools; otherwise attach one for this session.
+    const client = findClient("claude-code");
+    if (!client || !clientStatus(client).connected) args.push("--mcp-config", JSON.stringify({ mcpServers: { neatroots_app: { type: "http", url: this.mcpUrl() } } }));
+    const allowed = [...READ_TOOLS, ...(s.allow_edits ? EDIT_TOOLS : []), ...(s.allow_commands ? ["Bash"] : [])];
+    args.push("--allowedTools", allowed.join(","));
+    if (s.allow_edits) args.push("--permission-mode", "acceptEdits");
+    args.push("--", prompt);
+    return { cmd: "claude", args };
+  }
+
+  private codexArgs(s: ChatSession, prompt: string): { cmd: string; args: string[] } {
+    const args = ["exec"];
+    if (s.agent_session_id) args.push("resume", s.agent_session_id);
+    args.push("--json", "--skip-git-repo-check", "--sandbox", s.allow_edits || s.allow_commands ? "workspace-write" : "read-only");
+    const client = findClient("codex");
+    if (!client || !clientStatus(client).connected) args.push("-c", `mcp_servers.neatroots.url="${this.mcpUrl()}"`);
+    args.push(prompt);
+    return { cmd: "codex", args };
+  }
+
+  /** Claude Code stream-json: system/init, assistant (text, tool_use), user (tool_result), result. */
+  private onClaude(id: string, e: Record<string, unknown>): string | void {
+    if (e.type === "system" && e.subtype === "init") {
+      if (e.session_id) this.update(id, { agent_session_id: String(e.session_id) });
+      const servers = (e.mcp_servers as { name: string; status: string }[] | undefined) ?? [];
+      const nr = servers.find((m) => m.name.startsWith("neatroots"));
+      this.emit(id, { kind: "status", text: `${e.model ?? "Claude"}${nr ? ` · neatroots MCP ${nr.status}` : ""}`, meta: { model: e.model } });
+      return;
+    }
+    const msg = e.message as { content?: Record<string, unknown>[] } | undefined;
+    if (e.type === "assistant" && msg?.content) {
+      for (const c of msg.content) {
+        if (c.type === "text" && str(c.text).trim()) this.emit(id, { kind: e.error ? "error" : "text", text: str(c.text) });
+        else if (c.type === "tool_use") this.emit(id, { kind: "tool", tool: { id: str(c.id), name: str(c.name), input: c.input } });
+      }
+      return;
+    }
+    if (e.type === "user" && msg?.content) {
+      for (const c of msg.content) {
+        if (c.type !== "tool_result") continue;
+        const content = Array.isArray(c.content) ? (c.content as Record<string, unknown>[]).map((x) => str(x.text ?? x)).join("\n") : str(c.content);
+        this.emit(id, { kind: "tool_result", tool: { id: str(c.tool_use_id), name: "", output: content.slice(0, 20_000), is_error: !!c.is_error } });
+      }
+      return;
+    }
+    if (e.type === "result") {
+      if (e.session_id) this.update(id, { agent_session_id: String(e.session_id) });
+      const denials = (e.permission_denials as { tool_name: string }[] | undefined) ?? [];
+      this.emit(id, {
+        kind: "result",
+        text: e.is_error ? str(e.result) : undefined,
+        meta: { ok: !e.is_error, cost_usd: e.total_cost_usd, duration_ms: e.duration_ms, denied: [...new Set(denials.map((d) => d.tool_name))] },
+      });
+      return "result";
+    }
+  }
+
+  /** codex exec --json: thread.started, item.started/completed (agent_message, command_execution, file_change, mcp_tool_call …), turn.completed/failed. */
+  private onCodex(id: string, e: Record<string, unknown>): string | void {
+    if (e.type === "thread.started" && e.thread_id) {
+      this.update(id, { agent_session_id: String(e.thread_id) });
+      this.emit(id, { kind: "status", text: "Codex" });
+      return;
+    }
+    const item = e.item as Record<string, unknown> | undefined;
+    if ((e.type === "item.completed" || e.type === "item.started") && item) {
+      const done = e.type === "item.completed";
+      switch (item.type) {
+        case "agent_message":
+          if (done) this.emit(id, { kind: "text", text: str(item.text) });
+          return;
+        case "reasoning":
+          return;
+        case "command_execution":
+          if (!done) this.emit(id, { kind: "tool", tool: { id: str(item.id), name: "shell", input: { command: item.command } } });
+          else this.emit(id, { kind: "tool_result", tool: { id: str(item.id), name: "shell", output: str(item.aggregated_output).slice(0, 20_000), is_error: item.status === "failed" || (typeof item.exit_code === "number" && item.exit_code !== 0) } });
+          return;
+        case "mcp_tool_call":
+          if (!done) this.emit(id, { kind: "tool", tool: { id: str(item.id), name: `${str(item.server)}.${str(item.tool)}`, input: item.arguments } });
+          else this.emit(id, { kind: "tool_result", tool: { id: str(item.id), name: str(item.tool), output: str(item.result ?? item.error).slice(0, 20_000), is_error: item.status === "failed" } });
+          return;
+        case "file_change":
+          if (done) this.emit(id, { kind: "tool", tool: { id: str(item.id), name: "edit", input: item.changes } });
+          return;
+        case "error":
+          this.emit(id, { kind: "error", text: str(item.message) });
+          return;
+        default:
+          return;
+      }
+    }
+    if (e.type === "turn.completed") {
+      this.emit(id, { kind: "result", meta: { ok: true, usage: e.usage } });
+      return "result";
+    }
+    if (e.type === "turn.failed" || e.type === "error") {
+      this.emit(id, { kind: "error", text: str((e.error as Record<string, unknown> | undefined)?.message ?? e.message) });
+      return "result";
+    }
+  }
+
+  private explainFailure(agent: ChatAgent, stderr: string): string {
+    const s = stderr.trim();
+    if (/auth|login|oauth|api key|unauthor/i.test(s)) return `${agent === "claude" ? "Claude Code" : "Codex"} isn't signed in. Run \`${agent}\` in a terminal once to sign in, then try again.\n\n${s.slice(-600)}`;
+    return s ? s.slice(-1200) : `${agent} exited without an answer`;
+  }
+}

@@ -8,6 +8,9 @@ import { DecisionModel } from "./models/decision.js";
 import { CheckRegistry } from "./checks/registry.js";
 import { SteeringHub } from "./steering/hub.js";
 import { Engine } from "./engine/engine.js";
+import { ImportJobs } from "./ingest/importers/index.js";
+import { Replays } from "./replay/replay.js";
+import { AgentChats } from "./agents/chat.js";
 import { Relay } from "./relay/relay.js";
 import { LayaManager } from "./models/laya.js";
 import { getSecret } from "./relay/keychain.js";
@@ -34,6 +37,9 @@ export class Roots {
   readonly engine?: Engine;
   readonly relay: Relay;
   readonly laya: LayaManager;
+  readonly imports: ImportJobs;
+  readonly replays: Replays;
+  readonly chats: AgentChats;
   private sweeper?: NodeJS.Timeout;
   /** When a coding agent last called neatroots over MCP. */
   mcpSeenMs: number | null = null;
@@ -57,6 +63,9 @@ export class Roots {
     this.checks = new CheckRegistry(this.store, path.join(this.home, "checks"), () => this.config.checkDirs);
     this.steering = new SteeringHub(this);
     this.relay = new Relay(this);
+    this.imports = new ImportJobs(this);
+    this.replays = new Replays(this);
+    this.chats = new AgentChats(this);
     if (!opts.noEngine) this.engine = new Engine(this, this.llm, this.decisions, this.checks, this.steering);
   }
 

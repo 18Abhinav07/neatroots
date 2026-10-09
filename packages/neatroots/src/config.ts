@@ -15,6 +15,8 @@ export interface ProjectSettings {
 export interface RootsConfig {
   port: number;
   host: string;
+  /** OTLP over gRPC (what plain OpenTelemetry exporters send to Neatlogs). 0 turns it off. */
+  grpcPort: number;
   llm: {
     /** OpenAI-compatible base URL, e.g. http://localhost:11434/v1 (Ollama). */
     baseUrl: string;
@@ -82,11 +84,13 @@ export interface RootsConfig {
     endpoint: string;
     /** Where people open runs in Neatlogs Cloud. */
     appUrl: string;
+    /** Public API base for importing traces; derived from the endpoint when unset. */
+    apiBase?: string;
     /** User regexes to redact before forwarding, in addition to the built-ins. */
     redactPatterns: string[];
   };
-  /** Commands the user registered to rerun an agent, per project (MCP rerun tool). */
-  rerun: Record<string, { command: string; cwd?: string }>;
+  /** How to re-run each project's agent (MCP rerun tool, replays): a command, or an HTTP replay endpoint. */
+  rerun: Record<string, { command?: string; cwd?: string; url?: string }>;
   /** Extra directories holding checks (YAML), e.g. <repo>/.neatroots/checks. */
   checkDirs: string[];
   projects: Record<string, Partial<ProjectSettings>>;
@@ -98,6 +102,7 @@ export function defaultConfig(): RootsConfig {
   return {
     port: DEFAULT_PORT,
     host: "127.0.0.1",
+    grpcPort: 4317,
     llm: {
       baseUrl: "http://localhost:11434/v1",
       model: "auto",

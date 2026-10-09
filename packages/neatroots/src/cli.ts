@@ -4,6 +4,7 @@ import path from "node:path";
 import { Command } from "commander";
 import { Roots } from "./core.js";
 import { createApp, startServer } from "./server/app.js";
+import { startGrpc } from "./ingest/grpc.js";
 import { VERSION } from "./version.js";
 import { rootsHome, loadConfig, saveConfig, type SteeringMode } from "./config.js";
 import { runStdioBridge } from "./mcp/stdio.js";
@@ -28,15 +29,18 @@ program
   .command("start")
   .description("Run neatroots: collector, checks, steering, app and MCP on one local port")
   .option("-p, --port <port>", "port to listen on (default 4100)")
+  .option("--grpc-port <port>", "port for OTLP over gRPC (default 4317; 0 turns it off)")
   .option("--no-engine", "collect and show runs without running checks")
   .option("--no-laya", "do not install or start Laya (the local decision model)")
   .action(async (opts) => {
     const roots = new Roots({ noEngine: opts.engine === false });
     if (opts.port) roots.config.port = Number(opts.port);
+    if (opts.grpcPort !== undefined) roots.config.grpcPort = Number(opts.grpcPort);
     if (opts.laya === false) roots.config.classifier.laya.enabled = false;
     const app = createApp(roots);
     try {
       await startServer(roots, app);
+      await startGrpc(roots);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "EADDRINUSE") {
         log.error(`port ${roots.config.port} is in use. Is neatroots already running? Try: neatroots status`);

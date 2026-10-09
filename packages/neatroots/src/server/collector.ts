@@ -9,6 +9,7 @@ import {
 } from "../otlp/codec.js";
 import type { ResourceSpansBatch } from "../otlp/types.js";
 import { traceReadback } from "./readback.js";
+import { HttpTraceError, httpTraceToBatches } from "../ingest/http-trace.js";
 import type { Roots } from "../core.js";
 import { log } from "../util/log.js";
 
@@ -58,6 +59,25 @@ export function mountCollector(app: Hono, roots: Roots): void {
       status: 200,
       headers: { "content-type": "application/x-protobuf" },
     });
+  });
+
+  // The Neatlogs HTTP trace API and Browser SDK: one JSON tree per request, no ids.
+  app.post("/v1/trace", async (c) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse((await readBody(c)).toString("utf8"));
+    } catch (err) {
+      return c.json({ error: "Validation error", details: { body: `not JSON: ${(err as Error).message}` } }, 400);
+    }
+    try {
+      const { batches, traceId, spans } = httpTraceToBatches(parsed);
+      roots.ingest(batches);
+      return c.json({ success: true, trace_id: traceId, spans });
+    } catch (err) {
+      if (err instanceof HttpTraceError) return c.json({ error: err.message, details: err.details }, 400);
+      log.error("HTTP trace ingest failed", err);
+      return c.json({ error: "neatroots could not store this trace" }, 500);
+    }
   });
 
   app.post("/v1/logs", async (c) => {

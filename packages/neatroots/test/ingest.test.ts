@@ -1,0 +1,196 @@
+import http from "node:http";
+import * as grpc from "@grpc/grpc-js";
+import { afterEach, describe, expect, it } from "vitest";
+import { httpTraceToBatches, HttpTraceError } from "../src/ingest/http-trace.js";
+import { startGrpc } from "../src/ingest/grpc.js";
+import { parseTraceFile } from "../src/ingest/importers/file.js";
+import { langfuseNodes } from "../src/ingest/importers/langfuse.js";
+import { langsmithNodes } from "../src/ingest/importers/langsmith.js";
+import { braintrustNodes } from "../src/ingest/importers/braintrust.js";
+import { raindropNodes } from "../src/ingest/importers/raindrop.js";
+import { laminarNodes } from "../src/ingest/importers/laminar.js";
+import { phoenixSpan } from "../src/ingest/importers/phoenix.js";
+import { buildSpan, toNs } from "../src/ingest/build.js";
+import { encodeTraceRequest } from "../src/otlp/codec.js";
+import { buildView } from "../src/semantics/view.js";
+import { batch, freePort, hex, makeRoots, s, span, type TestRoots } from "./helpers.js";
+
+let t: TestRoots | undefined;
+afterEach(async () => {
+  await t?.close();
+  t = undefined;
+});
+
+describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
+  it("turns a nested trace into spans with kinds, tokens and timing", () => {
+    const { batches, spans } = httpTraceToBatches({
+      name: "support-chat",
+      project: "web-app",
+      session_id: "s1",
+      children: [
+        { name: "lookup", tool_name: "lookup_order", input: { id: 1 }, output: { ok: true }, duration_ms: 40 },
+        { name: "answer", model: "gpt-4o", input: "Where is my order?", output: "Shipped.", tokens: { prompt: 20, completion: 3 }, duration_ms: 100 },
+        { name: "check", passed: false, score: 0.2 },
+      ],
+    });
+    expect(spans).toBe(4);
+    const [root, tool, llm, guard] = batches[0].spans;
+    expect(root.parentSpanId).toBe("");
+    expect(tool.parentSpanId).toBe(root.spanId);
+    expect(buildView(tool, batches[0].resource.attributes)).toMatchObject({ kind: "TOOL", toolName: "lookup_order", input: { id: 1 } });
+    expect(buildView(llm, [])).toMatchObject({ kind: "LLM", model: "gpt-4o", promptTokens: 20, completionTokens: 3, totalTokens: 23 });
+    expect(buildView(guard, [])).toMatchObject({ kind: "GUARDRAIL" });
+    expect(BigInt(llm.startTimeUnixNano)).toBeGreaterThanOrEqual(BigInt(tool.endTimeUnixNano));
+    expect(BigInt(root.endTimeUnixNano)).toBeGreaterThanOrEqual(BigInt(llm.endTimeUnixNano));
+    expect(buildView(root, batches[0].resource.attributes)).toMatchObject({ kind: "WORKFLOW", sessionId: "s1", workflow: "web-app" });
+  });
+
+  it("rejects a malformed trace with field details", () => {
+    expect(() => httpTraceToBatches({ children: [{ name: 3 }] })).toThrow(HttpTraceError);
+    try {
+      httpTraceToBatches({ children: [{}], status: "maybe" });
+    } catch (e) {
+      expect((e as HttpTraceError).details).toMatchObject({ name: "required", "children[0].name": "required", status: "must be OK or ERROR" });
+    }
+  });
+
+  it("is served at /v1/trace and the run shows up", async () => {
+    t = await makeRoots({ serve: true, noEngine: true });
+    const res = await fetch(`${t.url}/v1/trace`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer nlw_x" }, body: JSON.stringify({ name: "hello", project: "p1", input: "hi", output: "hey", children: [{ name: "llm", model: "m", input: "hi", output: "hey" }] }) });
+    const body = (await res.json()) as { success: boolean; trace_id: string; spans: number };
+    expect(body).toMatchObject({ success: true, spans: 2 });
+    expect(t.roots.store.getRun(body.trace_id)).toMatchObject({ project: "p1", span_count: 2 });
+    const bad = await fetch(`${t.url}/v1/trace`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
+    expect(bad.status).toBe(400);
+  });
+});
+
+describe("OTLP over gRPC", () => {
+  it("stores what an exporter sends to TraceService/Export", async () => {
+    const grpcPort = await freePort();
+    t = await makeRoots({ noEngine: true, config: (c) => (c.grpcPort = grpcPort) });
+    const server = await startGrpc(t.roots);
+    expect(server).toBeTruthy();
+    const traceId = hex(16);
+    const req = Buffer.from(encodeTraceRequest([batch([span({ traceId, name: "agent", kind: "workflow" })], "grpc-agent")]));
+    const client = new grpc.Client(`127.0.0.1:${grpcPort}`, grpc.credentials.createInsecure());
+    await new Promise<void>((resolve, reject) =>
+      client.makeUnaryRequest(
+        "/opentelemetry.proto.collector.trace.v1.TraceService/Export",
+        (b: Buffer) => b,
+        (b: Buffer) => b,
+        req,
+        new grpc.Metadata(),
+        (err) => (err ? reject(err) : resolve()),
+      ),
+    );
+    client.close();
+    server!.forceShutdown();
+    expect(t.roots.store.getRun(traceId)).toMatchObject({ project: "grpc-agent" });
+  });
+});
+
+describe("other conventions", () => {
+  it("reads Vercel AI SDK spans", () => {
+    const tid = hex(16);
+    const llm = span({ traceId: tid, name: "ai.generateText.doGenerate", kind: "", attrs: [s("ai.operationId", "ai.generateText.doGenerate"), s("ai.model.id", "gpt-4o-mini"), s("ai.prompt.messages", JSON.stringify([{ role: "user", content: [{ type: "text", text: "Hi" }] }])), s("ai.response.text", "Hello"), s("ai.usage.promptTokens", 5)] });
+    const v = buildView({ ...llm, attributes: llm.attributes.filter((a) => a.key !== "neatlogs.span.kind") }, []);
+    expect(v).toMatchObject({ kind: "LLM", model: "gpt-4o-mini", promptTokens: 5, input: [{ role: "user", content: "Hi" }], output: [{ role: "assistant", content: "Hello" }] });
+    const tool = span({ traceId: tid, name: "ai.toolCall", kind: "", attrs: [s("ai.operationId", "ai.toolCall"), s("ai.toolCall.name", "weather"), s("ai.toolCall.args", '{"city":"Paris"}'), s("ai.toolCall.result", '"sunny"')] });
+    expect(buildView({ ...tool, attributes: tool.attributes.filter((a) => a.key !== "neatlogs.span.kind") }, [])).toMatchObject({ kind: "TOOL", toolName: "weather", input: { city: "Paris" }, output: "sunny" });
+  });
+
+  it("reads OpenTelemetry GenAI parts and OpenLLMetry entity input", () => {
+    const tid = hex(16);
+    const llm = span({ traceId: tid, name: "chat", kind: "", attrs: [s("gen_ai.operation.name", "chat"), s("gen_ai.input.messages", JSON.stringify([{ role: "user", parts: [{ type: "text", content: "Q?" }] }]))] });
+    expect(buildView({ ...llm, attributes: llm.attributes.filter((a) => a.key !== "neatlogs.span.kind") }, []).input).toEqual([{ role: "user", content: "Q?" }]);
+    const wf = span({ traceId: tid, name: "plan.workflow", kind: "", attrs: [s("traceloop.span.kind", "workflow"), s("traceloop.entity.input", '{"q":1}')] });
+    expect(buildView({ ...wf, attributes: wf.attributes.filter((a) => a.key !== "neatlogs.span.kind") }, [])).toMatchObject({ kind: "WORKFLOW", input: { q: 1 } });
+  });
+});
+
+describe("imports", () => {
+  it("parses ms, s, ns and ISO times", () => {
+    expect(toNs(1_700_000_000_000)).toBe(1_700_000_000_000_000_000n);
+    expect(toNs(1_700_000_000)).toBe(1_700_000_000_000_000_000n);
+    expect(toNs("2026-10-09T10:00:00.123456789Z")).toBe(BigInt(Date.parse("2026-10-09T10:00:00.123Z")) * 1_000_000n + 456789n);
+    expect(buildSpan({ traceId: "x", spanId: "y", name: "n", start: 1 }).traceId).toHaveLength(32);
+  });
+
+  it("maps Langfuse traces and observations", () => {
+    const nodes = langfuseNodes(
+      { id: "t1", timestamp: "2026-10-09T10:00:00Z", name: "chat", input: "q", output: "a", sessionId: "s" },
+      [
+        { id: "o1", traceId: "t1", type: "GENERATION", name: "llm", startTime: "2026-10-09T10:00:01Z", endTime: "2026-10-09T10:00:02Z", model: "gpt-4o", usage: { input: 3, output: 4 } },
+        { id: "o2", traceId: "t1", type: "TOOL", name: "search", startTime: "2026-10-09T10:00:02Z", endTime: "2026-10-09T10:00:03Z", parentObservationId: "o1", level: "ERROR", statusMessage: "timeout" },
+      ],
+    );
+    expect(nodes.map((n) => [n.kind, n.parentSpanId])).toEqual([["workflow", undefined], ["GENERATION", "trace:t1"], ["TOOL", "o1"]]);
+    const spans = nodes.map(buildSpan);
+    expect(buildView(spans[1], [])).toMatchObject({ kind: "LLM", model: "gpt-4o", promptTokens: 3 });
+    expect(buildView(spans[2], [])).toMatchObject({ kind: "TOOL", toolName: "search", error: "timeout" });
+  });
+
+  it("maps LangSmith, Braintrust, Raindrop, Laminar and Phoenix records", () => {
+    const ls = langsmithNodes([
+      { id: "r1", name: "agent", run_type: "chain", start_time: "2026-10-09T10:00:00", trace_id: "r1", inputs: { q: 1 } },
+      { id: "r2", name: "ChatOpenAI", run_type: "llm", start_time: "2026-10-09T10:00:01", end_time: "2026-10-09T10:00:02", trace_id: "r1", parent_run_id: "r1", extra: { invocation_params: { model: "gpt-4o" } }, prompt_tokens: 7 },
+    ]);
+    expect(buildView(buildSpan(ls[1]), [])).toMatchObject({ kind: "LLM", model: "gpt-4o", promptTokens: 7 });
+    const bt = braintrustNodes([{ id: "e1", span_id: "a", root_span_id: "a", span_attributes: { name: "root", type: "task" }, metrics: { start: 1_700_000_000, end: 1_700_000_001 } }, { id: "e2", span_id: "b", root_span_id: "a", span_parents: ["a"], span_attributes: { name: "gpt", type: "llm" }, metadata: { model: "gpt-4o" }, metrics: { start: 1_700_000_000.2, prompt_tokens: 9 } }]);
+    expect(bt.map((n) => n.kind)).toEqual(["workflow", "llm"]);
+    expect(buildView(buildSpan(bt[1]), [])).toMatchObject({ model: "gpt-4o", promptTokens: 9 });
+    const rd = raindropNodes({ id: "ev1", event_name: "chat", timestamp: "2026-10-09T10:00:00Z", user_input: "hi", assistant_output: "hello", tool_calls: [{ tool_name: "lookup", status: "error", duration_ms: 20 }] }, []);
+    expect(rd.map((n) => [n.kind, n.name])).toEqual([["agent", "chat"], ["tool", "lookup"]]);
+    const lm = laminarNodes([{ span_id: "11111111-1111-1111-1111-111111111111", trace_id: "22222222-2222-2222-2222-222222222222", parent_span_id: "00000000-0000-0000-0000-000000000000", name: "root", span_type: "DEFAULT", start_time: "2026-10-09 10:00:00.5" }], { session_id: "s9" });
+    expect(lm[0]).toMatchObject({ kind: "chain", parentSpanId: null, sessionId: "s9", start: "2026-10-09T10:00:00.5Z" });
+    const px = phoenixSpan({ name: "ChatCompletion", context: { trace_id: "abc", span_id: "def" }, span_kind: "LLM", start_time: "2026-10-09T10:00:00Z", status_code: "OK", attributes: { llm: { model_name: "gpt-4o" }, input: { value: "hi" } } });
+    expect(buildView(px, [])).toMatchObject({ kind: "LLM", model: "gpt-4o" });
+  });
+
+  it("reads OTLP JSON, Neatlogs exports and HTTP traces from files, one per line too", () => {
+    const tid = hex(16);
+    const otlp = JSON.stringify({ resourceSpans: [{ resource: { attributes: [{ key: "service.name", value: { stringValue: "f" } }] }, scopeSpans: [{ scope: { name: "x" }, spans: [{ traceId: tid, spanId: hex(8), name: "root", kind: 1, startTimeUnixNano: "1", endTimeUnixNano: "2", status: {} }] }] }] });
+    expect(parseTraceFile(otlp, "trace.json")[0].spans[0].traceId).toBe(tid);
+    const exp = JSON.stringify({ data: { schemaVersion: 1, trace: { traceId: tid, workflowName: "wf" }, spans: [{ traceId: tid, spanId: "1234567890abcdef", parentSpanId: null, spanName: "root", spanType: "workflow", startedAt: "2026-10-09T10:00:00Z", endedAt: null, durationMs: 5, status: "OK", model: null, provider: null, promptTokens: 0, completionTokens: 0, totalTokens: 0 }] } });
+    expect(parseTraceFile(exp, "export.json")[0].spans[0].traceId).toBe(tid);
+    const lines = `${JSON.stringify({ name: "a" })}\n${JSON.stringify({ name: "b", children: [{ name: "c" }] })}\n`;
+    expect(parseTraceFile(lines, "traces.jsonl").map((b) => b.spans.length)).toEqual([1, 2]);
+    expect(() => parseTraceFile('{"foo":1}', "x.json")).toThrow(/not OTLP JSON/);
+  });
+
+  it("imports a trace from Neatlogs Cloud through the public API", async () => {
+    const tid = hex(16);
+    const sid = hex(8);
+    const seen: string[] = [];
+    const cloud = http.createServer((req, res) => {
+      seen.push(`${req.headers["x-api-key"]} ${req.url}`);
+      res.setHeader("content-type", "application/json");
+      if (req.url?.startsWith(`/api/v1/public/traces/${tid}/export`)) {
+        res.end(JSON.stringify({ success: true, requestId: "req_x", data: { schemaVersion: 1, trace: { traceId: tid, workflowName: "prod-agent", sessionId: "sess", startedAt: "2026-10-09T10:00:00Z" }, spans: [{ traceId: tid, spanId: sid, parentSpanId: null, spanName: "openai.chat", spanType: "llm", startedAt: "2026-10-09T10:00:00Z", endedAt: "2026-10-09T10:00:01Z", durationMs: 1000, status: "OK", model: "gpt-4o", provider: "openai", promptTokens: 4, completionTokens: 2, totalTokens: 6 }] } }));
+      } else if (req.url?.includes(`/spans/${sid}/payload`)) {
+        res.end(JSON.stringify({ success: true, requestId: "req_y", data: { traceId: tid, spanId: sid, fields: { input: { available: true, value: '[{"role":"user","content":"hi"}]', mimeType: "application/json", truncated: false }, output: { available: true, value: "hello", mimeType: null, truncated: false }, error: { available: false, value: null, mimeType: null, truncated: false } } } }));
+      } else {
+        res.statusCode = 404;
+        res.end("{}");
+      }
+    });
+    const port = await freePort();
+    await new Promise<void>((r) => cloud.listen(port, "127.0.0.1", r));
+    t = await makeRoots({ noEngine: true, config: (c) => (c.cloud.apiBase = `http://127.0.0.1:${port}/api/v1/public`) });
+    process.env.NEATLOGS_CLOUD_API_KEY = "nl_test_key";
+    try {
+      const { done } = t.roots.imports.start("neatlogs-cloud", { traceIds: tid }, { limit: 1 });
+      const job = await done;
+      expect(job).toMatchObject({ state: "succeeded", traces: 1, spans: 1 });
+      expect(seen.every((x) => x.startsWith("nl_test_key "))).toBe(true);
+      const run = t.roots.store.getRun(tid)!;
+      expect(run).toMatchObject({ project: "prod-agent", session_id: "sess", llm_calls: 1 });
+      const s1 = t.roots.store.getOtlpSpan(tid, sid)!;
+      expect(buildView(s1.span, s1.resource.attributes)).toMatchObject({ model: "gpt-4o", input: [{ role: "user", content: "hi" }], output: "hello" });
+    } finally {
+      delete process.env.NEATLOGS_CLOUD_API_KEY;
+      cloud.close();
+    }
+  });
+});

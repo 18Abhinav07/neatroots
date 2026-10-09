@@ -152,10 +152,22 @@ function normKind(raw: string | undefined): SpanKind | undefined {
   return KNOWN_KINDS.has(k) ? (k as SpanKind) : undefined;
 }
 
+/** Vercel AI SDK spans: ai.toolCall is a tool, ai.*.doGenerate / doStream is one LLM call. */
+function vercelKind(span: OtlpSpan, attrs: Attrs): SpanKind | undefined {
+  const op = str(attrs["ai.operationId"]) ?? (span.name.startsWith("ai.") ? span.name.split(" ")[0] : undefined);
+  if (!op) return undefined;
+  if (op === "ai.toolCall") return "TOOL";
+  if (/\.do(Generate|Stream)$/.test(op)) return "LLM";
+  if (/^ai\.(embed|embedMany)/.test(op)) return "EMBEDDING";
+  if (/^ai\.(generateText|streamText|generateObject|streamObject)$/.test(op)) return "AGENT";
+  return undefined;
+}
+
 function deriveKind(span: OtlpSpan, attrs: Attrs): SpanKind {
   if (span.name === COMPLETE_MARKER || attrs[COMPLETE_MARKER] === true) return "INTERNAL";
   return (
     normKind(str(attrs["neatlogs.span.kind"])) ??
+    vercelKind(span, attrs) ??
     normKind(str(attrs["openinference.span.kind"])) ??
     normKind(str(attrs["gen_ai.operation.name"])) ??
     normKind(str(attrs["traceloop.span.kind"])) ??
@@ -173,7 +185,50 @@ function llmMessages(attrs: Attrs, dir: "input" | "output"): Plain | undefined {
   const genai = dir === "input" ? collectIndexed(attrs, "gen_ai.prompt") : collectIndexed(attrs, "gen_ai.completion");
   if (genai.length) return genai;
   const json = maybeJson(first(attrs, [`gen_ai.${dir}.messages`]));
-  return json ?? undefined;
+  if (json !== undefined) return normalizeParts(json);
+  if (dir === "input") {
+    const prompt = maybeJson(first(attrs, ["ai.prompt.messages"]));
+    if (prompt !== undefined) return normalizeParts(prompt);
+  } else {
+    const text = first(attrs, ["ai.response.text"]);
+    const calls = maybeJson(first(attrs, ["ai.response.toolCalls"]));
+    if (text !== undefined || calls !== undefined) {
+      const msg: Record<string, Plain> = { role: "assistant", content: str(text) ?? "" };
+      if (Array.isArray(calls))
+        msg.tool_calls = calls.map((c) => {
+          const o = (c ?? {}) as Record<string, Plain>;
+          return { id: str(o.toolCallId) ?? null, name: str(o.toolName) ?? "tool", arguments: maybeJson(o.args ?? o.input) ?? null };
+        });
+      return [msg];
+    }
+  }
+  return undefined;
+}
+
+/**
+ * OpenTelemetry GenAI messages ({role, parts: [{type: "text", content}]}) and AI SDK
+ * content arrays ({type: "text", text}) flattened to {role, content} so they read like chat.
+ */
+function normalizeParts(v: Plain): Plain {
+  if (!Array.isArray(v)) return v;
+  return v.map((m) => {
+    if (!m || typeof m !== "object" || Array.isArray(m)) return m;
+    const msg = m as Record<string, Plain>;
+    const parts = Array.isArray(msg.parts) ? msg.parts : Array.isArray(msg.content) ? msg.content : null;
+    if (!parts) return msg;
+    const texts: string[] = [];
+    const calls: Plain[] = [];
+    for (const p of parts) {
+      if (!p || typeof p !== "object" || Array.isArray(p)) continue;
+      const part = p as Record<string, Plain>;
+      if (part.type === "text") texts.push(str(part.content ?? part.text) ?? "");
+      else if (part.type === "tool_call" || part.type === "tool-call") calls.push({ id: str(part.id ?? part.toolCallId) ?? null, name: str(part.name ?? part.toolName) ?? "tool", arguments: maybeJson(part.arguments ?? part.args ?? part.input) ?? null });
+      else if (part.type === "tool_call_response" || part.type === "tool-result") texts.push(str(part.response ?? part.result ?? part.output) ?? "");
+    }
+    const out: Record<string, Plain> = { role: msg.role ?? "user", content: texts.join("\n") };
+    if (calls.length) out.tool_calls = calls;
+    return out;
+  });
 }
 
 function llmToolCalls(attrs: Attrs): SpanView["toolCalls"] {
@@ -210,10 +265,10 @@ export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[]): SpanView {
       first(res, ["neatlogs.workflow_name", "neatlogs.workflow.name", "service.name"]),
   );
   view.agentName = str(first(attrs, ["neatlogs.agent.name", "agent.name", "gen_ai.agent.name"]));
-  view.model = str(first(attrs, ["neatlogs.llm.model_name", "gen_ai.response.model", "gen_ai.request.model", "llm.model_name", "neatlogs.embedding.model_name"]));
-  view.provider = str(first(attrs, ["neatlogs.llm.provider", "neatlogs.provider", "gen_ai.system", "gen_ai.provider.name", "llm.provider"]));
-  view.promptTokens = int(first(attrs, ["neatlogs.llm.token_count.prompt", "gen_ai.usage.input_tokens", "gen_ai.usage.prompt_tokens", "llm.token_count.prompt"]));
-  view.completionTokens = int(first(attrs, ["neatlogs.llm.token_count.completion", "gen_ai.usage.output_tokens", "gen_ai.usage.completion_tokens", "llm.token_count.completion"]));
+  view.model = str(first(attrs, ["neatlogs.llm.model_name", "gen_ai.response.model", "gen_ai.request.model", "llm.model_name", "ai.response.model", "ai.model.id", "neatlogs.embedding.model_name"]));
+  view.provider = str(first(attrs, ["neatlogs.llm.provider", "neatlogs.provider", "gen_ai.system", "gen_ai.provider.name", "llm.provider", "ai.model.provider"]));
+  view.promptTokens = int(first(attrs, ["neatlogs.llm.token_count.prompt", "gen_ai.usage.input_tokens", "gen_ai.usage.prompt_tokens", "llm.token_count.prompt", "ai.usage.promptTokens", "ai.usage.inputTokens"]));
+  view.completionTokens = int(first(attrs, ["neatlogs.llm.token_count.completion", "gen_ai.usage.output_tokens", "gen_ai.usage.completion_tokens", "llm.token_count.completion", "ai.usage.completionTokens", "ai.usage.outputTokens"]));
   view.totalTokens =
     int(first(attrs, ["neatlogs.llm.token_count.total", "gen_ai.usage.total_tokens", "llm.token_count.total"])) ??
     (view.promptTokens !== undefined || view.completionTokens !== undefined
@@ -221,11 +276,11 @@ export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[]): SpanView {
       : undefined);
 
   if (kind === "TOOL" || kind === "MCP_TOOL") {
-    view.toolName = str(first(attrs, ["neatlogs.tool.name", "tool.name", "gen_ai.tool.name"])) ?? span.name;
+    view.toolName = str(first(attrs, ["neatlogs.tool.name", "tool.name", "gen_ai.tool.name", "ai.toolCall.name", "traceloop.entity.name"])) ?? span.name;
   }
 
-  const genericIn = ["neatlogs.input.value", "input.value"];
-  const genericOut = ["neatlogs.output.value", "output.value"];
+  const genericIn = ["neatlogs.input.value", "input.value", "traceloop.entity.input"];
+  const genericOut = ["neatlogs.output.value", "output.value", "traceloop.entity.output"];
   switch (kind) {
     case "LLM": {
       const msgs = llmMessages(attrs, "input");
@@ -247,16 +302,16 @@ export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[]): SpanView {
     }
     case "TOOL":
     case "MCP_TOOL":
-      view.input = maybeJson(first(attrs, ["neatlogs.tool.input", "neatlogs.tool.arguments", ...genericIn, "gen_ai.tool.call.arguments"]));
-      view.output = maybeJson(first(attrs, ["neatlogs.tool.output", ...genericOut, "gen_ai.tool.call.result"]));
+      view.input = maybeJson(first(attrs, ["neatlogs.tool.input", "neatlogs.tool.arguments", ...genericIn, "gen_ai.tool.call.arguments", "ai.toolCall.args", "ai.toolCall.input"]));
+      view.output = maybeJson(first(attrs, ["neatlogs.tool.output", ...genericOut, "gen_ai.tool.call.result", "ai.toolCall.result", "ai.toolCall.output"]));
       break;
     case "WORKFLOW":
       view.input = maybeJson(first(attrs, ["neatlogs.workflow.input", ...genericIn]));
       view.output = maybeJson(first(attrs, ["neatlogs.workflow.output", ...genericOut]));
       break;
     case "AGENT":
-      view.input = maybeJson(first(attrs, ["neatlogs.agent.input", ...genericIn]));
-      view.output = maybeJson(first(attrs, ["neatlogs.agent.output", ...genericOut]));
+      view.input = maybeJson(first(attrs, ["neatlogs.agent.input", ...genericIn, "ai.prompt"]));
+      view.output = maybeJson(first(attrs, ["neatlogs.agent.output", ...genericOut, "ai.response.text"]));
       break;
     case "RETRIEVER":
       view.input = maybeJson(first(attrs, ["neatlogs.retriever.query", ...genericIn]));

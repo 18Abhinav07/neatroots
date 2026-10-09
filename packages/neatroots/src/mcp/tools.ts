@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { Roots } from "../core.js";
 import { runDetail, runSummary, spanDetail, checkFromInput } from "../server/api.js";
@@ -22,16 +21,16 @@ export interface ToolDef<S extends z.ZodRawShape = z.ZodRawShape> {
   run: (roots: Roots, args: z.infer<z.ZodObject<S>>) => Promise<unknown>;
 }
 
-function def<S extends z.ZodRawShape>(d: ToolDef<S>): ToolDef<S> {
+export function def<S extends z.ZodRawShape>(d: ToolDef<S>): ToolDef<S> {
   return d;
 }
 
-function clip(s: string | null | undefined, n: number): string | null {
+export function clip(s: string | null | undefined, n: number): string | null {
   if (s === null || s === undefined) return null;
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-function resolveTrace(roots: Roots, id: string | undefined): string {
+export function resolveTrace(roots: Roots, id: string | undefined): string {
   if (id) {
     const exact = roots.store.getRun(id);
     if (exact) return exact.trace_id;
@@ -45,7 +44,7 @@ function resolveTrace(roots: Roots, id: string | undefined): string {
   return latest.trace_id;
 }
 
-function resolveSpan(roots: Roots, traceId: string, spanId: string): string {
+export function resolveSpan(roots: Roots, traceId: string, spanId: string): string {
   const spans = roots.store.getSpans(traceId, true);
   const hit = spans.find((s) => s.span_id === spanId) ?? spans.find((s) => s.span_id.startsWith(spanId.toLowerCase()));
   if (!hit) throw new Error(`no span ${spanId} in run ${traceId}`);
@@ -376,32 +375,23 @@ export const TOOLS = [
   def({
     name: "rerun",
     title: "Rerun agent",
-    description: "Rerun the agent through the command the user registered for its project (neatroots rerun add). Returns the exit code, the output tail and the runs it produced.",
-    input: { project: z.string().optional().describe("Project (service.name); defaults to the latest run's project"), timeout_sec: z.number().int().min(5).max(900).optional() },
+    description:
+      "Rerun the agent through the command or HTTP replay endpoint registered for its project (neatroots rerun add), optionally with a different input, model or system prompt. Waits for the new run and returns it with its findings, so you can tell whether a fix worked.",
+    input: {
+      trace_id: z.string().optional().describe("Run to re-run; defaults to the run in focus or the latest"),
+      input: z.string().optional().describe("User input to run with instead of the original"),
+      model: z.string().optional(),
+      system: z.string().optional().describe("System prompt override (applied by the neatroots-steer hook)"),
+      timeout_sec: z.number().int().min(5).max(900).optional(),
+    },
     run: async (roots, a) => {
-      const project = a.project ?? roots.store.listRuns({ limit: 1 })[0]?.project ?? undefined;
-      const reg = project ? roots.config.rerun[project] : undefined;
-      if (!project || !reg) {
-        return { ran: false, reason: `No rerun command is registered${project ? ` for ${project}` : ""}. The user can add one with: neatroots rerun add <project> "<command>"`, registered: Object.keys(roots.config.rerun) };
-      }
-      const started = Date.now();
-      const result = await new Promise<{ code: number | null; out: string }>((resolve) => {
-        const child = spawn(reg.command, { shell: true, cwd: reg.cwd, env: { ...process.env, NEATLOGS_ENDPOINT: `http://localhost:${roots.config.port}`, NEATLOGS_API_KEY: process.env.NEATLOGS_API_KEY ?? "neatroots-local" } });
-        let out = "";
-        const keep = (b: Buffer) => {
-          out = (out + b.toString()).slice(-8000);
-        };
-        child.stdout.on("data", keep);
-        child.stderr.on("data", keep);
-        const t = setTimeout(() => child.kill("SIGTERM"), (a.timeout_sec ?? 300) * 1000);
-        child.on("close", (code) => {
-          clearTimeout(t);
-          resolve({ code, out });
-        });
-      });
-      await new Promise((r) => setTimeout(r, 1500));
-      const runs = roots.store.listRuns({ project, sinceMs: started - 1000, limit: 20 });
-      return { ran: true, project, command: reg.command, exit_code: result.code, output_tail: result.out.slice(-3000), runs: runs.map((r) => ({ trace_id: r.trace_id, status: r.status, findings: r.finding_count })) };
+      const traceId = resolveTrace(roots, a.trace_id);
+      const { replay, done } = roots.replays.startRun(traceId, { input: a.input, model: a.model, system: a.system });
+      const r = await Promise.race([done, new Promise<null>((res) => setTimeout(() => res(null), (a.timeout_sec ?? 300) * 1000))]);
+      if (!r) return { replay_id: replay.id, state: "running", note: "still running; call get_current_run or search_runs later" };
+      const run = r.new_trace_id ? runSummary(roots, roots.store.getRun(r.new_trace_id)!) : null;
+      const findings = r.new_trace_id ? roots.store.listFindings({ traceId: r.new_trace_id }).map((f) => ({ check: f.check_id, title: f.title, status: f.status })) : [];
+      return { replay_id: r.id, state: r.state, error: r.error, original: traceId, new_run: run, findings, log_tail: clip(r.log_tail, 2000) };
     },
   }),
   def({

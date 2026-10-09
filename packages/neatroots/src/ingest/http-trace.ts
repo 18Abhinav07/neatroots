@@ -1,0 +1,127 @@
+import crypto from "node:crypto";
+import type { ResourceSpansBatch } from "../otlp/types.js";
+import { toBatches, toNs, type SpanNode } from "./build.js";
+
+// The Neatlogs HTTP trace API (POST /v1/trace): one JSON tree per trace, no ids, nesting in
+// `children`. The Neatlogs Browser SDK sends the same shape. Field names follow the public docs.
+
+export interface HttpTraceNode {
+  name: string;
+  project?: string;
+  kind?: string;
+  input?: unknown;
+  output?: unknown;
+  model?: string;
+  provider?: string;
+  tokens?: { prompt?: number; completion?: number; total?: number };
+  query?: unknown;
+  documents?: unknown;
+  tool_name?: string;
+  passed?: boolean;
+  score?: number;
+  status?: string;
+  error?: string;
+  start?: string | number;
+  end?: string | number;
+  duration_ms?: number;
+  metadata?: Record<string, unknown>;
+  attributes?: Record<string, unknown>;
+  logs?: { level?: string; message: string; timestamp?: string }[];
+  children?: HttpTraceNode[];
+  session_id?: string;
+  sessionId?: string;
+  end_user_id?: string;
+  endUserId?: string;
+  user_id?: string;
+  tags?: string[];
+}
+
+export class HttpTraceError extends Error {
+  constructor(
+    message: string,
+    readonly details: Record<string, string>,
+  ) {
+    super(message);
+  }
+}
+
+function validate(node: unknown, path: string, errors: Record<string, string>): void {
+  if (!node || typeof node !== "object" || Array.isArray(node)) {
+    errors[path || "body"] = "must be an object";
+    return;
+  }
+  const n = node as Record<string, unknown>;
+  if (typeof n.name !== "string" || !n.name.trim()) errors[`${path}name`] = "required";
+  if (n.children !== undefined) {
+    if (!Array.isArray(n.children)) errors[`${path}children`] = "must be an array";
+    else n.children.forEach((c, i) => validate(c, `${path}children[${i}].`, errors));
+  }
+  if (n.tokens !== undefined && (typeof n.tokens !== "object" || n.tokens === null)) errors[`${path}tokens`] = "must be an object";
+  if (n.status !== undefined && !["OK", "ERROR", "ok", "error"].includes(String(n.status))) errors[`${path}status`] = "must be OK or ERROR";
+}
+
+/** Converts one HTTP trace into OTLP spans. Throws HttpTraceError with field details when it's malformed. */
+export function httpTraceToBatches(body: unknown, fallbackProject = "http"): { batches: ResourceSpansBatch[]; traceId: string; spans: number } {
+  const errors: Record<string, string> = {};
+  validate(body, "", errors);
+  if (Object.keys(errors).length) throw new HttpTraceError("Validation error", errors);
+  const root = body as HttpTraceNode;
+  const traceId = crypto.randomBytes(16).toString("hex");
+  const nodes: SpanNode[] = [];
+  const sessionId = root.session_id ?? root.sessionId;
+  const userId = root.end_user_id ?? root.endUserId ?? root.user_id;
+  const nowNs = BigInt(Date.now()) * 1_000_000n;
+
+  // Returns the node's end time, so a parent without times can span its children.
+  const walk = (n: HttpTraceNode, parent: string | null, startFallback: bigint): bigint => {
+    const spanId = crypto.randomBytes(8).toString("hex");
+    const start = toNs(n.start) ?? startFallback;
+    let cursor = start;
+    const childEnds: bigint[] = [];
+    const index = nodes.length;
+    nodes.push({ traceId, spanId, parentSpanId: parent, name: n.name, start: Number(start) } as SpanNode);
+    for (const c of n.children ?? []) {
+      const end = walk(c, spanId, cursor);
+      childEnds.push(end);
+      cursor = end;
+    }
+    let end = toNs(n.end);
+    if (end === undefined && typeof n.duration_ms === "number") end = start + BigInt(Math.round(n.duration_ms * 1e6));
+    if (end === undefined) end = childEnds.length ? childEnds.reduce((a, b) => (b > a ? b : a)) : start;
+    const kind = n.kind ?? (n.model ? "llm" : n.tool_name ? "tool" : n.query !== undefined || n.documents !== undefined ? "retriever" : n.passed !== undefined ? "guardrail" : parent ? "chain" : "workflow");
+    const attributes: Record<string, unknown> = { ...(n.attributes ?? {}) };
+    for (const [k, v] of Object.entries(n.metadata ?? {})) attributes[`neatlogs.metadata.${k}`] = v;
+    if (n.passed !== undefined) attributes["neatlogs.guardrail.passed"] = n.passed;
+    if (n.score !== undefined) attributes["neatlogs.guardrail.score"] = n.score;
+    if (!parent && root.tags?.length) attributes["neatlogs.tags"] = root.tags.join(",");
+    nodes[index] = {
+      traceId,
+      spanId,
+      parentSpanId: parent,
+      name: n.name,
+      kind,
+      start: Number(start),
+      end: Number(end),
+      status: n.status?.toUpperCase() ?? (n.error ? "ERROR" : "OK"),
+      error: n.error ?? null,
+      input: n.input ?? n.query,
+      output: n.output ?? n.documents,
+      model: n.model,
+      provider: n.provider,
+      promptTokens: n.tokens?.prompt,
+      completionTokens: n.tokens?.completion,
+      totalTokens: n.tokens?.total,
+      toolName: n.tool_name,
+      sessionId: sessionId ?? null,
+      userId: userId ?? null,
+      attributes,
+      logs: n.logs,
+    };
+    // Number() keeps ns precision only to ~1 µs; that is plenty for display and ordering.
+    return end;
+  };
+  walk(root, null, nowNs);
+  // SpanNode times are numbers in ns here; buildSpan reads values above 1e17 as ns.
+  const batches = toBatches(nodes, { project: root.project ?? fallbackProject, source: "http" });
+  return { batches, traceId, spans: nodes.length };
+}

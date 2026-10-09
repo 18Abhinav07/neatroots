@@ -54,7 +54,7 @@ function securityMiddleware(roots: Roots) {
           headers: {
             "access-control-allow-origin": "*",
             "access-control-allow-methods": "POST, OPTIONS",
-            "access-control-allow-headers": "content-type, content-encoding, x-api-key, x-neatlogs-doctor",
+            "access-control-allow-headers": "content-type, content-encoding, authorization, x-api-key, x-neatlogs-doctor",
             "access-control-max-age": "86400",
           },
         });

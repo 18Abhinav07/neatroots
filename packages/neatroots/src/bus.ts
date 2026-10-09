@@ -11,6 +11,14 @@ export interface RootsEvents {
   plan: { workflow: string; plan_id: string; trace_id?: string };
   settings: { project?: string };
   activity: { trace_id?: string; kind: string; message: string };
+  /** An import job's progress (ingest/importers). */
+  import: { id: string; source: string; state: string; traces: number; spans: number; failed: number; last_error: string | null };
+  /** One streamed event from a coding-agent chat session (agents/chat). */
+  chat: { session_id: string; event: Record<string, unknown> };
+  /** A coding agent asked the app to open something (MCP show_in_ui); path is a hash route. */
+  navigate: { path: string };
+  /** A replay finished or failed (replay/). */
+  replay: { id: string; state: string; trace_id: string; new_trace_id?: string | null; error?: string | null };
 }
 
 export class Bus {

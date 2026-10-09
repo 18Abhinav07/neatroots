@@ -11,6 +11,7 @@ import { mountModelsApi } from "./api-models.js";
 import { mountChecksApi } from "./api-checks.js";
 import { mountInsightsApi } from "./api-insights.js";
 import { mountAgentsApi } from "./api-agents.js";
+import { mountExploreApi } from "./api-explore.js";
 import { installInfo } from "../util/install.js";
 import { err, body } from "./util.js";
 import { askRuns } from "../engine/assist.js";
@@ -60,7 +61,19 @@ export function runDetail(roots: Roots, traceId: string) {
     decisions: decisions.filter((d) => d.check_id !== "neatroots.tool-result"),
     logs: roots.store.logsForTrace(traceId),
     forwarded: roots.store.forwardedTraceIds().has(traceId),
+    replays: roots.replays.forRun(traceId),
+    replay_of: roots.replays.originOf(traceId) ?? null,
+    import_source: importSource(roots, traceId),
   };
+}
+
+/** Where an imported run came from (neatroots.import.source on its resource), if it was imported. */
+function importSource(roots: Roots, traceId: string): string | null {
+  const run = roots.store.getRun(traceId);
+  if (!run?.root_span_id) return null;
+  const full = roots.store.getOtlpSpan(traceId, run.root_span_id);
+  const v = full?.resource.attributes.find((a) => a.key === "neatroots.import.source")?.value;
+  return v && "stringValue" in v && v.stringValue !== "http" && v.stringValue !== "replay" ? v.stringValue : null;
 }
 
 export function spanDetail(roots: Roots, traceId: string, spanId: string) {
@@ -114,6 +127,7 @@ export function mountApi(app: Hono, roots: Roots): void {
   mountChecksApi(app, roots);
   mountInsightsApi(app, roots);
   mountAgentsApi(app);
+  mountExploreApi(app, roots);
 
   app.get("/api/status", async (c) => {
     const status = engine ? await engine.status() : null;
@@ -368,6 +382,9 @@ export function mountApi(app: Hono, roots: Roots): void {
         }
         if (event === "finding" || event === "note") data.id = p.id;
         if (event === "settings") data.project = p.project ?? null;
+        if (event === "navigate") data.path = p.path;
+        if (event === "chat") Object.assign(data, { session_id: p.session_id, event: p.event });
+        if (event === "import" || event === "replay") Object.assign(data, p);
         queue.push({ event, data: JSON.stringify(data) });
         wake?.();
       });

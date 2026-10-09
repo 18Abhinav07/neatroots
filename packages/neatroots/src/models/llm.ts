@@ -37,6 +37,8 @@ export interface ChatOptions {
   signal?: AbortSignal;
   /** urgent: notes for a running agent. high: decisions and planning. low: investigations and summaries. */
   priority?: "urgent" | "high" | "low";
+  /** Use this model instead of the configured one (replays). */
+  model?: string;
 }
 
 export interface ProbeResult {
@@ -199,7 +201,7 @@ class OpenAiTransport implements Transport {
 
   async send(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
     const probe = await this.probe(false);
-    const model = this.model();
+    const model = opts.model || this.model();
     if (!probe.ok || !model) throw new LlmUnavailableError(probe.error ?? "no LLM available");
     const body: Record<string, unknown> = { model, messages, temperature: opts.temperature ?? 0, stream: false };
     // Hosted reasoning models count thinking against the limit, so give them room.
@@ -326,7 +328,7 @@ class AnthropicTransport implements Transport {
   }
 
   async send(messages: ChatMessage[], opts: ChatOptions): Promise<ChatResult> {
-    const model = this.model();
+    const model = opts.model || this.model();
     const client = await this.sdk();
     if (!model || !client) throw new LlmUnavailableError(model ? "no Anthropic API key stored" : "no Claude model set");
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
