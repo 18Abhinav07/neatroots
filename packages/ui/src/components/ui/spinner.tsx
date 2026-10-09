@@ -1,13 +1,27 @@
 import { Loading03Icon } from "@hugeicons/core-free-icons";
-import { cn } from "../../lib/cn";
-import { Icon, type IconSize } from "./icon";
+import type * as React from "react";
 
-/** Brand-violet activity indicator: Bolt or its local models are working. */
-export function Spinner({ size = "sm", label = "Working", className }: { size?: IconSize; label?: string; className?: string }) {
+import { cn } from "@/lib/utils";
+
+import { Icon } from "./icon";
+
+export interface SpinnerProps extends React.HTMLAttributes<HTMLDivElement> {
+  size?: "xxs" | "xs" | "sm" | "md" | "lg" | "xl";
+}
+
+export function Spinner({ size = "sm", className, ...props }: SpinnerProps) {
   return (
-    <span role={label ? "status" : undefined} className={cn("inline-flex text-brand-violet", className)}>
-      <Icon icon={Loading03Icon} size={size} className="animate-spin" />
-      {label && <span className="sr-only">{label}</span>}
-    </span>
+    <div
+      aria-label="Loading"
+      className={cn(
+        "text-muted-foreground flex animate-spin items-center justify-center",
+        className
+      )}
+      data-slot="spinner"
+      role="img"
+      {...props}
+    >
+      <Icon icon={Loading03Icon} size={size} />
+    </div>
   );
 }

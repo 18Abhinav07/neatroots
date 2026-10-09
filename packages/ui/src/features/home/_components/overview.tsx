@@ -1,76 +1,62 @@
-import { StatusPill, type Tone } from "../../../components/ui/status-pill";
-import type { Insights } from "../../../lib/api";
-import { cn } from "../../../lib/cn";
-import { dur, num } from "../../../lib/format";
+import { KpiCard, type KpiDelta } from "@/components/kpi/kpi-card";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
+import type { Insights } from "@/lib/api";
+import { dur, num } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export const PERIOD: Record<string, string> = { "24h": "24 hours", "7d": "7 days", "30d": "30 days" };
 
 const rate = (n: number, d: number) => (d ? n / d : 0);
 
 /** A change against the previous period. `worse` says which direction is bad, if either is. */
-function Delta({ now, before, worse, unit = "", percentPoints }: { now: number; before: number; worse?: "up" | "down"; unit?: string; percentPoints?: boolean }) {
+function delta(now: number, before: number, opts: { worse?: "up" | "down"; points?: boolean } = {}): KpiDelta {
   const diff = now - before;
-  if (!diff) return <span className="text-caption text-foreground-subtle">same as before</span>;
-  const shown = percentPoints ? `${Math.abs(Math.round(diff * 100))} pts` : `${Math.abs(Math.round(diff)).toLocaleString()}${unit}`;
-  const tone: Tone = !worse ? "neutral" : diff > 0 === (worse === "up") ? "warning" : "success";
-  return (
-    <StatusPill tone={tone} showDot={false}>
-      {diff > 0 ? "↑" : "↓"} {shown}
-    </StatusPill>
-  );
+  const direction = Math.abs(diff) < 1e-9 ? "flat" : diff > 0 ? "up" : "down";
+  const text = opts.points ? `${Math.abs(Math.round(diff * 100))} pts` : before ? `${Math.abs(Math.round((diff / before) * 100))}%` : "new";
+  const tone = direction === "flat" || !opts.worse ? "neutral" : (direction === opts.worse ? "bad" : "good");
+  return { text, direction, tone };
 }
 
-/** Four numbers for the period, each against the period before it. */
-export function Kpis({ data }: { data: Insights }) {
-  const t = data.totals;
-  const p = data.previous;
-  const hadBefore = p.runs > 0;
-  const tiles = [
-    {
-      label: "Runs",
-      value: num(t.runs),
-      sub: hadBefore ? `${num(p.runs)} the ${PERIOD[data.window.key]} before` : "none the period before",
-      delta: hadBefore && <Delta now={t.runs} before={p.runs} />,
-    },
-    {
-      label: "Runs with problems",
-      value: `${Math.round(rate(t.with_problems, t.runs) * 100)}%`,
-      sub: `${num(t.with_problems)} of ${num(t.runs)}`,
-      delta: hadBefore && <Delta now={rate(t.with_problems, t.runs)} before={rate(p.with_problems, p.runs)} worse="up" percentPoints />,
-    },
-    {
-      label: "Failed runs",
-      value: num(t.failed),
-      sub: t.failed ? "ended with an error or were cut off" : "none ended with an error",
-      delta: hadBefore && <Delta now={t.failed} before={p.failed} worse="up" />,
-    },
-    {
-      label: "Median run",
-      value: dur(t.p50_ms),
-      sub: t.p95_ms !== null ? `95% under ${dur(t.p95_ms)}` : "no finished runs",
-      delta: hadBefore && t.p50_ms !== null && p.p50_ms !== null && <Delta now={t.p50_ms} before={p.p50_ms} unit=" ms" />,
-    },
-  ];
+/** Four numbers for the period, each against the period before it, with the period's shape beside it. */
+export function Kpis({ data }: { data?: Insights }) {
+  const t = data?.totals;
+  const p = data?.previous;
+  const hadBefore = (p?.runs ?? 0) > 0;
+  const period = data ? PERIOD[data.window.key] : "";
+  const b = data?.buckets ?? [];
   return (
-    <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border lg:grid-cols-4">
-      {tiles.map((x, i) => (
-        <div
-          key={x.label}
-          className={cn(
-            "flex flex-col gap-1.5 px-4 py-3",
-            i > 0 && "lg:border-l lg:border-border",
-            i % 2 === 1 && "max-lg:border-l max-lg:border-border",
-            i >= 2 && "max-lg:border-t max-lg:border-border",
-          )}
-        >
-          <span className="text-eyebrow text-muted-foreground">{x.label}</span>
-          <span className="flex items-center gap-2">
-            <span className="text-heading text-foreground tabular-nums">{x.value}</span>
-            {x.delta}
-          </span>
-          <span className="text-caption text-foreground-subtle tabular-nums">{x.sub}</span>
-        </div>
-      ))}
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <KpiCard
+        label="Runs"
+        value={t && num(t.runs)}
+        comparison={period}
+        delta={t && p && hadBefore ? delta(t.runs, p.runs) : undefined}
+        footnote="no earlier runs to compare"
+        bars={b.map((x) => x.runs)}
+      />
+      <KpiCard
+        label="Runs with problems"
+        value={t && `${Math.round(rate(t.with_problems, t.runs) * 100)}%`}
+        comparison={period}
+        delta={t && p && hadBefore ? delta(rate(t.with_problems, t.runs), rate(p.with_problems, p.runs), { worse: "up", points: true }) : undefined}
+        footnote={t ? `${num(t.with_problems)} of ${num(t.runs)} runs` : undefined}
+        bars={b.map((x) => x.with_problems)}
+      />
+      <KpiCard
+        label="Failed runs"
+        value={t && num(t.failed)}
+        comparison={period}
+        delta={t && p && hadBefore ? delta(t.failed, p.failed, { worse: "up" }) : undefined}
+        footnote={t?.failed ? "ended with an error or were cut off" : "none ended with an error"}
+        bars={b.map((x) => x.failed)}
+      />
+      <KpiCard
+        label="Median run"
+        value={t && dur(t.p50_ms)}
+        comparison={period}
+        delta={t && p && hadBefore && t.p50_ms !== null && p.p50_ms !== null ? delta(t.p50_ms, p.p50_ms, { worse: "up" }) : undefined}
+        footnote={t?.p95_ms != null ? `95% of runs under ${dur(t.p95_ms)}` : "no finished runs"}
+      />
     </div>
   );
 }
@@ -85,26 +71,25 @@ export function Activity({ data }: { data: Insights }) {
   const hourly = data.window.bucket_ms < 86_400_000;
   const max = Math.max(1, ...data.buckets.map((b) => b.runs));
   const first = data.buckets[0];
-  const last = data.buckets[data.buckets.length - 1];
   return (
-    <section aria-labelledby="activity" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="activity" className="text-eyebrow text-muted-foreground">
-          Runs over time
-        </h2>
-        <span className="flex items-center gap-3 text-caption text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="size-2 rounded-xs bg-warning-fg" />
-            with problems
+    <Panel>
+      <PanelHeader
+        title="Runs over time"
+        actions={
+          <span className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="size-2 rounded-xs bg-warning-fg" />
+              with problems
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="size-2 rounded-xs bg-chart-bar" />
+              no problems
+            </span>
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="size-2 rounded-xs bg-chart-bar" />
-            no problems
-          </span>
-        </span>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <div role="img" aria-label={`Runs per ${hourly ? "hour" : "day"}`} className="flex h-24 items-end gap-1 border-b border-border">
+        }
+      />
+      <PanelContent className="flex flex-col gap-1.5">
+        <div role="img" aria-label={`Runs per ${hourly ? "hour" : "day"}`} className="flex h-32 items-end gap-1 border-b border-border">
           {data.buckets.map((b) => {
             const clean = Math.max(0, b.runs - b.with_problems);
             return (
@@ -120,11 +105,11 @@ export function Activity({ data }: { data: Insights }) {
             );
           })}
         </div>
-        <div className="flex justify-between text-caption text-foreground-subtle tabular-nums">
+        <div className="flex justify-between text-xs text-muted-foreground tabular-nums">
           <span>{first && bucketLabel(first.start_ms, hourly)}</span>
-          <span>{last && (hourly ? "now" : "today")}</span>
+          <span>{hourly ? "now" : "today"}</span>
         </div>
-      </div>
-    </section>
+      </PanelContent>
+    </Panel>
   );
 }

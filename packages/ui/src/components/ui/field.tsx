@@ -1,44 +1,66 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
-import { cn } from "../../lib/cn";
+"use client";
 
-const control =
-  "w-full rounded-md border border-input bg-card px-2.5 text-body text-foreground placeholder:text-foreground-subtle transition-colors motion-fast focus-visible:border-ring focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:ring-inset disabled:opacity-50";
+import type { ComponentProps } from "react";
+import { tv, type VariantProps } from "tailwind-variants";
 
-export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(control, "h-8", className)} {...rest} />;
-}
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
-export function Textarea({ className, mono, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { mono?: boolean }) {
-  return <textarea className={cn(control, "py-2 leading-5", mono && "font-mono text-xs", className)} {...rest} />;
-}
-
-export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+function FieldGroup({ className, ...props }: ComponentProps<"div">) {
   return (
-    <select className={cn(control, "h-8 cursor-pointer pr-7", className)} {...rest}>
-      {children}
-    </select>
+    <div
+      className={cn(
+        "group/field-group @container/field-group flex w-full flex-col gap-7",
+        className
+      )}
+      data-slot="field-group"
+      {...props}
+    />
   );
 }
 
-/** A labeled form field. */
-export function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: ReactNode; children: ReactNode }) {
+const fieldVariants = tv({
+  base: "group/field flex w-full gap-3 data-[invalid=true]:text-destructive",
+  defaultVariants: {
+    orientation: "vertical",
+  },
+  variants: {
+    orientation: {
+      horizontal: "flex-row items-center",
+      responsive:
+        "flex-col @md/field-group:flex-row @md/field-group:items-center [&>*]:w-full [&>.sr-only]:w-auto",
+      vertical: "flex-col [&>*]:w-full [&>.sr-only]:w-auto",
+    },
+  },
+});
+
+function Field({
+  className,
+  orientation = "vertical",
+  ...props
+}: ComponentProps<"div"> & VariantProps<typeof fieldVariants>) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="text-label text-muted-foreground">
-        {label}
-      </label>
-      {children}
-      {hint && <div className="text-caption text-foreground-subtle">{hint}</div>}
-    </div>
+    <div
+      className={cn(fieldVariants({ orientation }), className)}
+      data-orientation={orientation}
+      data-slot="field"
+      role="group"
+      {...props}
+    />
   );
 }
 
-/** Label + value pair: type and space carry the hierarchy, no box. */
-export function PropertyRow({ label, children }: { label: string; children: ReactNode }) {
+function FieldLabel({ className, ...props }: ComponentProps<typeof Label>) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-label text-muted-foreground">{label}</span>
-      <span className="min-w-0 text-body text-foreground">{children}</span>
-    </div>
+    <Label
+      className={cn(
+        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50",
+        className
+      )}
+      data-slot="field-label"
+      {...props}
+    />
   );
 }
+
+export { Field, FieldGroup, FieldLabel };

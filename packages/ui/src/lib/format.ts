@@ -46,3 +46,13 @@ export function pretty(v: unknown): string {
   if (typeof v === "string") return v;
   return JSON.stringify(v, null, 2);
 }
+
+/** A table timestamp, as in the Neatlogs app: "09:21 PM" and "Jul 17". */
+export function stamp(ms: number | null | undefined): { time: string; date: string } {
+  if (!ms) return { time: "—", date: "" };
+  const d = new Date(ms);
+  return {
+    time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+    date: d.toLocaleDateString(undefined, { month: "short", day: "2-digit" }),
+  };
+}

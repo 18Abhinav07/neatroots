@@ -1,6 +1,8 @@
-import type { BadgeVariant } from "../../../components/ui/neat-badge";
-import type { Tone } from "../../../components/ui/status-pill";
-import type { FindingStatus, NoteStatus, RunStatus } from "../../../lib/api";
+import type { NeatBadgeVariant as BadgeVariant } from "@/components/neat-ui/neat-badge";
+import type { FindingStatus, NoteStatus, RunStatus } from "@/lib/api";
+
+/** StatusPill tones (STATE family). */
+export type Tone = "success" | "danger" | "warning" | "info" | "muted" | "neutral";
 
 /** STATE mappers: outcomes that change over time. */
 export const RUN_STATE: Record<RunStatus, { tone: Tone; label: string }> = {
@@ -14,15 +16,15 @@ export const FINDING_STATE: Record<FindingStatus, { tone: Tone; label: string }>
   raised: { tone: "warning", label: "Open" },
   active: { tone: "warning", label: "Sent to agent" },
   resolved: { tone: "success", label: "Resolved" },
-  dismissed: { tone: "neutral", label: "Dismissed" },
-  failed: { tone: "neutral", label: "Not checked" },
+  dismissed: { tone: "muted", label: "Dismissed" },
+  failed: { tone: "muted", label: "Not checked" },
 };
 
 export const NOTE_STATE: Record<NoteStatus, { tone: Tone; label: string }> = {
   pending: { tone: "info", label: "Queued" },
   delivered: { tone: "success", label: "Delivered" },
-  superseded: { tone: "neutral", label: "Replaced" },
-  expired: { tone: "neutral", label: "Not sent" },
+  superseded: { tone: "muted", label: "Replaced" },
+  expired: { tone: "muted", label: "Not sent" },
   blocked: { tone: "danger", label: "Blocked" },
 };
 

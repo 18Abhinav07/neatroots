@@ -1,65 +1,122 @@
-import { Activity01Icon } from "@hugeicons/core-free-icons";
+import { BarChartHorizontalIcon, Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { useEffect, useState } from "react";
-import { Empty, EmptyHeader, EmptyMedia } from "../../../components/ui/empty";
-import type { Status } from "../../../lib/api";
-import { cn } from "../../../lib/cn";
-import { go } from "../../../lib/router";
+import { CodeLine } from "@/components/code-line";
+import { ListPageLayout } from "@/components/list-page/list-page-layout";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { Status } from "@/lib/api";
 import type { RunListParams } from "../_services/run-keys";
 import { useRuns } from "../_services/run-queries";
 import { useProjects } from "../../settings/_services/settings-queries";
-import { RunDetail } from "./run-detail";
-import { FirstRunEmpty, RunsList } from "./runs-list";
+import { RunsTable } from "./runs-table";
+
+const ALL_PROJECTS = "__all__";
 
 /** Filters a link can set: #/runs?project=…, or ?check=…&label=… for runs with one problem. */
 function fromQuery(q: URLSearchParams): Partial<RunListParams> {
   return { project: q.get("project") ?? "", check: q.get("check") ?? undefined, label: q.get("label") ?? undefined };
 }
 
-/**
- * The run list and the open run, side by side. Each pane scrolls on its own, so the list
- * never scrolls away. On narrow screens one pane shows at a time.
- */
-export function RunsPage({ runId, status, query }: { runId?: string; status?: Status; query: URLSearchParams }) {
+/** Every run Neatlogs Bolt recorded, as a full-bleed table like the Neatlogs traces page. */
+export function RunsPage({ status, query }: { status?: Status; query: URLSearchParams }) {
   const [params, setParams] = useState<RunListParams>(() => ({ q: "", status: "", hasFinding: false, project: "", ...fromQuery(query) }));
   const qs = query.toString();
-  // A new link with filters replaces the current ones; opening a run (no query) keeps them.
   useEffect(() => {
     const q = new URLSearchParams(qs);
     if (q.has("project") || q.has("check")) setParams((p) => ({ ...p, ...fromQuery(q) }));
   }, [qs]);
-  const { data } = useRuns(params);
-  const runs = data?.runs ?? [];
-  const neverReceived = data !== undefined && data.total === 0;
+  const { data, isLoading } = useRuns(params);
   const { data: known } = useProjects();
+  const runs = data?.runs ?? [];
   const projects = [...new Set([...(known?.projects ?? []).map((p) => p.project), params.project].filter(Boolean))] as string[];
+  const filtered = !!(params.q || params.status || params.hasFinding || params.project || params.check);
+  const clear = () => setParams({ q: "", status: "", hasFinding: false, project: "" });
 
-  // Open the newest run when nothing is selected, where both panes fit.
-  useEffect(() => {
-    if (!runId && runs[0] && window.innerWidth >= 1024) go(`runs/${runs[0].trace_id}`);
-  }, [runId, runs]);
-
-  if (neverReceived) {
+  if (data && data.total === 0) {
     return (
-      <main className="h-full overflow-y-auto">
-        <FirstRunEmpty port={status?.port ?? 4100} llmOk={!!status?.engine?.llm.ok} llmUrl={status?.config.llm.baseUrl} />
-      </main>
+      <ListPageLayout icon={<Icon icon={BarChartHorizontalIcon} />} title="Runs">
+        <div className="flex flex-1 items-center justify-center px-6 py-12">
+          <EmptyState
+            variant="inline"
+            icon={BarChartHorizontalIcon}
+            title="No runs yet"
+            description="Point the Neatlogs SDK at Neatlogs Bolt and run your agent. Its runs appear here as they happen."
+          >
+            <div className="mt-4 flex w-full max-w-lg flex-col gap-2 text-left">
+              <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${status?.port ?? 4100}\nexport NEATLOGS_API_KEY=neatbolt-local`} />
+              <CodeLine text={`neatlogs.init(workflow_name="my-agent", flush_interval=0.5)`} />
+            </div>
+          </EmptyState>
+        </div>
+      </ListPageLayout>
     );
   }
+
   return (
-    <div className="flex h-full min-h-0">
-      <aside className={cn("flex h-full min-h-0 w-full shrink-0 flex-col border-r border-border/60 lg:w-[22rem] xl:w-[24rem]", runId && "max-lg:hidden")}>
-        <RunsList runs={runs} total={data?.total} selected={runId} params={params} setParams={setParams} projects={projects} />
-      </aside>
-      <main className={cn("h-full min-w-0 flex-1 overflow-y-auto", !runId && "max-lg:hidden")}>
-        {runId ? (
-          <RunDetail key={runId} traceId={runId} />
-        ) : (
-          <Empty className="h-full">
-            <EmptyMedia icon={Activity01Icon} />
-            <EmptyHeader title="Select a run" description="Pick a run on the left to see what it was asked, what went wrong and the trace." />
-          </Empty>
-        )}
-      </main>
-    </div>
+    <ListPageLayout
+      icon={<Icon icon={BarChartHorizontalIcon} />}
+      title="Runs"
+      actions={
+        <div className="relative w-64">
+          <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground">
+            <Icon icon={Search01Icon} size="xxs" />
+          </span>
+          <Input aria-label="Search runs" className="h-8 pl-8" placeholder="Search requests, tools, outputs" value={params.q} onChange={(e) => setParams({ ...params, q: e.target.value })} />
+        </div>
+      }
+      filters={
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedTabs
+            variant="pill"
+            value={params.hasFinding ? "problems" : params.status || "all"}
+            onValueChange={(v) => setParams({ ...params, status: v === "running" || v === "error" ? v : "", hasFinding: v === "problems" })}
+            items={[
+              { value: "all", label: "All" },
+              { value: "problems", label: "With problems" },
+              { value: "error", label: "Failed" },
+              { value: "running", label: "Running" },
+            ]}
+          />
+          {projects.length > 1 && (
+            <Select value={params.project || ALL_PROJECTS} onValueChange={(v) => setParams({ ...params, project: v === ALL_PROJECTS || !v ? "" : String(v) })}>
+              <SelectTrigger aria-label="Project" className="h-7 w-auto gap-1.5 rounded-full px-3 text-xs">
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {params.check && (
+            <span className="inline-flex h-7 max-w-80 items-center gap-1 rounded-full border border-info-border bg-info-surface pr-1 pl-2.5 text-xs text-info-fg">
+              <span className="truncate" title={params.label ?? params.check}>
+                Problem: {params.label ?? params.check}
+              </span>
+              <button type="button" aria-label="Clear the problem filter" onClick={() => setParams({ ...params, check: undefined, label: undefined })} className="flex size-5 cursor-pointer items-center justify-center rounded-full hover:bg-info-fg/10">
+                <Icon icon={Cancel01Icon} size="xs" />
+              </button>
+            </span>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">{data ? `${runs.length}${filtered ? " matching" : ""} of ${data.total} runs` : ""}</span>
+        </div>
+      }
+    >
+      {!isLoading && !runs.length && filtered ? (
+        <div className="px-6 py-12">
+          <EmptyState state="no-results" variant="inline" title="No runs match these filters" description="Clear the filters to see every run Neatlogs Bolt has recorded." action={<Button variant="outline" onClick={clear}>Clear filters</Button>} />
+        </div>
+      ) : (
+        <RunsTable runs={runs} loading={isLoading} />
+      )}
+    </ListPageLayout>
   );
 }

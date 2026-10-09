@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Button } from "../components/ui/button";
-import { api, post, type ForwardPreview, type Push } from "../lib/api";
-import { appKeys } from "../features/runs/_services/run-keys";
+import { PendingButton } from "@/components/pending-button";
+import { Button } from "@/components/ui/button";
+import { appKeys } from "@/features/runs/_services/run-keys";
+import { api, post, type ForwardPreview, type Push } from "@/lib/api";
 
 /** A coding agent asked to push runs to Neatlogs Cloud; nothing is sent until the user confirms here. */
 export function PushBanner() {
@@ -27,7 +28,7 @@ export function PushBanner() {
   const pv = preview.data;
   const n = p.trace_ids.length;
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-3 border-b border-info-border bg-info-surface px-6 py-2.5 text-body">
+    <div role="alert" className="flex flex-wrap items-center gap-3 border-b border-info-border bg-info-surface px-6 py-2.5 text-sm">
       <span className="min-w-0 flex-1 text-foreground">
         Your coding agent asked to send {n} run{n > 1 ? "s" : ""} to Neatlogs Cloud.
         {pv && (
@@ -42,9 +43,9 @@ export function PushBanner() {
       <Button variant="ghost" size="sm" disabled={act.isPending} onClick={() => act.mutate("decline")}>
         Decline push
       </Button>
-      <Button size="sm" pending={act.isPending} disabled={!pv?.has_key} onClick={() => act.mutate("confirm")}>
+      <PendingButton size="sm" pending={act.isPending} disabled={!pv?.has_key} onClick={() => act.mutate("confirm")}>
         Send {n > 1 ? "runs" : "run"} to Cloud
-      </Button>
+      </PendingButton>
     </div>
   );
 }

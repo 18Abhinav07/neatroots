@@ -1,5 +1,5 @@
-import { pretty } from "../../../lib/format";
-import { cn } from "../../../lib/cn";
+import { pretty } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const GUIDANCE = /(<neatbolt-guidance>[\s\S]*?<\/neatbolt-guidance>)/g;
 
@@ -11,7 +11,7 @@ function Content({ value }: { value: unknown }) {
       {text.split(GUIDANCE).map((part, i) =>
         part.startsWith("<neatbolt-guidance>") ? (
           <span key={i} className="my-1.5 block rounded-sm border-l-2 border-brand-violet bg-muted px-2.5 py-1.5">
-            <span className="mb-1 block text-micro text-brand-violet">Added by Bolt</span>
+            <span className="mb-1 block text-micro text-brand-violet">Added by Neatlogs Bolt</span>
             {part.replace(/<\/?neatbolt-guidance>\n?/g, "").trim()}
           </span>
         ) : (
@@ -24,7 +24,7 @@ function Content({ value }: { value: unknown }) {
 
 /** LLM messages as role-labeled blocks; anything else as a JSON well. */
 export function MessageList({ value }: { value: unknown }) {
-  if (value === undefined) return <p className="text-body text-foreground-subtle">Not captured by the SDK.</p>;
+  if (value === undefined) return <p className="text-sm text-muted-foreground">Not captured by the SDK.</p>;
   if (Array.isArray(value) && value.length && value.every((m) => m && typeof m === "object" && "role" in m)) {
     return (
       <div className="flex flex-col gap-2">
@@ -34,14 +34,14 @@ export function MessageList({ value }: { value: unknown }) {
           return (
             <div key={i} className="overflow-hidden rounded-md border border-border">
               <div className="border-b border-border bg-surface-subtle px-3 py-1.5 text-micro text-muted-foreground">{String(m.role)}</div>
-              <div className="max-h-96 overflow-auto px-3 py-2 text-body break-words whitespace-pre-wrap text-foreground">
+              <div className="max-h-96 overflow-auto px-3 py-2 text-sm break-words whitespace-pre-wrap text-foreground">
                 <Content value={m.content} />
                 {calls.map((c, j) => (
                   <div key={j} className="font-mono text-xs text-muted-foreground">
                     → {String(c.name)}({typeof c.arguments === "string" ? c.arguments : JSON.stringify(c.arguments)})
                   </div>
                 ))}
-                {empty && <span className={cn("text-foreground-subtle")}>{m.role === "assistant" ? "Tool call (the SDK did not record its arguments here)" : "Empty"}</span>}
+                {empty && <span className={cn("text-muted-foreground")}>{m.role === "assistant" ? "Tool call (the SDK did not record its arguments here)" : "Empty"}</span>}
               </div>
             </div>
           );
@@ -51,7 +51,7 @@ export function MessageList({ value }: { value: unknown }) {
   }
   if (typeof value === "string") {
     return (
-      <div className="max-h-96 overflow-auto rounded-md border border-border bg-muted px-3 py-2 text-body break-words whitespace-pre-wrap text-foreground">
+      <div className="max-h-96 overflow-auto rounded-md border border-border bg-muted px-3 py-2 text-sm break-words whitespace-pre-wrap text-foreground">
         <Content value={value} />
       </div>
     );

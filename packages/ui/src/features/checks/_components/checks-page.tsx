@@ -1,160 +1,124 @@
-import { CheckListIcon } from "@hugeicons/core-free-icons";
+import { CheckListIcon, Search01Icon } from "@hugeicons/core-free-icons";
 import { useState } from "react";
-import { PageHeader } from "../../../components/ui/page-header";
 import { toast } from "sonner";
-import { Button } from "../../../components/ui/button";
-import { Field, Textarea } from "../../../components/ui/field";
-import { Panel } from "../../../components/ui/panel";
-import { pct } from "../../../lib/format";
-import { go } from "../../../lib/router";
-import { useCheckActions, useChecks, type PreviewResult } from "../_services/check-queries";
-import { CheckList } from "./check-list";
+import { ListPageLayout } from "@/components/list-page/list-page-layout";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import type { CheckRow } from "@/lib/api";
+import { useCheckActions, useChecks } from "../_services/check-queries";
+import { CheckEditor } from "./check-editor";
+import { CheckSheet } from "./check-sheet";
+import { ChecksTable } from "./checks-table";
 
+type Group = "all" | "rules" | "yours" | "planner" | "library";
+
+const MATCH: Record<Group, (c: CheckRow) => boolean> = {
+  all: () => true,
+  rules: (c) => c.kind === "rule",
+  yours: (c) => c.kind !== "rule" && (c.source === "user" || c.source === "project" || c.source === "mcp"),
+  planner: (c) => c.kind !== "rule" && c.source === "planner",
+  library: (c) => c.kind !== "rule" && c.source === "library",
+};
+
+/** Everything Neatlogs Bolt watches for, as one table; a check opens in a side sheet. */
 export function ChecksPage() {
-  const { data } = useChecks();
+  const { data, isLoading } = useChecks();
   const a = useCheckActions();
-  const [concern, setConcern] = useState("");
-  const [yaml, setYaml] = useState("");
-  const [preview, setPreview] = useState<PreviewResult>();
-  const [editing, setEditing] = useState(false);
-  const close = () => {
-    setEditing(false);
-    setYaml("");
-    setConcern("");
-    setPreview(undefined);
-  };
+  const [group, setGroup] = useState<Group>("all");
+  const [q, setQ] = useState("");
+  const [openId, setOpenId] = useState<string>();
+  const [editor, setEditor] = useState<{ yaml: string; n: number }>();
+  const all = data?.checks ?? [];
+  const needle = q.trim().toLowerCase();
+  const checks = all.filter((c) => MATCH[group](c) && (!needle || c.title.toLowerCase().includes(needle) || c.id.includes(needle)));
+  const count = (g: Group) => all.filter(MATCH[g]).length;
 
   return (
-    <div className="flex flex-col pb-12">
-      <PageHeader icon={CheckListIcon} title="Checks" actions={!editing && <Button onClick={() => setEditing(true)}>New check</Button>} />
-      <div className="flex flex-col gap-6 px-6 pt-2">
-        <p className="max-w-3xl text-body text-muted-foreground">
-          Everything Bolt watches for. Rules run in code on every span. Questions go to the decision model, and the LLM picks the ones that fit each agent.
-        </p>
-        {!!data?.errors.length && (
-          <div role="alert" className="flex flex-col gap-1 rounded-lg border border-danger-border bg-danger-surface px-4 py-3">
-            <span className="text-body-strong text-danger-fg">Some check files didn't load</span>
-            {data.errors.map((e, i) => (
-              <span key={i} className="font-mono text-xs text-danger-fg">
-                {e.path}
-                {e.id ? ` (${e.id})` : ""}: {e.message}
-              </span>
-            ))}
+    <ListPageLayout
+      icon={<Icon icon={CheckListIcon} />}
+      title="Checks"
+      actions={
+        <>
+          <div className="relative hidden sm:block">
+            <Icon icon={Search01Icon} size="xs" className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground" />
+            <Input aria-label="Search checks" placeholder="Search checks" className="h-8 w-56 pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-        )}
-        <div className={editing ? "grid items-start gap-6 lg:grid-cols-[1fr_400px]" : "flex flex-col"}>
-          <CheckList
-            checks={data?.checks ?? []}
-            onToggle={(id, enabled) => a.toggle.mutate({ id, enabled })}
-            onEdit={(y) => {
-              setYaml(y);
-              setPreview(undefined);
-              setEditing(true);
-            }}
-            onDelete={(id) => a.remove.mutate(id, { onSuccess: () => toast.success(`Deleted check ${id}`) })}
+          <Button onClick={() => setEditor({ yaml: "", n: Date.now() })}>New check</Button>
+        </>
+      }
+      filters={
+        <div className="flex w-full flex-wrap items-center gap-3">
+          <SegmentedTabs
+            size="compact"
+            value={group}
+            onValueChange={setGroup}
+            items={[
+              { value: "all", label: `All ${count("all")}` },
+              { value: "rules", label: `Rules ${count("rules")}` },
+              { value: "yours", label: `Yours ${count("yours")}` },
+              { value: "planner", label: `Planner ${count("planner")}` },
+              { value: "library", label: `Library ${count("library")}` },
+            ]}
           />
-          {editing && (
-            <Panel
-              title={yaml && !concern ? "Edit check" : "New check"}
-              className="lg:sticky lg:top-6"
-              actions={
-                <Button size="sm" variant="ghost" onClick={close}>
-                  Close
-                </Button>
-              }
-            >
-              <div className="flex flex-col gap-4 px-4 py-4">
-                <Field label="Describe a problem in plain language" htmlFor="concern" hint="The local LLM turns it into a yes/no question.">
-                  <Textarea
-                    id="concern"
-                    rows={3}
-                    placeholder="The agent refunds without checking the customer owns the order"
-                    value={concern}
-                    onChange={(e) => setConcern(e.target.value)}
-                  />
-                </Field>
-                <div>
-                  <Button
-                    variant="outline"
-                    disabled={concern.trim().length < 8}
-                    pending={a.draft.isPending}
-                    pendingLabel="Drafting…"
-                    onClick={() =>
-                      a.draft.mutate(concern, {
-                        onSuccess: (r) => {
-                          setYaml(r.yaml);
-                          setPreview(undefined);
-                        },
-                        onError: (e) => toast.error(`Couldn't draft the check: ${(e as Error).message}. Your description is still here.`),
-                      })
-                    }
-                  >
-                    Draft check
-                  </Button>
-                </div>
-                <Field label="Check (YAML)" htmlFor="check-yaml" hint="Edit freely, or paste your own.">
-                  <Textarea
-                    id="check-yaml"
-                    mono
-                    rows={14}
-                    value={yaml}
-                    onChange={(e) => setYaml(e.target.value)}
-                    placeholder={"id: my-check\nkind: yes_no\nscope: trace\nask: Did the agent ...?\nflag_at: 0.8"}
-                  />
-                </Field>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={!yaml}
-                    pending={a.preview.isPending}
-                    pendingLabel="Previewing…"
-                    onClick={() => a.preview.mutate(yaml, { onSuccess: setPreview, onError: (e) => toast.error(`Couldn't preview the check: ${(e as Error).message}`) })}
-                  >
-                    Preview on recent runs
-                  </Button>
-                  <Button
-                    disabled={!yaml}
-                    pending={a.save.isPending}
-                    onClick={() =>
-                      a.save.mutate(yaml, {
-                        onSuccess: (r) => {
-                          toast.success(`Saved ${r.id} to ${r.path}`);
-                          close();
-                        },
-                        onError: (e) => toast.error(`Couldn't save the check: ${(e as Error).message}. Your YAML is still in the editor.`),
-                      })
-                    }
-                  >
-                    Save check
-                  </Button>
-                </div>
-                {preview && (
-                  <div className="flex flex-col gap-1.5 rounded-md bg-surface-subtle px-3 py-2.5">
-                    <span className="text-body text-foreground tabular-nums">
-                      Fires on {preview.hits.length} of {preview.checked} runs · hit rate {pct(preview.hit_rate)}
-                      {preview.truncated ? ` (stopped early; ${preview.total} available)` : ""}
-                    </span>
-                    {preview.hits.slice(0, 8).map((h) => (
-                      <button
-                        key={h.trace_id}
-                        type="button"
-                        onClick={() => go(`runs/${h.trace_id}`)}
-                        className="focus-ring cursor-pointer text-left text-caption text-muted-foreground hover:text-foreground"
-                      >
-                        <span className="font-mono">{h.trace_id.slice(0, 8)}</span> {h.root_name} {h.probability !== null ? `· ${pct(h.probability)}` : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <p className="text-caption text-foreground-subtle">
-                  Saved to <span className="font-mono">{data?.user_dir ?? "~/.neatbolt/checks"}</span>. To share checks with your team, run{" "}
-                  <span className="font-mono">neatbolt init</span> in your repo and keep them in <span className="font-mono">.neatbolt/checks/</span>.
-                </p>
-              </div>
-            </Panel>
-          )}
+          <span className="ml-auto hidden text-xs text-muted-foreground lg:block">Rules run in code on every span. The LLM picks the questions that fit each agent.</span>
         </div>
-      </div>
-    </div>
+      }
+    >
+      {!!data?.errors.length && (
+        <div role="alert" className="mx-6 mt-3 flex max-h-32 flex-col gap-1 overflow-y-auto rounded-lg border border-danger-border bg-danger-surface px-4 py-3">
+          <span className="text-sm font-medium text-danger-fg">Some check files didn't load</span>
+          {data.errors.map((e, i) => (
+            <span key={i} className="font-mono text-xs text-danger-fg">
+              {e.path}
+              {e.id ? ` (${e.id})` : ""}: {e.message}
+            </span>
+          ))}
+        </div>
+      )}
+      {!isLoading && !checks.length ? (
+        <div className="flex flex-1 items-center justify-center px-6 py-12">
+          <EmptyState
+            variant="inline"
+            state="no-results"
+            title="No checks match"
+            description="Try another group or search."
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setGroup("all");
+                  setQ("");
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <ChecksTable checks={checks} loading={isLoading} onToggle={(id, enabled) => a.toggle.mutate({ id, enabled })} onOpen={setOpenId} />
+      )}
+      <CheckSheet
+        check={all.find((c) => c.id === openId)}
+        onClose={() => setOpenId(undefined)}
+        onEdit={(yaml) => {
+          setOpenId(undefined);
+          setEditor({ yaml, n: Date.now() });
+        }}
+        onDelete={(id) =>
+          a.remove.mutate(id, {
+            onSuccess: () => {
+              toast.success(`Deleted check ${id}`);
+              setOpenId(undefined);
+            },
+          })
+        }
+      />
+      {editor && <CheckEditor key={editor.n} open initialYaml={editor.yaml} userDir={data?.user_dir} onClose={() => setEditor(undefined)} />}
+    </ListPageLayout>
   );
 }

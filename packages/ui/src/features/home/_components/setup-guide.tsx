@@ -1,11 +1,12 @@
 import { ArrowDown01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useState, type ReactNode } from "react";
-import { Button } from "../../../components/ui/button";
-import { CodeLine } from "../../../components/ui/copy-button";
-import { Icon } from "../../../components/ui/icon";
-import type { ProjectRow, Status } from "../../../lib/api";
-import { cn } from "../../../lib/cn";
-import { ago } from "../../../lib/format";
+import { CodeLine } from "@/components/code-line";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
+import type { ProjectRow, Status } from "@/lib/api";
+import { ago } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface Step {
   id: string;
@@ -29,12 +30,12 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "runs",
       short: "Runs arriving",
-      title: "Send your agent's runs to Bolt",
+      title: "Send your agent's runs to Neatlogs Bolt",
       done: status.stats.runs > 0,
       state: `${status.stats.runs.toLocaleString()} runs from ${names.length} project${names.length === 1 ? "" : "s"}${names.length ? ` (${names.slice(0, 3).join(", ")})` : ""}`,
       body: (
         <>
-          <p>Bolt reads what the Neatlogs SDK already sends. Set two variables where your agent runs; no code change is needed.</p>
+          <p>Neatlogs Bolt reads what the Neatlogs SDK already sends. Set two variables where your agent runs; no code change is needed.</p>
           <CodeLine text={`export NEATLOGS_ENDPOINT=http://localhost:${port}\nexport NEATLOGS_API_KEY=neatbolt-local`} />
           <p>Not using the SDK yet? Add it and name your agent; that name becomes the project here.</p>
           <CodeLine text={`neatlogs.init(workflow_name="my-agent", flush_interval=0.5)`} />
@@ -44,12 +45,12 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "llm",
       short: "LLM",
-      title: "Give Bolt an LLM to ask questions with",
+      title: "Give Neatlogs Bolt an LLM to ask questions with",
       done: !!llm?.ok,
       state: llm?.ok ? `${llm.model}${hosted ? ` (hosted: ${llm.where})` : " on this machine"}` : "",
       body: (
         <>
-          <p>Rules run without one. An LLM lets Bolt pick the questions that fit your agent, explain problems and summarize runs. Run one locally:</p>
+          <p>Rules run without one. An LLM lets it pick the questions that fit your agent, explain problems and summarize runs. Run one locally:</p>
           <CodeLine text="ollama pull qwen3:8b" />
           <p>
             Or use a hosted model (opt-in; run content is sent to it): <span className="font-mono">neatbolt llm use anthropic</span>, or{" "}
@@ -64,7 +65,7 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "mcp",
       short: "Coding agent",
-      title: "Let your coding agent read what Bolt finds",
+      title: "Let your coding agent read what Neatlogs Bolt finds",
       optional: true,
       done: !!status.mcp?.last_seen_ms,
       state: status.mcp?.last_seen_ms ? `a coding agent last asked ${ago(status.mcp.last_seen_ms)}` : "",
@@ -79,13 +80,13 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
     {
       id: "steering",
       short: "Steering",
-      title: "Let Bolt nudge the agent while it runs",
+      title: "Let Neatlogs Bolt nudge the agent while it runs",
       optional: true,
       done: steered.length > 0,
       state: steered.length ? `on for ${steered.map((p) => `${p.project} (${p.settings.steering})`).join(", ")}` : "",
       body: (
         <>
-          <p>When a check fires mid-run, Bolt can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
+          <p>When a check fires mid-run, Neatlogs Bolt can add a short note to the agent's next LLM call. It needs a small hook in your agent.</p>
           <CodeLine text={`pip install ~/.neatbolt/src/python/neatbolt-steer\nneatbolt steering advisory --project ${names[0] ?? "my-agent"}`} />
           <p>
             Then wrap your client: <span className="font-mono">client = neatbolt_steer.wrap(OpenAI())</span>. Turn it on per project in{" "}
@@ -106,7 +107,7 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
       state: status.cloud.has_key ? "API key stored" : "",
       body: (
         <>
-          <p>Send a run you want to keep or show your team. Bolt removes secrets and personal data first, and sends nothing unless you ask.</p>
+          <p>Send a run you want to keep or show your team. Neatlogs Bolt removes secrets and personal data first, and sends nothing unless you ask.</p>
           <CodeLine text="neatbolt cloud login" />
         </>
       ),
@@ -115,14 +116,14 @@ function steps(status: Status, projects: ProjectRow[]): Step[] {
 }
 
 const DAILY = [
-  "Run your agent as usual. Bolt checks every run as it happens.",
+  "Run your agent as usual. Neatlogs Bolt checks every run as it happens.",
   "Start here: see what is failing more or less often, and which tools and checks are behind it.",
   "Open a problem to see the cause, the suggested fix and the span that shows it, or ask your coding agent to fix it.",
-  "Dismiss findings that are wrong. Bolt counts them, so noisy checks show up.",
+  "Dismiss findings that are wrong. Neatlogs Bolt counts them, so noisy checks show up.",
 ];
 
 /**
- * How to use Bolt, as steps checked against what is actually set up. Expanded while the
+ * How to use Neatlogs Bolt, as steps checked against what is actually set up. Expanded while the
  * essentials are missing; one line once they are done.
  */
 export function SetupGuide({ status, projects }: { status: Status; projects: ProjectRow[] }) {
@@ -137,86 +138,86 @@ export function SetupGuide({ status, projects }: { status: Status; projects: Pro
 
   if (!expanded) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-subtle px-4 py-2.5">
-        <span className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-muted-foreground">
+      <div className="flex h-12 items-center justify-between gap-3 rounded-xl border border-border bg-surface-subtle px-4">
+        <span className="flex min-w-0 items-center gap-x-4 overflow-hidden text-xs text-muted-foreground">
           {list.map((s) => (
-            <span key={s.id} className="inline-flex items-center gap-1.5">
-              <Icon icon={CheckmarkCircle02Icon} size="xs" className={s.done ? "text-success-fg" : "text-foreground-faint"} />
+            <span key={s.id} className="inline-flex shrink-0 items-center gap-1.5">
+              <Icon icon={CheckmarkCircle02Icon} size="xs" className={s.done ? "text-success-fg" : "text-muted-foreground/40"} />
               {s.short}
             </span>
           ))}
         </span>
-        <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-          Show how to use Bolt
+        <Button size="sm" variant="ghost" className="shrink-0" onClick={() => setOpen(true)}>
+          Show setup steps
         </Button>
       </div>
     );
   }
 
   return (
-    <section aria-labelledby="setup" className="flex flex-col gap-4 rounded-lg border border-border px-5 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h2 id="setup" className="text-body-medium text-foreground">
-            How to use Bolt
-          </h2>
-          <p className="max-w-2xl text-body text-muted-foreground">
-            Bolt checks your agent's runs on this machine: rules on every step, questions the LLM picks for your agent, and an explanation when something goes wrong. Nothing
-            leaves this machine unless you turn it on.
-          </p>
-        </div>
-        <span className="flex items-center gap-2">
-          <span className="text-caption text-foreground-subtle tabular-nums">
-            {doneCount} of {list.length} set up
+    <Panel>
+      <PanelHeader
+        title="How to use Neatlogs Bolt"
+        actions={
+          <span className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {doneCount} of {list.length} set up
+            </span>
+            {essentialsDone && (
+              <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+                Hide steps
+              </Button>
+            )}
           </span>
-          {essentialsDone && (
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
-              Hide
-            </Button>
-          )}
-        </span>
-      </div>
-      <ol className="flex flex-col divide-y divide-border">
-        {list.map((s, i) => {
-          const isOpen = current === s.id;
-          return (
-            <li key={s.id} className="flex flex-col">
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() => setActive(isOpen ? "" : s.id)}
-                className="focus-ring flex w-full cursor-pointer items-center gap-3 py-2.5 text-left"
-              >
-                {s.done ? (
-                  <Icon icon={CheckmarkCircle02Icon} size="sm" className="shrink-0 text-success-fg" />
-                ) : (
-                  <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-border-strong text-micro text-muted-foreground tabular-nums">
-                    {i + 1}
+        }
+      />
+      <PanelContent className="flex flex-col gap-4">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Neatlogs Bolt checks your agent's runs on this machine: rules on every step, questions the LLM picks for your agent, and an explanation when something goes
+          wrong. Nothing leaves this machine unless you turn it on.
+        </p>
+        <ol className="flex flex-col divide-y divide-border/60 rounded-lg border border-border">
+          {list.map((s, i) => {
+            const isOpen = current === s.id;
+            return (
+              <li key={s.id} className="flex flex-col">
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setActive(isOpen ? "" : s.id)}
+                  className="flex h-11 w-full cursor-pointer items-center gap-3 px-4 text-left transition-colors hover:bg-surface-subtle focus-visible:bg-surface-subtle focus-visible:outline-none"
+                >
+                  {s.done ? (
+                    <Icon icon={CheckmarkCircle02Icon} size="sm" className="shrink-0 text-success-fg" />
+                  ) : (
+                    <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-border-strong text-3xs text-muted-foreground tabular-nums">
+                      {i + 1}
+                    </span>
+                  )}
+                  <span className={cn("min-w-0 flex-1 truncate text-sm", s.done ? "text-muted-foreground" : "text-foreground")}>
+                    {s.title}
+                    {s.optional && !s.done && <span className="ml-2 text-xs text-muted-foreground">optional</span>}
                   </span>
-                )}
-                <span className={cn("min-w-0 flex-1", s.done ? "text-body text-muted-foreground" : "text-body-medium text-foreground")}>
-                  {s.title}
-                  {s.optional && !s.done && <span className="ml-2 text-caption text-foreground-subtle">optional</span>}
-                </span>
-                {s.done && <span className="hidden min-w-0 truncate text-caption text-foreground-subtle sm:block">{s.state}</span>}
-                <Icon icon={ArrowDown01Icon} size="xs" className={cn("shrink-0 text-foreground-subtle transition-transform motion-fast", isOpen && "rotate-180")} />
-              </button>
-              {isOpen && <div className="flex flex-col gap-2 pb-4 pl-7 text-body text-muted-foreground">{s.body}</div>}
-            </li>
-          );
-        })}
-      </ol>
-      <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-        <span className="text-eyebrow text-muted-foreground">Day to day</span>
-        <ol className="flex flex-col gap-1">
-          {DAILY.map((d, i) => (
-            <li key={i} className="flex gap-2 text-body text-muted-foreground">
-              <span className="w-4 shrink-0 text-caption text-foreground-subtle tabular-nums">{i + 1}.</span>
-              {d}
-            </li>
-          ))}
+                  {s.done && <span className="hidden max-w-[45%] min-w-0 truncate text-xs text-muted-foreground sm:block">{s.state}</span>}
+                  <Icon icon={ArrowDown01Icon} size="xs" className={cn("shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+                </button>
+                {isOpen && <div className="flex flex-col gap-2 px-4 pb-4 pl-11 text-sm text-muted-foreground">{s.body}</div>}
+              </li>
+            );
+          })}
         </ol>
-      </div>
-    </section>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-eyebrow text-muted-foreground">Day to day</span>
+          <ol className="flex flex-col gap-1">
+            {DAILY.map((d, i) => (
+              <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+                <span className="w-4 shrink-0 text-xs tabular-nums">{i + 1}.</span>
+                {d}
+              </li>
+            ))}
+          </ol>
+        </div>
+      </PanelContent>
+    </Panel>
   );
 }

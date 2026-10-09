@@ -1,9 +1,8 @@
-import { Alert02Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
-import { useState, type ReactNode } from "react";
-import { Button } from "../../../components/ui/button";
-import { Icon } from "../../../components/ui/icon";
-import type { Insights } from "../../../lib/api";
-import { cn } from "../../../lib/cn";
+import { Alert02Icon, ArrowRight01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
+import { Icon } from "@/components/ui/icon";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
+import type { Insights } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface Item {
   key: string;
@@ -107,76 +106,66 @@ function working(d: Insights): Group[] {
   ].filter((g) => g.items.length);
 }
 
+const TREND = { bad: "text-warning-fg", good: "text-success-fg", neutral: "text-muted-foreground" } as const;
+
+/** One line per item, all the same height: what it is, the numbers behind it, and the change. */
 function Row({ item, tone }: { item: Item; tone: "bad" | "good" }) {
   const body = (
     <>
-      <Icon icon={tone === "bad" ? Alert02Icon : CheckmarkCircle02Icon} size="xs" className={cn("mt-0.5 shrink-0", tone === "bad" ? "text-warning-fg" : "text-success-fg")} />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className={cn("truncate text-body text-foreground", item.mono && "font-mono text-xs")} title={item.title}>
+      <Icon icon={tone === "bad" ? Alert02Icon : CheckmarkCircle02Icon} size="xs" className={cn("shrink-0", tone === "bad" ? "text-warning-fg" : "text-success-fg")} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={cn("truncate text-sm text-foreground", item.mono && "font-mono text-xs")} title={item.title}>
           {item.title}
         </span>
-        <span className="text-caption text-muted-foreground tabular-nums">{item.detail}</span>
-      </span>
-      {item.trend && (
-        <span
-          className={cn(
-            "shrink-0 text-caption tabular-nums",
-            item.trend.tone === "bad" ? "text-warning-fg" : item.trend.tone === "good" ? "text-success-fg" : "text-foreground-subtle",
-          )}
-        >
-          {item.trend.text}
+        <span className="truncate text-xs text-muted-foreground tabular-nums" title={item.detail}>
+          {item.detail}
         </span>
-      )}
+      </span>
+      {item.trend && <span className={cn("shrink-0 text-xs tabular-nums", TREND[item.trend.tone])}>{item.trend.text}</span>}
+      {item.href && <Icon icon={ArrowRight01Icon} size="xs" className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}
     </>
   );
+  const cls = "group flex h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4 last:border-0";
   return item.href ? (
-    <a href={item.href} className="focus-ring -mx-2 flex items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors motion-fast hover:bg-surface-subtle">
+    <a href={item.href} className={cn(cls, "transition-colors hover:bg-surface-subtle focus-visible:bg-surface-subtle focus-visible:outline-none")}>
       {body}
     </a>
   ) : (
-    <div className="flex items-start gap-2.5 py-1.5">{body}</div>
+    <div className={cls}>{body}</div>
   );
 }
 
-function Column({ title, groups, tone, empty }: { title: string; groups: Group[]; tone: "bad" | "good"; empty: ReactNode }) {
-  const [all, setAll] = useState(false);
+/** A panel of fixed height; its list scrolls inside, so both columns stay the same size. */
+function Column({ title, groups, tone, empty }: { title: string; groups: Group[]; tone: "bad" | "good"; empty: string }) {
   const total = groups.reduce((a, g) => a + g.items.length, 0);
-  const LIMIT = 4;
-  const hidden = groups.reduce((a, g) => a + Math.max(0, g.items.length - LIMIT), 0);
   return (
-    <section className="flex min-w-0 flex-col gap-3">
-      <h2 className="text-eyebrow text-muted-foreground">
-        {title}
-        {total > 0 && <span className="ml-1.5 text-foreground-subtle tabular-nums">· {total}</span>}
-      </h2>
-      {total === 0 ? (
-        <p className="rounded-lg border border-border px-4 py-3 text-body text-muted-foreground">{empty}</p>
-      ) : (
-        <div className="flex flex-col gap-4 rounded-lg border border-border px-4 py-3">
-          {groups.map((g) => (
+    <Panel className="h-[26rem] p-0">
+      <PanelHeader
+        className="mb-0 px-5 pt-4"
+        title={title}
+        actions={total > 0 ? <span className="text-xs text-muted-foreground tabular-nums">{total}</span> : undefined}
+      />
+      <PanelContent className="overflow-y-auto">
+        {total === 0 ? (
+          <p className="px-5 py-4 text-sm text-muted-foreground">{empty}</p>
+        ) : (
+          groups.map((g) => (
             <div key={g.label} className="flex flex-col">
-              <span className="mb-1 text-caption text-muted-foreground">{g.label}</span>
-              {(all ? g.items : g.items.slice(0, LIMIT)).map((it) => (
+              <span className="sticky top-0 z-10 border-b border-border/60 bg-surface-subtle px-4 py-1.5 text-eyebrow text-muted-foreground">{g.label}</span>
+              {g.items.map((it) => (
                 <Row key={it.key} item={it} tone={tone} />
               ))}
             </div>
-          ))}
-          {hidden > 0 && (
-            <div>
-              <Button size="sm" variant="muted" className="-ml-2" onClick={() => setAll(!all)}>
-                {all ? "Show fewer" : `Show ${hidden} more`}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
-    </section>
+          ))
+        )}
+      </PanelContent>
+    </Panel>
   );
 }
 
 export function Health({ data }: { data: Insights }) {
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-2">
       <Column title="Needs attention" groups={attention(data)} tone="bad" empty="Nothing failed and no check found a problem in this period." />
       <Column title="Working well" groups={working(data)} tone="good" empty="Nothing has a clean record yet in this period. Tools and models need a few calls before they count." />
     </div>

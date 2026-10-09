@@ -1,10 +1,11 @@
 import { Calendar03Icon, Home01Icon } from "@hugeicons/core-free-icons";
-import { PageHeader } from "../../../components/ui/page-header";
 import { useState } from "react";
-import { Button } from "../../../components/ui/button";
-import { Empty, EmptyContent, EmptyHeader, EmptyMedia } from "../../../components/ui/empty";
-import { SegmentedTabs } from "../../../components/ui/segmented-tabs";
-import type { InsightWindow, Status } from "../../../lib/api";
+import { ListPageLayout } from "@/components/list-page/list-page-layout";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import type { InsightWindow, Status } from "@/lib/api";
 import { useProjects } from "../../settings/_services/settings-queries";
 import { useInsights } from "../_services/home-queries";
 import { DigestCard } from "./digest-card";
@@ -24,7 +25,7 @@ function savedWindow(): InsightWindow {
   }
 }
 
-/** Home: how to use Bolt, and how the agents have been doing over a period. */
+/** Home: how to use Neatlogs Bolt, and how the agents have been doing over a period. */
 export function HomePage({ status }: { status?: Status }) {
   const [win, setWin] = useState<InsightWindow>(savedWindow);
   const { data, error } = useInsights(win);
@@ -38,50 +39,48 @@ export function HomePage({ status }: { status?: Status }) {
     }
   };
   const everReceived = (status?.stats.runs ?? 0) > 0;
+  const hasRuns = !!data && data.totals.runs > 0;
 
   return (
-    <div className="flex flex-col pb-12">
-      <PageHeader
-        icon={Home01Icon}
-        title="Home"
-        actions={
-          everReceived && (
-            <SegmentedTabs
-              label="Period"
-              size="compact"
-              value={win}
-              onValueChange={choose}
-              items={[
-                { value: "24h", label: "24 hours" },
-                { value: "7d", label: "7 days" },
-                { value: "30d", label: "30 days" },
-              ]}
-            />
-          )
-        }
-      />
-      <div className="flex flex-col gap-8 px-6 pt-2">
+    <ListPageLayout
+      icon={<Icon icon={Home01Icon} />}
+      title="Home"
+      actions={
+        everReceived && (
+          <SegmentedTabs
+            size="compact"
+            value={win}
+            onValueChange={choose}
+            items={[
+              { value: "24h", label: "24 hours" },
+              { value: "7d", label: "7 days" },
+              { value: "30d", label: "30 days" },
+            ]}
+          />
+        )
+      }
+    >
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 pt-1 pb-10">
         {status && <SetupGuide status={status} projects={projects?.projects ?? []} />}
-
-        {error && <p className="text-body text-muted-foreground">Couldn't load insights: {(error as Error).message}</p>}
-
-        {everReceived && data && data.totals.runs === 0 && (
-          <Empty className="py-10">
-            <EmptyMedia icon={Calendar03Icon} />
-            <EmptyHeader title={`No runs in the last ${PERIOD[win]}`} description="Insights cover runs that started in this period. Older runs are still on the Runs page." />
-            {win !== "30d" && (
-              <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => choose("30d")}>
-                  Show the last 30 days
+        {error && <EmptyState variant="bordered" state="error" title="Couldn't load insights" description={(error as Error).message} />}
+        {everReceived && data && !hasRuns && (
+          <EmptyState
+            variant="bordered"
+            icon={Calendar03Icon}
+            title={`No runs in the last ${PERIOD[win]}`}
+            description="Insights cover runs that started in this period. Older runs are still on the Runs page."
+            action={
+              win !== "30d" ? (
+                <Button variant="secondary" size="sm" onClick={() => choose("30d")}>
+                  Show last 30 days
                 </Button>
-              </EmptyContent>
-            )}
-          </Empty>
+              ) : undefined
+            }
+          />
         )}
-
-        {data && data.totals.runs > 0 && (
+        {everReceived && (!data || hasRuns) && <Kpis data={data} />}
+        {data && hasRuns && (
           <>
-            <Kpis data={data} />
             <DigestCard data={data} llmOk={status ? !!status.engine?.llm.ok : undefined} />
             <Health data={data} />
             <Activity data={data} />
@@ -89,6 +88,6 @@ export function HomePage({ status }: { status?: Status }) {
           </>
         )}
       </div>
-    </div>
+    </ListPageLayout>
   );
 }
