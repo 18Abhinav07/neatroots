@@ -17,7 +17,7 @@ curl -fsSL https://raw.githubusercontent.com/neatlogs/neatroots/main/install.sh 
 ```
 
 The installer:
-- downloads the prebuilt release, one bundle of about 15 MB for macOS and Linux on Apple silicon, Intel and arm64, and checks its checksum;
+- downloads the prebuilt release, one bundle of about 17 MB for macOS and Linux on Apple silicon, Intel and arm64, and checks its checksum;
 - uses your Node.js if it is version 22 or newer; otherwise it downloads Node.js 24 into `~/.neatroots/node` and checks its checksum;
 - puts a `neatroots` command in `~/.local/bin` and adds that folder to your shell's PATH;
 - offers to connect the coding agents it finds (Claude Code, Codex, Cursor and others; see section 9);

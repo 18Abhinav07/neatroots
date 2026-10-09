@@ -101,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/neatlogs/neatroots/main/install.sh 
 neatroots start                    # open http://localhost:4100
 ```
 
-The installer downloads one prebuilt bundle (about 15 MB, macOS and Linux, arm64 and x64) into
+The installer downloads one prebuilt bundle (about 17 MB, macOS and Linux, arm64 and x64) into
 `~/.neatroots`, uses your Node.js if it is 22 or newer (otherwise it fetches its own), puts a
 `neatroots` command in `~/.local/bin`, and offers to connect the coding agents it finds. No sudo, no
 git, no build. Add `-s -- --service` to run neatroots at login. On Windows, use WSL.

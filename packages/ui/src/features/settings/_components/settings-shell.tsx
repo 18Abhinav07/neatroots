@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 // The Neatlogs app's settings frame: a 200px column with grouped links, and pages with a
-// sticky header over cards. Ported from neatlogs-app (settings/layout + _components).
+// sticky header over cards.
 
 export interface SettingsNavItem {
   id: string;
