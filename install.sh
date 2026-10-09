@@ -93,6 +93,7 @@ main() {
     ok "neatroots updated ($(version))"
     return
   fi
+  retire_neatbolt
   write_command
   setup_path
   connect_agents
@@ -369,6 +370,46 @@ finish() {
   fi
   echo "  ${D}Steering hooks: pip install \"$STEER_PY\"  ·  npm install \"$STEER_TS\"${N}"
   echo "  ${D}Guide: $GUIDE${N}"
+}
+
+# ------------------------------------------------- from Neatlogs Bolt (v0.1)
+
+# Before the rename neatroots was `neatbolt`. Its background service would hold port 4100, so stop
+# it (and run neatroots at login instead), and remove its command and app code. Its runs, settings
+# and Laya stay in ~/.neatbolt, where neatroots keeps using them.
+retire_neatbolt() {
+  had_service=0
+  if [ "$OS" = darwin ]; then
+    plist="$HOME/Library/LaunchAgents/com.neatlogs.neatbolt.plist"
+    if [ -f "$plist" ]; then
+      launchctl bootout "gui/$(id -u)/com.neatlogs.neatbolt" >/dev/null 2>&1 || true
+      rm -f "$plist"
+      had_service=1
+    fi
+  elif [ -f "$HOME/.config/systemd/user/neatbolt.service" ]; then
+    systemctl --user disable --now neatbolt.service >/dev/null 2>&1 || true
+    rm -f "$HOME/.config/systemd/user/neatbolt.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    had_service=1
+  fi
+  removed=""
+  if [ -f "$BIN_DIR/neatbolt" ] && grep -q "neatbolt" "$BIN_DIR/neatbolt" 2>/dev/null; then
+    rm -f "$BIN_DIR/neatbolt"
+    removed="the neatbolt command"
+  fi
+  if [ -f "$HOME/.neatbolt/app/.neatbolt-bundle" ]; then
+    rm -rf "$HOME/.neatbolt/app" "$HOME/.neatbolt/app.old" "$HOME/.neatbolt/node"
+    removed="${removed:+$removed and }its app"
+  fi
+  [ -n "$removed" ] && ok "Replaced Neatlogs Bolt: removed $removed (your runs and settings stay in ~/.neatbolt)"
+  if [ "$had_service" = 1 ]; then
+    # Give the old process a moment to let go of its port before neatroots' service starts.
+    i=0
+    while [ $i -lt 10 ] && curl -sf -m 1 http://127.0.0.1:4100/api/status >/dev/null 2>&1; do sleep 1; i=$((i + 1)); done
+    ok "Stopped the neatbolt background service; neatroots will run at login instead"
+    SERVICE=1
+  fi
+  return 0
 }
 
 # --------------------------------------------------------------- uninstall

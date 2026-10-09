@@ -145,9 +145,12 @@ export function defaultConfig(): RootsConfig {
 export function rootsHome(): string {
   if (process.env.NEATROOTS_HOME) return process.env.NEATROOTS_HOME;
   const home = path.join(os.homedir(), ".neatroots");
-  if (fs.existsSync(home)) return home;
-  // Installs from before the rename keep their data (and their Laya environment) where they were.
-  const legacy = [".neatbolt", ".bolts"].map((d) => path.join(os.homedir(), d)).find((d) => fs.existsSync(path.join(d, "config.yaml")) || fs.existsSync(path.join(d, "data")));
+  // The installer creates ~/.neatroots for the app before neatroots ever runs, so only settings or
+  // runs make it the home. Until then, installs from before the rename keep their data (and their
+  // Laya environment, which can't be moved) where they were.
+  const hasState = (d: string) => fs.existsSync(path.join(d, "config.yaml")) || fs.existsSync(path.join(d, "data"));
+  if (hasState(home)) return home;
+  const legacy = [".neatbolt", ".bolts"].map((d) => path.join(os.homedir(), d)).find(hasState);
   return legacy ?? home;
 }
 
