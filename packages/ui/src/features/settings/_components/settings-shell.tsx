@@ -52,7 +52,9 @@ export function SettingsLayout({ groups, active, children }: { groups: SettingsN
           ))}
         </nav>
       </div>
-      <ScrollArea className="-mr-4 -ml-2 min-h-0 min-w-0 flex-1 pr-4 pl-2" viewportClassName="h-full overflow-x-hidden">
+      {/* The scroll area's content is fit-content wide; settings never scroll sideways, so it takes the
+          viewport's width and wide pieces (code lines, tables) scroll inside themselves. */}
+      <ScrollArea className="-mr-4 -ml-2 min-h-0 min-w-0 flex-1 pr-4 pl-2" viewportClassName="h-full overflow-x-hidden [&>div]:min-w-0!">
         <div className="flex min-h-full flex-col pb-4">{children}</div>
       </ScrollArea>
     </div>
@@ -114,8 +116,9 @@ export function SettingsToggleCard({ icon, title, enabled, status, description, 
   return (
     <Card className={cn("relative overflow-hidden border shadow-none transition-colors duration-300", enabled && "border-foreground/20")}>
       <CardContent className="flex flex-col gap-4 p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
+        {/* The controls move under the text when both don't fit (a phone, or two buttons). */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-56 flex-1 basis-0 items-center gap-3">
             <div
               className={cn(
                 "flex size-10 shrink-0 items-center justify-center rounded-lg border transition-colors duration-300",

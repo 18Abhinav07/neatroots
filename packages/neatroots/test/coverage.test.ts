@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { CheckCoverage } from "../src/server/coverage.js";
-import { batch, hex, llmSpan, makeRoots, markerSpan, mockLlm, span, until, type TestRoots } from "./helpers.js";
+import { batch, hex, llmSpan, makeRoots, markerSpan, mockLlm, poll, span, until, type TestRoots } from "./helpers.js";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -19,16 +19,6 @@ function leakyRun(tb: TestRoots): string {
     ]),
   ]);
   return t;
-}
-
-async function poll<T>(fn: () => Promise<T | false>, timeoutMs = 10_000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() > deadline) throw new Error("timed out waiting for condition");
-    await new Promise((r) => setTimeout(r, 100));
-  }
 }
 
 const coverage = async (tb: TestRoots, t: string) => ((await (await fetch(`${tb.url}/api/runs/${t}`)).json()) as { coverage: CheckCoverage }).coverage;

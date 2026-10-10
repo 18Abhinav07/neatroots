@@ -21,9 +21,10 @@ The installer:
 - uses your Node.js if it is version 22 or newer; otherwise it downloads Node.js 24 into `~/.neatroots/node` and checks its checksum;
 - puts a `neatroots` command in `~/.local/bin` and adds that folder to your shell's PATH;
 - offers to connect the coding agents it finds (Claude Code, Codex, Cursor and others; see section 9);
+- asks whether to download Laya, the local decision model (about 1.4 GB, once; see section 3). Answer no and set up Jev cloud instead;
 - needs no sudo and changes nothing outside your home folder, except the MCP settings of agents you agree to connect.
 
-You need macOS or Linux (on Windows, use WSL) and about 2 GB of disk: 70 MB for neatroots and 1.5 GB for Laya, the local decision model.
+You need macOS or Linux (on Windows, use WSL) and about 70 MB of disk, plus about 1.5 GB if you download Laya.
 
 Everything lands in `~/.neatroots/app`: the app, the steering hooks (`steer/`), the docs, and 15 runnable examples (`examples/`).
 
@@ -34,6 +35,7 @@ Installer options go after `sh -s --`, for example `curl … | sh -s -- --servic
 | `--service` | Also run neatroots in the background now and every time you log in |
 | `--version <tag>` | Install a specific release, e.g. `v0.2.0` |
 | `--connect`, `--no-connect` | Connect the coding agents found here without asking, or don't offer |
+| `--laya`, `--no-laya` | Download Laya without asking, or skip it (then set up Jev cloud) |
 | `--from-source`, `--ref <branch>` | Clone and build instead of downloading (needs git and pnpm) |
 | `--no-modify-path` | Leave your shell profile alone; the installer prints the line to add instead |
 | `--dir <path>`, `--bin-dir <path>` | Install somewhere other than `~/.neatroots` and `~/.local/bin` |
@@ -48,7 +50,7 @@ neatroots service install        # or: run in the background and start at login
 
 Open **http://localhost:4100**. neatroots also listens for OTLP/gRPC on port 4317.
 
-The first start installs Laya in the background. Rules work right away, and questions start working once a model is available (next step). To skip Laya, use `neatroots start --no-laya`.
+If you said yes to Laya, the first start downloads it in the background. If nobody was asked yet (an unattended install), `neatroots start` asks in the terminal, and the app asks on Home and in Settings → Decision model. Rules work right away, and questions start working once a model is available (next step). `neatroots start --no-laya` runs without Laya.
 
 Check that everything works:
 
@@ -63,7 +65,7 @@ neatroots works in three layers. You only need the first to start.
 | Layer | What it does | Default |
 | --- | --- | --- |
 | **Rules** | Code checks on every span: loops, repeated tool calls, error streaks, leaked keys, failed or empty runs | Always on, no model |
-| **Decision model** | Answers each check's yes/no question with a probability | Laya on this machine; the LLM answers a question until Laya has earned it |
+| **Decision model** | Answers each check's yes/no question with a probability | Laya on this machine if you downloaded it, or Jev cloud if you set it up. The LLM answers a question until one of them has earned it |
 | **LLM** | Picks the questions that fit your agent, explains problems, writes notes for the agent, summarizes runs, replays LLM calls | A local model (Ollama, LM Studio, llama.cpp, MLX) |
 
 ### A local LLM (the default)
@@ -99,9 +101,14 @@ You can also do this in the app under **Settings → Models**.
 
 Rules are instant. Questions take as long as the model answering them: with a local LLM standing in (before Laya has earned a question), each answer is a model call, and the calls run one at a time. On a 24 GB Apple silicon Mac with `gemma4`, the seven sample runs are fully checked about five minutes after they finish, and a busy batch of examples can queue 50 answers. A hosted LLM answers four questions at a time, so the same batch finishes several times faster; questions Laya has earned are answered by Laya instead of the LLM, which is quicker still. The run page shows each run's progress, and anything you ask for yourself (drafting a check, a preview, Explain run, a coding agent's question) goes ahead of the background queue.
 
-### Jev cloud (opt-in)
+### Laya or Jev cloud
 
-[Jev](https://typesafe.ai) is a hosted typed-decision model. To use it for decisions:
+Checks are yes/no questions, so neatroots uses a decision model built for them. Pick one:
+
+- **Laya** (local): an open 421M-parameter model on this machine. Free and private; a one-time download of about 1.4 GB. It starts in shadow mode and takes over each question once it agrees with your LLM on 90% of 30 answers. `neatroots laya install` downloads it now; `neatroots laya skip` records that you don't want it.
+- **Jev cloud** (hosted, opt-in): TypeSafe's typed-decision API. The span content a question needs is sent to TypeSafe.
+
+Without either, your LLM answers every question, which works but is slower. To use Jev cloud:
 
 ```bash
 neatroots jev login && neatroots jev on
@@ -339,7 +346,7 @@ neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Lin
 | `neatroots rerun add / list / remove` | How neatroots starts your agent for replays |
 | `neatroots mock-llm` | A stand-in LLM on port 4110 for running agents without API keys |
 | `neatroots llm` | Where LLM calls go; `login`, `use`, `local`, `models`, `test`, `providers` |
-| `neatroots models`, `neatroots laya install`, `neatroots jev login / on / off` | Decision models |
+| `neatroots models`, `neatroots laya install / skip / status`, `neatroots jev login / on / off` | Decision models: Laya (local) or Jev cloud |
 | `neatroots steering <mode> --project <name>`, `neatroots steering stop` | Steering |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks |
 | `neatroots cloud login / forward / auto` | Neatlogs Cloud: send runs |

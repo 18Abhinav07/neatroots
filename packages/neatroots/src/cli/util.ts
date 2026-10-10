@@ -31,8 +31,13 @@ export async function running(p: number): Promise<boolean> {
 }
 
 export function ask(question: string, hidden = false): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    let answered = false;
+    // End of input (Ctrl-D) is no answer, not Enter: callers mustn't take their default from it.
+    rl.on("close", () => {
+      if (!answered) reject(new Error("no answer given"));
+    });
     if (hidden) {
       const write = (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput;
       (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
@@ -41,6 +46,7 @@ export function ask(question: string, hidden = false): Promise<string> {
       };
     }
     rl.question(question, (answer) => {
+      answered = true;
       rl.close();
       if (hidden) process.stdout.write("\n");
       resolve(answer.trim());

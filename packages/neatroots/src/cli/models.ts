@@ -4,6 +4,7 @@ import { rootsHome, loadConfig, saveConfig } from "../config.js";
 import { hardwareTier, LlmClient } from "../models/llm.js";
 import { DecisionModel } from "../models/decision.js";
 import { LAYA_DOWNLOAD_MB, LayaManager } from "../models/laya.js";
+import { askForLaya, layaNextSteps, shouldAskForLaya, type LayaConsent } from "../models/laya-consent.js";
 import { getSecret, setSecret, deleteSecret } from "../relay/keychain.js";
 import { api, ask, port, running } from "./util.js";
 import { registerLlmCommands } from "./llm.js";
@@ -32,10 +33,11 @@ export function registerModelCommands(program: Command): void {
 
   laya
     .command("install")
-    .description("Install Laya into ~/.neatroots/laya and check that it starts")
+    .description("Download and install Laya into ~/.neatroots/laya now, and check that it starts")
     .action(async () => {
       const cfg = loadConfig();
       cfg.classifier.laya.enabled = true;
+      cfg.classifier.laya.consent = "yes";
       saveConfig(cfg);
       const m = new LayaManager(rootsHome(), cfg.classifier);
       console.log(`Installing Laya ${"(about " + (LAYA_DOWNLOAD_MB / 1000).toFixed(1) + " GB)"} into ${m.dir}…`);
@@ -50,6 +52,44 @@ export function registerModelCommands(program: Command): void {
       m.stop();
       process.exitCode = s.state === "running" ? 0 : 1;
     });
+
+  const record = async (consent: LayaConsent) => {
+    // Saved here, not only through a running neatroots: one from before this question rejects it.
+    const cfg = loadConfig();
+    cfg.classifier.laya.consent = consent;
+    if (consent === "yes") cfg.classifier.laya.enabled = true;
+    saveConfig(cfg);
+    // A running neatroots takes the answer now (a yes starts the download in the background).
+    const p = port();
+    const live = (await running(p)) && (await api(p, "/api/classifier/laya", { method: "POST", body: JSON.stringify({ action: consent === "yes" ? "install" : "skip" }) }).then(() => true, () => false));
+    console.log(consent === "yes" && live ? "✓ Laya is downloading in the background; Settings → Decision model shows progress." : layaNextSteps(consent));
+  };
+
+  laya
+    .command("choose")
+    .description("Explain what Laya is for and ask whether to download it (the installer runs this)")
+    .option("--no-ask", "only say how to choose later")
+    .action(async (opts: { ask: boolean }) => {
+      const cfg = loadConfig();
+      const m = new LayaManager(rootsHome(), cfg.classifier);
+      // Installed already, or answered before (an update runs the installer again): nothing to ask.
+      if (!shouldAskForLaya(cfg, m.installed())) return;
+      if (!opts.ask || !process.stdin.isTTY) {
+        console.log(`Laya (the local decision model, about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB) isn't downloaded: neatroots laya install, or use Jev cloud: neatroots jev login && neatroots jev on`);
+        return;
+      }
+      await record(await askForLaya(m.dir, (q) => ask(q)));
+    });
+
+  laya
+    .command("allow")
+    .description("Let neatroots download Laya the next time it starts (in the background)")
+    .action(() => record("yes"));
+
+  laya
+    .command("skip")
+    .description("Don't download Laya; use Jev cloud for check answers instead")
+    .action(() => record("no"));
 
   laya
     .command("status")

@@ -7,6 +7,8 @@ import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import type { AgentClient, ProjectRow, Status } from "@/lib/api";
 import { ago } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { PendingButton } from "@/components/pending-button";
+import { useLayaAction } from "../../settings/_services/settings-queries";
 
 interface Step {
   id: string;
@@ -29,6 +31,9 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
   const connected = agents.filter((a) => a.connected).map((a) => a.label);
   const found = agents.filter((a) => a.detected && !a.connected).map((a) => a.label);
   const steerPy = status.install?.steer_python ?? "~/.neatroots/app/steer/python/neatroots-steer";
+  const laya = status.classifier?.laya;
+  const layaReady = laya?.state === "running" || laya?.state === "external" || laya?.state === "stopped";
+  const jevReady = !!status.classifier?.jev_cloud.enabled && !!status.classifier.jev_cloud.has_key;
   return [
     {
       id: "runs",
@@ -64,6 +69,14 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
           </p>
         </>
       ),
+    },
+    {
+      id: "decisions",
+      short: "Check answers",
+      title: "Choose how checks get answered: Laya on this machine, or Jev cloud",
+      done: layaReady || jevReady,
+      state: layaReady ? "Laya, on this machine" : jevReady ? "Jev cloud" : "",
+      body: <DecisionChoice status={status} />,
     },
     {
       id: "mcp",
@@ -129,6 +142,35 @@ function steps(status: Status, projects: ProjectRow[], agents: AgentClient[]): S
       ),
     },
   ];
+}
+
+/** Why neatroots wants Laya, the download, and the alternative. */
+function DecisionChoice({ status }: { status: Status }) {
+  const act = useLayaAction();
+  const laya = status.classifier?.laya;
+  const busy = laya?.state === "installing" || laya?.state === "starting";
+  return (
+    <>
+      <p>
+        neatroots checks each run with yes/no questions, such as "did the agent carry on after a tool failed?" Laya, an open 421M-parameter model, answers them on this machine:
+        free, private and quick once it has learned your agent. It's a one-time download of about 1.4 GB.
+      </p>
+      <p>Rather not download it? Set up Jev cloud instead (the span content a question needs is sent to TypeSafe). Until one of them is set up, your LLM answers, more slowly.</p>
+      {busy ? (
+        <p className="text-xs">{laya?.message ?? "Downloading Laya…"}{laya?.progress != null ? ` · ${Math.round(laya.progress * 100)}%` : ""}</p>
+      ) : (
+        <span className="flex flex-wrap items-center gap-2">
+          <PendingButton size="sm" variant="secondary" pending={act.isPending} onClick={() => act.mutate("install")}>
+            Download Laya
+          </PendingButton>
+          <a className={cn("text-foreground underline-offset-4 hover:underline")} href="#/settings/decisions">
+            Set up Jev cloud
+          </a>
+          {laya?.consent === "no" && <span className="text-xs">You chose not to download Laya.</span>}
+        </span>
+      )}
+    </>
+  );
 }
 
 const DAILY = [

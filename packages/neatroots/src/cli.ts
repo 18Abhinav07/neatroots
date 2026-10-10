@@ -20,6 +20,7 @@ import { hardwareTier, LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
 import { setCloudKey, deleteCloudKey, getCloudKey, getCloudToken, getSecret } from "./relay/keychain.js";
 import { LAYA_DOWNLOAD_MB, LayaManager } from "./models/laya.js";
+import { askForLaya, layaNextSteps, shouldAskForLaya } from "./models/laya-consent.js";
 import { log } from "./util/log.js";
 
 const program = new Command();
@@ -36,9 +37,21 @@ program
   .option("--no-laya", "do not install or start Laya (the local decision model)")
   .action(async (opts) => {
     const roots = new Roots({ noEngine: opts.engine === false });
+    if (opts.laya === false) roots.config.classifier.laya.enabled = false;
+    // Laya is a big download: ask once, when someone is at the terminal, before downloading it.
+    if (shouldAskForLaya(roots.config, roots.laya.installed()) && process.stdin.isTTY && process.stdout.isTTY) {
+      // No answer (Ctrl-D) leaves the choice open; the app and the next start ask again.
+      const consent = await askForLaya(roots.laya.dir, (q) => ask(q)).catch(() => undefined);
+      if (consent) {
+        const saved = loadConfig();
+        saved.classifier.laya.consent = consent;
+        saveConfig(saved);
+        roots.config.classifier.laya.consent = consent;
+        console.log(`${layaNextSteps(consent)}\n`);
+      } else console.log("");
+    }
     if (opts.port) roots.config.port = Number(opts.port);
     if (opts.grpcPort !== undefined) roots.config.grpcPort = Number(opts.grpcPort);
-    if (opts.laya === false) roots.config.classifier.laya.enabled = false;
     const app = createApp(roots);
     try {
       await startServer(roots, app);
@@ -51,8 +64,11 @@ program
       throw err;
     }
     roots.startRetention();
-    if (roots.config.classifier.laya.enabled && !roots.laya.installed() && roots.config.classifier.laya.autoInstall) {
-      log.info(`installing Laya, the local decision model, in the background (about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB to ${roots.laya.dir}). Skip with --no-laya.`);
+    if (roots.config.classifier.laya.enabled && !roots.laya.installed()) {
+      const consent = roots.config.classifier.laya.consent;
+      if (consent === "yes") log.info(`installing Laya, the local decision model, in the background (about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB to ${roots.laya.dir}). Skip with --no-laya.`);
+      else if (consent === "no") log.info("Laya skipped. For check answers, set up Jev cloud: neatroots jev login && neatroots jev on (or neatroots laya install).");
+      else log.info(`Laya, the local decision model (about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB), isn't downloaded. Choose in the app (Settings → Decision model) or run neatroots laya install; or use Jev cloud: neatroots jev login && neatroots jev on.`);
     }
     roots.startModels();
     const status = roots.engine ? await roots.engine.status() : null;
@@ -63,7 +79,9 @@ program
     if (status) {
       const where = status.llm.where && status.llm.where !== "local" ? `${status.llm.where} (hosted, opt-in)` : `local at ${roots.config.llm.baseUrl}`;
       log.info(status.llm.ok ? `LLM: ${status.llm.model}, ${where}` : `LLM: not available (${status.llm.error}). Rules still run; start Ollama or LM Studio, or turn on a hosted model (neatroots llm use), for questions and explanations.`);
-      log.info(status.decision.backend ? `decision model now: ${status.decision.backend}${status.decision.model ? ` (${status.decision.model})` : ""}; Laya takes over when it is ready` : "decision model: none yet");
+      const layaComing = roots.laya.installed() || roots.config.classifier.laya.consent === "yes";
+      const then = status.decision.backend !== "llm" ? "" : layaComing ? "; Laya takes over when it is ready" : "; Laya or Jev cloud takes over once one is set up";
+      log.info(status.decision.backend ? `decision model now: ${status.decision.backend}${status.decision.model ? ` (${status.decision.model})` : ""}${then}` : "decision model: none yet");
     }
     if (roots.checks.errors.length) log.warn(`${roots.checks.errors.length} check file problem(s); see the Checks page`);
     const stop = () => {
@@ -208,7 +226,12 @@ program
     const layaMgr = new LayaManager(rootsHome(), cfg.classifier);
     const dm = new DecisionModel(cfg.classifier, llm, { laya: async () => layaMgr.token, jevCloud: () => getSecret("jev-api-key") });
     const layaUp = await dm.laya.available();
-    line(layaUp ? true : "warn", layaUp ? `Laya answers on 127.0.0.1:${cfg.classifier.laya.port}` : layaMgr.installed() ? "Laya is installed but not running (neatroots start runs it)" : "Laya is not installed yet (neatroots start installs it; or neatroots laya install)");
+    const jevOn = cfg.classifier.jevCloud.enabled && !!(await getSecret("jev-api-key"));
+    if (layaUp) line(true, `Laya answers on 127.0.0.1:${cfg.classifier.laya.port}`);
+    else if (layaMgr.installed()) line("warn", "Laya is installed but not running (neatroots start runs it)");
+    else if (jevOn) line(true, "Laya isn't downloaded; Jev cloud answers checks");
+    else if (cfg.classifier.laya.consent === "yes") line("warn", "Laya will download the next time neatroots starts (or now: neatroots laya install)");
+    else line("warn", `Laya isn't downloaded and Jev cloud isn't set up, so the LLM answers checks (slower). Download Laya (about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB): neatroots laya install. Or use Jev: neatroots jev login && neatroots jev on`);
     const st = await dm.status();
     line(st.backend ? true : "warn", st.backend ? `decisions answered by: ${st.backend}${st.model ? ` (${st.model})` : ""}` : "no decision model (no Laya, no Jev cloud, no LLM)");
     const tier = hardwareTier();

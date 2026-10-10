@@ -205,6 +205,15 @@ export class AgentChats {
     return true;
   }
 
+  /**
+   * The turn is over (the agent process closed). Its result event arrives a moment earlier, so an
+   * open chat that refetched on the result can still have read "running"; this tells it to look again.
+   */
+  private ended(id: string, state: "idle" | "error"): void {
+    this.update(id, { state });
+    this.roots.bus.emit("chat", { session_id: id, state });
+  }
+
   private emit(id: string, e: Omit<ChatEvent, "seq" | "at">): ChatEvent {
     const row = this.roots.store.db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM chat_events WHERE session_id = ?").get(id) as { n: number };
     const ev: ChatEvent = { ...e, seq: row.n + 1, at: Date.now() };
@@ -255,13 +264,13 @@ export class AgentChats {
         this.running.delete(id);
         if (signal) this.emit(id, { kind: "status", text: "Stopped" });
         else if (code !== 0 && !sawResult) this.emit(id, { kind: "error", text: this.explainFailure(s.agent, stderr) });
-        this.update(id, { state: code === 0 || signal || sawResult ? "idle" : "error" });
+        this.ended(id, code === 0 || signal || sawResult ? "idle" : "error");
         resolve();
       });
       child.on("error", (err) => {
         this.running.delete(id);
         this.emit(id, { kind: "error", text: err.message });
-        this.update(id, { state: "error" });
+        this.ended(id, "error");
         resolve();
       });
     });

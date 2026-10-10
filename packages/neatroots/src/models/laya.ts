@@ -104,8 +104,15 @@ export class LayaManager {
       return;
     }
     if (!this.installed()) {
-      if (!this.cfg.laya.autoInstall && !opts.install) {
-        this.set({ state: "not_installed", message: `Install Laya to answer checks on this machine (about ${LAYA_DOWNLOAD_MB / 1000} GB download).`, progress: null });
+      if (this.cfg.laya.consent !== "yes" && !opts.install) {
+        this.set({
+          state: "not_installed",
+          message:
+            this.cfg.laya.consent === "no"
+              ? "You chose not to download Laya. Set up Jev cloud for check answers, or download Laya any time."
+              : `Not downloaded yet. Download Laya (about ${(LAYA_DOWNLOAD_MB / 1000).toFixed(1)} GB) to answer checks on this machine, or set up Jev cloud instead.`,
+          progress: null,
+        });
         return;
       }
       this.installing ??= this.install().finally(() => (this.installing = undefined));

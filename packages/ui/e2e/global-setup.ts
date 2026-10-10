@@ -43,7 +43,7 @@ function start(args: string[], env: NodeJS.ProcessEnv, log: string): ChildProces
 export default async function globalSetup(): Promise<void> {
   if (!fs.existsSync(cli)) throw new Error(`build first: ${cli} is missing (pnpm build)`);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "neatroots-e2e-"));
-  const [port, mockPort] = [await freePort(), await freePort()];
+  const [port, mockPort, layaPort] = [await freePort(), await freePort(), await freePort()];
   fs.writeFileSync(
     path.join(home, "config.yaml"),
     [
@@ -54,8 +54,11 @@ export default async function globalSetup(): Promise<void> {
       "  model: mock",
       "classifier:",
       "  backend: llm",
+      // Laya on but not downloaded (nothing downloads without a yes), on a port of its own so a
+      // Laya already running on this machine isn't picked up.
       "  laya:",
-      "    enabled: false",
+      "    enabled: true",
+      `    port: ${layaPort}`,
       "",
     ].join("\n"),
   );
@@ -71,7 +74,7 @@ export default async function globalSetup(): Promise<void> {
     NEATROOTS_DEBUG: "",
   };
   const mock = start(["mock-llm", "--port", String(mockPort)], env, path.join(home, "mock.log"));
-  const server = start(["start", "--port", String(port), "--grpc-port", "0", "--no-laya"], env, path.join(home, "server.log"));
+  const server = start(["start", "--port", String(port), "--grpc-port", "0"], env, path.join(home, "server.log"));
   const url = `http://127.0.0.1:${port}`;
   await waitFor(`http://127.0.0.1:${mockPort}/v1/models`);
   await waitFor(`${url}/api/status`);

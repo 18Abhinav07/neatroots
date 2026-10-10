@@ -66,9 +66,14 @@ export function useLiveEvents(): { connected: boolean; spanTick: number } {
         if (d.state !== "running") void qc.invalidateQueries({ queryKey: runKeys.lists() });
       });
       on("chat", (d) => {
-        chatStream.dispatchEvent(new CustomEvent("event", { detail: { session_id: d.session_id, event: d.event as ChatEvent } }));
-        const kind = (d.event as ChatEvent | undefined)?.kind;
-        if (kind === "result" || kind === "error" || kind === "status") void qc.invalidateQueries({ queryKey: ["chat-sessions"] });
+        const event = d.event as ChatEvent | undefined;
+        if (event) chatStream.dispatchEvent(new CustomEvent("event", { detail: { session_id: d.session_id, event } }));
+        if (event?.kind === "result" || event?.kind === "error" || event?.kind === "status") void qc.invalidateQueries({ queryKey: ["chat-sessions"] });
+        // The turn is over: the open chat reads its state again (it may have read "running" on the result).
+        if (typeof d.state === "string") {
+          void qc.invalidateQueries({ queryKey: ["chat-sessions"] });
+          void qc.invalidateQueries({ queryKey: ["chat-session", d.session_id] });
+        }
       });
       // A coding agent asked to show something (MCP show_in_ui).
       on("navigate", (d) => {

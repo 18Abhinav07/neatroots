@@ -138,7 +138,7 @@ export function mountApi(app: Hono, roots: Roots): void {
       mcp: { last_seen_ms: roots.mcpSeenMs },
       cloud: { endpoint: roots.relay.endpoint(), has_key: !!(await getCloudKey()), has_token: !!(await getCloudToken()), project_id: roots.config.cloud.projectId ?? null },
       classifier: {
-        laya: roots.laya.state,
+        laya: { ...roots.laya.state, consent: roots.config.classifier.laya.consent ?? null },
         trust: Object.entries(roots.decisions.trust.all())
           .map(([question, t]) => ({ question, n: t.n, agreement: t.n ? t.agree / t.n : null, trusted: roots.decisions.trusted([{ name: question, type: "yes_no", ask: "" }]) }))
           .sort((a, b) => b.n - a.n),
@@ -380,7 +380,7 @@ export function mountApi(app: Hono, roots: Roots): void {
         if (event === "finding" || event === "note") data.id = p.id;
         if (event === "settings") data.project = p.project ?? null;
         if (event === "navigate") data.path = p.path;
-        if (event === "chat") Object.assign(data, { session_id: p.session_id, event: p.event });
+        if (event === "chat") Object.assign(data, { session_id: p.session_id, event: p.event, state: p.state });
         if (event === "import" || event === "replay") Object.assign(data, p);
         queue.push({ event, data: JSON.stringify(data) });
         wake?.();

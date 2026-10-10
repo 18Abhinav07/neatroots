@@ -14,6 +14,7 @@
 #   --version <tag>      release to install, e.g. v0.2.0                 (NEATROOTS_VERSION, default latest)
 #   --connect            connect the coding agents found here, no prompt (NEATROOTS_CONNECT=1; 0 to skip)
 #   --no-connect         don't offer to connect coding agents
+#   --laya, --no-laya    download Laya (local decision model, ~1.4 GB) or skip it, no prompt (NEATROOTS_LAYA=yes|no)
 #   --dir <path>         install directory                                (NEATROOTS_INSTALL_DIR, default ~/.neatroots)
 #   --bin-dir <path>     where the `neatroots` command goes                (NEATROOTS_BIN_DIR, default ~/.local/bin)
 #   --no-modify-path     do not add the bin dir to your shell profile     (NEATROOTS_NO_MODIFY_PATH=1)
@@ -37,6 +38,7 @@ main() {
   BIN_DIR="${NEATROOTS_BIN_DIR:-$HOME/.local/bin}"
   SERVICE="${NEATROOTS_SERVICE:-0}"
   CONNECT="${NEATROOTS_CONNECT:-ask}"
+  LAYA="${NEATROOTS_LAYA:-ask}"
   NO_MODIFY_PATH="${NEATROOTS_NO_MODIFY_PATH:-0}"
   UPDATE="${NEATROOTS_UPDATE:-0}"
   UNINSTALL=0
@@ -49,6 +51,8 @@ main() {
       --version) VERSION="$2"; shift ;;
       --connect) CONNECT=1 ;;
       --no-connect) CONNECT=0 ;;
+      --laya) LAYA=yes ;;
+      --no-laya) LAYA=no ;;
       --dir) DIR="$2"; shift ;;
       --bin-dir) BIN_DIR="$2"; shift ;;
       --no-modify-path) NO_MODIFY_PATH=1 ;;
@@ -97,6 +101,7 @@ main() {
   write_command
   setup_path
   connect_agents
+  choose_laya
   finish
 }
 
@@ -347,6 +352,20 @@ connect_agents() {
   fi
 }
 
+# Laya is a 1.4 GB download, so it's the person's choice; neatroots explains why it wants it.
+choose_laya() {
+  case "$LAYA" in
+    yes|1) "$BIN_DIR/neatroots" laya allow >>"$LOG" 2>&1 && ok "Laya downloads in the background the first time neatroots starts" ; return ;;
+    no|0) "$BIN_DIR/neatroots" laya skip >>"$LOG" 2>&1; LAYA_NOTE="Laya skipped. For check answers set up Jev cloud: neatroots jev login && neatroots jev on" ; return ;;
+  esac
+  # Asks only while Laya isn't installed and hasn't been answered, so updates don't ask again.
+  if [ -t 1 ] && [ -r /dev/tty ] && { : </dev/tty; } 2>/dev/null; then
+    "$BIN_DIR/neatroots" laya choose </dev/tty || LAYA_NOTE="Choose later: neatroots laya install (local), or neatroots jev login && neatroots jev on (cloud)"
+  else
+    LAYA_NOTE="$("$BIN_DIR/neatroots" laya choose --no-ask 2>/dev/null || true)"
+  fi
+}
+
 finish() {
   echo
   if [ "$SERVICE" = 1 ]; then
@@ -361,6 +380,7 @@ finish() {
   echo "  Open the app:        http://localhost:4100"
   echo "  Point your agent:    export NEATLOGS_ENDPOINT=http://localhost:4100 NEATLOGS_API_KEY=neatroots-local"
   [ -n "${CONNECT_NOTE:-}" ] && echo "  ${CONNECT_NOTE}"
+  [ -n "${LAYA_NOTE:-}" ] && echo "  ${LAYA_NOTE}"
   echo "  Check everything:    neatroots doctor"
   echo "  No agent yet?        $EXAMPLES/README.md  (15 examples; neatroots mock-llm means no API keys)"
   echo

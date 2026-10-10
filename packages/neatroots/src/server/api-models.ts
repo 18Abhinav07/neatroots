@@ -126,14 +126,20 @@ export function mountModelsApi(app: Hono, roots: Roots): void {
     const b = await body<{ action?: string }>(c);
     if (b.action === "install") {
       roots.config.classifier.laya.enabled = true;
+      roots.config.classifier.laya.consent = "yes";
       roots.saveConfig();
       void roots.laya.ensure({ install: true }).then(() => roots.decisions.reset());
+    } else if (b.action === "skip") {
+      // Not downloading Laya: Jev cloud (or the LLM, until then) answers checks.
+      roots.config.classifier.laya.consent = "no";
+      roots.saveConfig();
+      void roots.laya.ensure();
     } else if (b.action === "restart") {
       void roots.laya.restart().then(() => roots.decisions.reset());
     } else if (b.action === "stop") {
       roots.laya.stop();
       roots.decisions.reset();
-    } else return err(c, 400, "action must be install, restart or stop");
+    } else return err(c, 400, "action must be install, skip, restart or stop");
     return c.json({ ok: true, laya: roots.laya.state });
   });
 

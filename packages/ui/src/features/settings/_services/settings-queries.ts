@@ -52,7 +52,7 @@ export function useKeyActions(path: string, name: string) {
 export function useLayaAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (action: "install" | "restart" | "stop") => post(`/api/classifier/laya`, { action }),
+    mutationFn: (action: "install" | "skip" | "restart" | "stop") => post(`/api/classifier/laya`, { action }),
     onError: (e) => toast.error(`Couldn't change Laya: ${(e as Error).message}`),
     onSettled: () => void qc.invalidateQueries({ queryKey: appKeys.status }),
   });

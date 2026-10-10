@@ -100,8 +100,11 @@ The installer downloads one prebuilt bundle (about 17 MB, macOS and Linux, arm64
 `neatroots` command in `~/.local/bin`, and offers to connect the coding agents it finds. No sudo, no
 git, no build. Add `-s -- --service` to run neatroots at login. On Windows, use WSL.
 
-On first start neatroots installs Laya, the local decision model, in the background (about 1.5 GB).
-Rules work right away. Skip Laya with `neatroots start --no-laya`.
+The installer then asks whether to download Laya, the open model that answers neatroots' yes/no
+checks on your machine (about 1.4 GB, once). Say no and set up Jev cloud for those answers instead
+(`neatroots jev login && neatroots jev on`); until one of them is set up, your LLM answers them,
+more slowly. Rules work right away either way, and you can change your mind in Settings → Decision
+model.
 
 ## Try it in two minutes, without API keys
 

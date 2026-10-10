@@ -46,7 +46,7 @@ export function GeneralSection({ status }: { status: Status }) {
           <Stat label="Findings" value={status.stats.findings.toLocaleString()} />
           <Stat label="On disk" value={bytes(status.stats.bytes)} />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SettingField label="Keep runs for (days)" htmlFor="ret-days">
             <Input id="ret-days" type="number" min={1} className="h-8" value={days} onChange={(e) => setDays(e.target.value)} />
           </SettingField>

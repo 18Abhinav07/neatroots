@@ -55,8 +55,11 @@ export interface RootsConfig {
     model: string;
     apiKey?: string;
     timeoutSec: number;
-    /** Laya, installed and run by neatroots on 127.0.0.1. */
-    laya: { enabled: boolean; autoInstall: boolean; port: number };
+    /**
+     * Laya, installed and run by neatroots on 127.0.0.1. consent: the person's answer to "download
+     * Laya?" (about 1.4 GB); it is only downloaded after a yes. An installed Laya runs regardless.
+     */
+    laya: { enabled: boolean; port: number; consent?: "yes" | "no" };
     /** TypeSafe's hosted Jev. Opt-in: span content a question needs is sent to it. */
     jevCloud: { enabled: boolean; baseUrl: string; model: string };
   };
@@ -125,7 +128,7 @@ export function defaultConfig(): RootsConfig {
       baseUrl: "http://localhost:8000",
       model: "typed-decisions",
       timeoutSec: 15,
-      laya: { enabled: true, autoInstall: true, port: 4101 },
+      laya: { enabled: true, port: 4101 },
       jevCloud: { enabled: false, baseUrl: "https://api.typesafe.ai", model: "jev-latest" },
     },
     embeddings: { model: "" },
@@ -194,9 +197,9 @@ export function loadConfig(): RootsConfig {
   return cfg;
 }
 
-export function saveConfig(cfg: RootsConfig): void {
-  fs.mkdirSync(rootsHome(), { recursive: true });
-  fs.writeFileSync(configPath(), YAML.stringify(cfg), "utf8");
+export function saveConfig(cfg: RootsConfig, file = configPath()): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, YAML.stringify(cfg), "utf8");
 }
 
 export function projectSettings(cfg: RootsConfig, project: string): ProjectSettings {

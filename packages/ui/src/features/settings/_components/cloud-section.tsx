@@ -49,7 +49,7 @@ export function CloudSection({ status }: { status: Status }) {
       </SettingsToggleCard>
       <ImportAuthCard status={status} />
       <SettingsCard title="Region and redaction" description="Emails, phone numbers and keys are always redacted before a send.">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SettingField label="Ingest region" htmlFor="nl-endpoint">
             <OptionSelect id="nl-endpoint" className="h-8" value={endpoint} onValueChange={setEndpoint} options={regions} />
           </SettingField>

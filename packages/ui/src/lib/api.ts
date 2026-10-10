@@ -298,7 +298,8 @@ export interface Status {
   install?: { mode: "bundle" | "source" | "other"; root: string | null; steer_python: string | null; steer_ts: string | null; examples?: string | null };
   cloud: { endpoint: string; has_key: boolean; has_token?: boolean; project_id?: string | null };
   classifier?: {
-    laya: { state: string; message: string | null; progress: number | null; url: string | null };
+    /** consent: the answer to "download Laya?" (about 1.4 GB); null until asked. */
+    laya: { state: string; message: string | null; progress: number | null; url: string | null; consent?: "yes" | "no" | null };
     trust: { question: string; n: number; agreement: number | null; trusted: boolean }[];
     jev_cloud: { enabled: boolean; has_key: boolean };
   };

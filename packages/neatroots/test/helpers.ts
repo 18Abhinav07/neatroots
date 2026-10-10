@@ -13,6 +13,10 @@ import { setQuiet } from "../src/util/log.js";
 
 setQuiet(true);
 
+// Code that reads the config home directly (CLI helpers, rootsHome()) must never see the
+// developer's real ~/.neatroots while tests run.
+if (!process.env.NEATROOTS_HOME?.includes("neatroots-test-")) process.env.NEATROOTS_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "neatroots-test-home-"));
+
 export function tmpHome(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "neatroots-test-"));
 }
@@ -193,5 +197,16 @@ export async function until<T>(fn: () => T | undefined | false | null, timeoutMs
     if (v) return v;
     if (Date.now() > deadline) throw new Error("timed out waiting for condition");
     await new Promise((r) => setTimeout(r, stepMs));
+  }
+}
+
+/** Like until, for conditions that need an await (an HTTP read, say). */
+export async function poll<T>(fn: () => Promise<T | undefined | false | null>, timeoutMs = 10_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() > deadline) throw new Error("timed out waiting for condition");
+    await new Promise((r) => setTimeout(r, 100));
   }
 }

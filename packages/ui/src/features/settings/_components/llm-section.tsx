@@ -97,7 +97,7 @@ function LocalLlm({ llm, status }: { llm: LlmInfo; status: Status }) {
       <Collapsible>
         <CollapsibleTrigger className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">Change the local server</CollapsibleTrigger>
         <CollapsibleContent className="flex flex-col gap-4 pt-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SettingField label="Server URL" htmlFor="llm-url" hint="Any OpenAI-compatible server: Ollama, LM Studio, llama.cpp, MLX.">
               <Input id="llm-url" className="h-8 font-mono text-xs" value={url} onChange={(e) => setUrl(e.target.value)} />
             </SettingField>
@@ -141,7 +141,7 @@ function HostedLlm({ llm }: { llm: LlmInfo }) {
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <SettingField label="Provider" htmlFor="ext-provider">
           <OptionSelect id="ext-provider" className="h-8" value={provider} onValueChange={choose} options={llm.providers.map((p) => ({ value: p.id, label: p.label }))} />
         </SettingField>
@@ -193,7 +193,7 @@ function HostedLlm({ llm }: { llm: LlmInfo }) {
           onRemove={preset.key === "stored" ? () => actions.removeKey.mutate(provider) : undefined}
         />
       </SettingField>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <SettingField label="Remove before sending" htmlFor="ext-redact">
           <OptionSelect id="ext-redact" className="h-8" value={redact} onValueChange={(v) => setRedact(v as typeof redact)} options={REDACT} />
         </SettingField>

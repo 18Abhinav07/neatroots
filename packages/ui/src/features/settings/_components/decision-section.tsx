@@ -82,16 +82,23 @@ export function DecisionSection({ status }: { status: Status }) {
             {ls.label}
           </StatusPill>
         }
-        description="A 421M-parameter typed-decision model on this machine. Free, private and fast once it has earned a question."
+        description="neatroots checks each run with yes/no questions. Laya, an open 421M-parameter model, answers them on this machine: free, private and quick once it has learned your agent. It's a one-time download of about 1.4 GB. Rather not? Turn on Jev cloud below instead."
         control={
           layaState?.state === "running" || layaState?.state === "stopped" ? (
             <PendingButton size="sm" variant="secondary" pending={laya.isPending} onClick={() => laya.mutate("restart")}>
               Restart Laya
             </PendingButton>
           ) : layaState?.state === "not_installed" || layaState?.state === "failed" || layaState?.state === "disabled" ? (
-            <PendingButton size="sm" variant="secondary" pending={laya.isPending} onClick={() => laya.mutate("install")}>
-              Install Laya
-            </PendingButton>
+            <span className="flex items-center gap-2">
+              {!layaState?.consent && layaState?.state === "not_installed" && (
+                <PendingButton size="sm" variant="ghost" pending={laya.isPending && laya.variables === "skip"} onClick={() => laya.mutate("skip")}>
+                  Skip Laya
+                </PendingButton>
+              )}
+              <PendingButton size="sm" variant="secondary" pending={laya.isPending && laya.variables === "install"} onClick={() => laya.mutate("install")}>
+                Download Laya
+              </PendingButton>
+            </span>
           ) : null
         }
       >
@@ -129,7 +136,7 @@ export function DecisionSection({ status }: { status: Status }) {
         </SettingField>
       </SettingsToggleCard>
       <SettingsCard title="Advanced" description="Pick the decision model yourself instead of the automatic routing.">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SettingField label="Which decision model answers" htmlFor="cls-backend">
             <OptionSelect id="cls-backend" className="h-8" value={backend} onValueChange={setBackend} options={BACKENDS} />
           </SettingField>

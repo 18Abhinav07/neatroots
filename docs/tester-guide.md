@@ -12,7 +12,7 @@ anything that confuses you or takes longer than it should: confusion is a findin
 
 ## Before you start
 
-- macOS or Linux (Windows through WSL), and about 2 GB free.
+- macOS or Linux (Windows through WSL), and about 1.5 GB free if you download Laya.
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) for the samples and Python examples
   (it fetches a suitable Python by itself). Node 22+ only if you want the TypeScript examples.
 - Optional: [Ollama](https://ollama.com) with a model (`ollama pull qwen3:8b`), or an API key for a
@@ -29,7 +29,7 @@ No API key is needed for the examples or samples: they use a stand-in LLM.
 curl -fsSL https://raw.githubusercontent.com/neatlogs/neatroots/main/install.sh | sh
 ```
 
-Say yes when it offers to connect your coding agents. Then open a new terminal:
+Say yes when it offers to connect your coding agents. It then asks whether to download Laya, the local model that answers neatroots' checks (about 1.4 GB). Say yes unless you'd rather use Jev cloud; if you say no, set up Jev with `neatroots jev login && neatroots jev on` (it needs a TypeSafe API key from typesafe.ai). Then open a new terminal:
 
 ```bash
 neatroots start

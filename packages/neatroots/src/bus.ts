@@ -13,8 +13,8 @@ export interface RootsEvents {
   activity: { trace_id?: string; kind: string; message: string };
   /** An import job's progress (ingest/importers). */
   import: { id: string; source: string; state: string; traces: number; spans: number; failed: number; last_error: string | null };
-  /** One streamed event from a coding-agent chat session (agents/chat). */
-  chat: { session_id: string; event: Record<string, unknown> };
+  /** One streamed event from a coding-agent chat session (agents/chat), or (state only) a turn that just ended. */
+  chat: { session_id: string; event?: Record<string, unknown>; state?: "idle" | "error" };
   /** A coding agent asked the app to open something (MCP show_in_ui); path is a hash route. */
   navigate: { path: string };
   /** A replay finished or failed (replay/). */
