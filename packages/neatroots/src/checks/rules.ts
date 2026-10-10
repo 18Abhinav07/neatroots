@@ -138,6 +138,8 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
 /** Fills {placeholders} from a finding's params; unknown placeholders are removed. */
 export function fillTemplate(template: string, params: Record<string, string>): string {
   return template
+    // [[optional text with {param}]] stays only when every placeholder in it has a value.
+    .replace(/\[\[([^\]]*)\]\]/g, (_, seg: string) => ([...seg.matchAll(/\{(\w+)\}/g)].every((m) => params[m[1]]?.trim()) ? seg : ""))
     .replace(/\{(\w+)\}/g, (_, k: string) => (params[k] !== undefined ? params[k] : ""))
     .replace(/\(\s*\)/g, "")
     .replace(/\s+/g, " ")

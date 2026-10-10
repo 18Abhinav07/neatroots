@@ -23,6 +23,8 @@ export function useRunDetail(traceId: string | undefined) {
     queryKey: runKeys.detail(traceId ?? ""),
     queryFn: () => api<RunDetail>(`/api/runs/${traceId}`),
     enabled: !!traceId,
+    // While its checks are still queued or running, keep the counts current.
+    refetchInterval: (q) => (q.state.data?.coverage?.state === "checking" ? 3000 : false),
   });
 }
 

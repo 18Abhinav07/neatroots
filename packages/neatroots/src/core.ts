@@ -7,7 +7,7 @@ import { LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
 import { CheckRegistry } from "./checks/registry.js";
 import { SteeringHub } from "./steering/hub.js";
-import { Engine } from "./engine/engine.js";
+import { Engine, resumeUnfinished } from "./engine/engine.js";
 import { ImportJobs } from "./ingest/importers/index.js";
 import { Replays } from "./replay/replay.js";
 import { AgentChats } from "./agents/chat.js";
@@ -66,7 +66,13 @@ export class Roots {
     this.imports = new ImportJobs(this);
     this.replays = new Replays(this);
     this.chats = new AgentChats(this);
-    if (!opts.noEngine) this.engine = new Engine(this, this.llm, this.decisions, this.checks, this.steering);
+    this.store.reindexSearch((n) => n && log.info(`search now covers whole inputs and outputs (${n} spans re-indexed)`));
+    if (!opts.noEngine) {
+      const engine = new Engine(this, this.llm, this.decisions, this.checks, this.steering);
+      this.engine = engine;
+      // Finish check work a previous process accepted but didn't complete (a restart or a crash).
+      setTimeout(() => void resumeUnfinished(engine, this).catch((e: Error) => log.warn(`couldn't resume checks: ${e.message}`)), 1500).unref();
+    }
   }
 
   ingest(batches: ResourceSpansBatch[]): TraceUpdate[] {

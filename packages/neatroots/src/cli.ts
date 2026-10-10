@@ -15,6 +15,7 @@ import { registerConnectCommand } from "./cli/connect.js";
 import { registerCloudImportCommands, registerDataCommands } from "./cli/data.js";
 import { connectClient, findClient, listClients, serverCommand, CLIENTS } from "./mcp/clients.js";
 import { parseChecks } from "./checks/registry.js";
+import { checkWarnings } from "./checks/lint.js";
 import { hardwareTier, LlmClient } from "./models/llm.js";
 import { DecisionModel } from "./models/decision.js";
 import { setCloudKey, deleteCloudKey, getCloudKey, getCloudToken, getSecret } from "./relay/keychain.js";
@@ -380,7 +381,10 @@ checks
     let bad = 0;
     for (const f of files) {
       const { checks: cs, errors } = parseChecks(fs.readFileSync(f, "utf8"));
-      for (const c of cs) console.log(`✓ ${f}: ${c.id} (${c.kind})`);
+      for (const c of cs) {
+        console.log(`✓ ${f}: ${c.id} (${c.kind})`);
+        for (const w of checkWarnings(c)) console.log(`  ! ${w}`);
+      }
       for (const e of errors) {
         bad++;
         console.log(`✗ ${f}${e.id ? ` ${e.id}` : ""}: ${e.message}`);

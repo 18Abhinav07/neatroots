@@ -22,7 +22,9 @@ export function useChat(id: string | undefined) {
     enabled: !!id,
   });
   const [live, setLive] = useState<ChatEvent[]>([]);
-  useEffect(() => setLive([]), [id, data]);
+  useEffect(() => {
+    setLive([]);
+  }, [id, data]);
   useEffect(() => {
     if (!id) return;
     const on = (e: Event) => {

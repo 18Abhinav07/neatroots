@@ -58,11 +58,24 @@ applies_to: { workflow: refund-agent }
 `choice` questions take `options` (label → description) and `flag_on`; `score` questions take
 `levels` and `flag_at_level`.
 
+### Make sure a question can see what it asks about
+
+- `scope: span` judges one call at a time: right for "Did this tool call pass a negative amount?".
+- `scope: trace` sees the run's spans in order: right whenever a question relates two things, such
+  as a tool's result and what the agent said next.
+- A question about the agent's answer ("claims", "says", "reports", "the final response") needs
+  `scope: trace` and `evidence.final_output: true`. `neatroots checks validate`, the app's check
+  editor and the MCP check tools warn when a check asks about the answer but can't see it; a check
+  drafted from a plain-language concern is given that evidence automatically.
+- Preview a new check on at least one run that has the problem and one that doesn't.
+
 ## Where questions come from
 
 - The **question library**: ignored tool errors, repeating without progress, answers that contradict
   tools, system-prompt violations, unfinished tasks, following instructions found in tool content,
-  personal data in output, wrong tool or arguments.
+  personal data in output, wrong tool or arguments. Four run on every agent that uses tools,
+  whatever the planner picks: ignored tool errors, answers that contradict tools, following
+  instructions found in tool content, and personal data in the answer.
 - The **planner**: on a workflow's first run the local LLM reads the system prompt, first user message
   and tools, picks 3–8 library questions, fills in parameters, and writes new questions only for gaps.
   Plans are cached per workflow and redone when new tools appear.

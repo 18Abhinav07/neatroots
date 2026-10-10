@@ -23,7 +23,8 @@
     <button id="send">Ask the widget</button>
     <pre id="out"></pre>
     <script type="module">
-      const ENDPOINT = "http://localhost:4100";
+      // Another neatroots? Open this page with ?endpoint=http://localhost:4200
+      const ENDPOINT = new URLSearchParams(location.search).get("endpoint") ?? "http://localhost:4100";
       document.getElementById("send").onclick = async () => {
         const started = new Date();
         const question = "Do you ship to Canada?";

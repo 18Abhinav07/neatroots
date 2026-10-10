@@ -58,7 +58,9 @@ export function SearchPage({ query }: { query: URLSearchParams }) {
   const [q, setQ] = useState(query.get("q") ?? "");
   const input = useRef<HTMLInputElement>(null);
   const dq = useDebounced(q.trim(), 250);
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
   useEffect(() => {
     const next = dq ? `search?q=${encodeURIComponent(dq)}` : "search";
     if (window.location.hash !== `#/${next}`) window.history.replaceState(null, "", `#/${next}`);
@@ -111,7 +113,12 @@ export function SearchPage({ query }: { query: URLSearchParams }) {
         ) : isFetching && !data ? (
           Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-24 w-full" />)
         ) : !data?.runs.length ? (
-          <EmptyState variant="inline" state="no-results" title="Nothing matched" description="Try fewer words, or remove a filter." />
+          <EmptyState
+            variant="inline"
+            state="no-results"
+            title="Nothing matched"
+            description="Try fewer words, or remove a filter. Search covers span names, errors, and the first 150,000 and last 50,000 characters of each input and output."
+          />
         ) : (
           <>
             <p className="text-xs text-muted-foreground tabular-nums">

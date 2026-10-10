@@ -1,0 +1,49 @@
+import { describe, expect, it } from "vitest";
+import { checkWarnings, fitEvidence } from "../src/checks/lint.js";
+import { parseChecks } from "../src/checks/registry.js";
+import type { QuestionCheck } from "../src/checks/types.js";
+
+// The check QA's model drafted from "The agent claims a refund succeeded after the payment tool
+// timed out": valid, saved, and blind to the answer it asks about.
+const QA_DRAFT = `
+id: refund-success-after-timeout
+title: Did the agent report a successful refund when the payment tool call resulted in a timeout?
+scope: span
+ask: Yes, did the final response state that the refund succeeded despite the payment tool returning a timeout error?
+evidence:
+  spans:
+    type: [tool, mcp_tool]
+  fields: [input, output, status, error]
+kind: yes_no
+flag_at: 0.8
+`;
+
+describe("checks that can't see what they ask about", () => {
+  it("warns about a span-scope question on the agent's answer", () => {
+    const [c] = parseChecks(QA_DRAFT).checks;
+    expect(checkWarnings(c)).toHaveLength(1);
+    expect(checkWarnings(c)[0]).toMatch(/scope: trace/);
+  });
+
+  it("turns a drafted question about the answer into a whole-run question that sees it", () => {
+    const [c] = parseChecks(QA_DRAFT).checks as QuestionCheck[];
+    const fit = fitEvidence(c);
+    expect(fit.scope).toBe("trace");
+    expect(fit.evidence).toMatchObject({ final_output: true, spans: { type: ["llm", "tool", "mcp_tool"] } });
+    expect(fit.ask).toMatch(/^Did the final response/);
+    expect(checkWarnings(fit)).toEqual([]);
+  });
+
+  it("leaves a question about one call alone", () => {
+    const [c] = parseChecks(`
+id: negative-amount
+kind: yes_no
+scope: span
+ask: Did this tool call pass a negative amount?
+evidence: { spans: { type: [tool] }, fields: [input] }
+flag_at: 0.8
+`).checks as QuestionCheck[];
+    expect(checkWarnings(c)).toEqual([]);
+    expect(fitEvidence(c).scope).toBe("span");
+  });
+});

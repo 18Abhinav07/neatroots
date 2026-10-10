@@ -8,8 +8,10 @@ import { preview } from "./view.js";
 
 export type ChatItem =
   | { type: "system"; text: string; span_id: string }
-  | { type: "user"; text: string; span_id: string }
-  | { type: "assistant"; text: string; span_id: string; model?: string; tokens?: number; tool_calls: { name: string; arguments: Plain }[]; error?: string }
+  /** history: an earlier turn, replayed in this call's input (not something that happened in this run). */
+  | { type: "user"; text: string; span_id: string; history?: boolean }
+  /** inferred: the SDK recorded no tool call; it was read from the tool spans that ran next. */
+  | { type: "assistant"; text: string; span_id: string; model?: string; tokens?: number; tool_calls: { name: string; arguments: Plain }[]; error?: string; history?: boolean; inferred?: boolean }
   | { type: "tool"; name: string; span_id: string; input: Plain | undefined; output: Plain | undefined; status: SpanInfo["status"]; error?: string; duration_ms: number }
   | { type: "agent"; name: string; span_id: string; status: SpanInfo["status"]; duration_ms: number; llm_calls: number; tool_calls: number; input?: string; output?: string; error?: string };
 
@@ -66,14 +68,19 @@ export function buildChat(t: TraceSnapshot, rootSpanId?: string): { root: string
   for (const s of inScope) {
     if (s.kind === "LLM") {
       llmCalls++;
-      for (const m of messages(s.input)) {
+      const msgs = messages(s.input);
+      // Messages before the last user message are the conversation so far (earlier turns).
+      const current = msgs.map((m) => String(m.role)).lastIndexOf("user");
+      msgs.forEach((m, i) => {
         const role = String(m.role);
         const body = text(m.content);
+        const history = i < current;
         if (role === "system" && body && once(`system:${body}`)) items.push({ type: "system", text: body, span_id: s.id });
-        else if (role === "user" && body && once(`user:${body}`)) items.push({ type: "user", text: body, span_id: s.id });
+        else if (role === "user" && body && once(`user:${body}`)) items.push({ type: "user", text: body, span_id: s.id, ...(history ? { history } : {}) });
+        else if (role === "assistant" && history && body && once(`assistant:${body}`)) items.push({ type: "assistant", text: body, span_id: s.id, tool_calls: [], history });
         else if ((role === "tool" || role === "function") && !hasTools && body && once(`tool:${body}`))
           items.push({ type: "tool", name: String(m.name ?? "tool"), span_id: s.id, input: undefined, output: body, status: "ok", duration_ms: 0 });
-      }
+      });
       if (typeof s.input === "string" && s.input && once(`user:${s.input}`)) items.push({ type: "user", text: s.input, span_id: s.id });
       const out = messages(s.output);
       const reply = out.length ? out.map((m) => text(m.content)).filter(Boolean).join("\n") : text(s.output);
@@ -98,6 +105,17 @@ export function buildChat(t: TraceSnapshot, rootSpanId?: string): { root: string
       });
     }
   }
+  // An assistant step with nothing recorded (some SDKs drop the tool call from the LLM output):
+  // the tool spans that ran right after it say what it called.
+  items.forEach((it, i) => {
+    if (it.type !== "assistant" || it.history || it.text || it.tool_calls.length || it.error) return;
+    const next: ChatItem[] = [];
+    for (let j = i + 1; j < items.length && items[j].type === "tool"; j++) next.push(items[j]);
+    if (next.length) {
+      it.tool_calls = next.map((x) => (x.type === "tool" ? { name: x.name, arguments: x.input ?? null } : { name: "tool", arguments: null }));
+      it.inferred = true;
+    }
+  });
   if (!llmCalls) {
     // No LLM spans in scope: the root's own input and output still make a turn.
     const input = text(root.input);

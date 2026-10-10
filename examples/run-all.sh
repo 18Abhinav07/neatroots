@@ -12,7 +12,11 @@ URL="${NEATROOTS_URL:-http://localhost:4100}"
 MOCK="${MOCK_LLM_URL:-http://127.0.0.1:4110/v1}"
 NEATROOTS="${NEATROOTS_BIN:-neatroots}"
 
-curl -sf "$URL/api/status" >/dev/null || { echo "neatroots isn't answering at $URL. Start it: neatroots start"; exit 1; }
+STATUS=$(curl -sf "$URL/api/status") || { echo "neatroots isn't answering at $URL. Start it: neatroots start"; exit 1; }
+# Every example sends to this instance, whatever ports it runs on.
+GRPC_PORT=$(printf '%s' "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('config',{}).get('grpc_port') or '')" 2>/dev/null)
+export NEATROOTS_URL="$URL" NEATLOGS_ENDPOINT="$URL" NEATLOGS_API_KEY="${NEATLOGS_API_KEY:-neatroots-local}"
+[ -n "$GRPC_PORT" ] && export NEATROOTS_GRPC="localhost:$GRPC_PORT"
 if ! curl -sf "${MOCK%/v1}/v1/models" >/dev/null; then
   echo "→ starting the mock LLM"
   $NEATROOTS mock-llm >/dev/null 2>&1 &

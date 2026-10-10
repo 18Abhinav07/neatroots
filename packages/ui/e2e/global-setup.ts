@@ -59,15 +59,15 @@ export default async function globalSetup(): Promise<void> {
       "",
     ].join("\n"),
   );
-  // A home of its own and no coding agent CLIs (the overrides point nowhere, so neatroots doesn't find
-  // one in /Applications either): nothing touches the developer's config. Cursor looks installed.
+  // A home of its own; Claude Code points nowhere (so neatroots doesn't find one in /Applications
+  // either) and Codex is a script that answers like `codex exec --json`. Cursor looks installed.
   fs.mkdirSync(path.join(home, ".cursor"), { recursive: true });
   const env: NodeJS.ProcessEnv = {
     NEATROOTS_HOME: home,
     HOME: home,
     PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`,
     NEATROOTS_CLAUDE_BIN: path.join(home, "no-claude"),
-    NEATROOTS_CODEX_BIN: path.join(home, "no-codex"),
+    NEATROOTS_CODEX_BIN: path.join(here, "fixtures", "fake-codex"),
     NEATROOTS_DEBUG: "",
   };
   const mock = start(["mock-llm", "--port", String(mockPort)], env, path.join(home, "mock.log"));

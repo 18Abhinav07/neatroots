@@ -200,3 +200,39 @@ describe("applyExternalLlm", () => {
     expect(applyExternalLlm(c, { base_url: "http://localhost:8080/v1", enabled: true })).toBeUndefined();
   });
 });
+
+describe("the LLM queue", () => {
+  it("serves interactive calls before queued background ones, and drops calls cancelled while waiting", async () => {
+    const order: string[] = [];
+    const server = http.createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c) => (raw += c));
+      req.on("end", () => {
+        if (req.url?.endsWith("/models")) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ data: [{ id: "local-model" }] }));
+          return;
+        }
+        order.push(String(JSON.parse(raw).messages.at(-1).content));
+        setTimeout(() => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(chatReply("ok")));
+        }, 60);
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    closers.push(() => new Promise((r) => server.close(() => r())));
+    const port = (server.address() as net.AddressInfo).port;
+    const llm = new LlmClient(cfgWith((c) => Object.assign(c, { baseUrl: `http://127.0.0.1:${port}/v1`, enabled: true })), { secret: async () => undefined });
+
+    const background = ["bg1", "bg2", "bg3"].map((t) => llm.chat([{ role: "user", content: t }], { priority: "high" }));
+    const ac = new AbortController();
+    const cancelled = llm.chat([{ role: "user", content: "cancelled" }], { priority: "high", signal: ac.signal });
+    const interactive = llm.chat([{ role: "user", content: "person waiting" }], { priority: "interactive" });
+    ac.abort();
+    await expect(cancelled).rejects.toThrow(/cancelled before the model started/);
+    await Promise.all([...background, interactive]);
+    expect(order.indexOf("person waiting")).toBeLessThan(order.indexOf("bg2"));
+    expect(order).not.toContain("cancelled");
+  });
+});

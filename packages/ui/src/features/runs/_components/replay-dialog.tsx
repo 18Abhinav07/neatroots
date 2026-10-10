@@ -46,7 +46,9 @@ export function ReplayDialog({ traceId, spans, initialSpan, onClose }: { traceId
   const [spanId, setSpanId] = useState(initialSpan ?? llmSpans.at(-1)?.span_id);
   const { data: span } = useSpanDetail(traceId, mode === "llm" ? spanId : undefined);
   const [messages, setMessages] = useState<Msg[]>([]);
-  useEffect(() => setMessages(toMessages(span?.view.input)), [span?.span_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setMessages(toMessages(span?.view.input));
+  }, [span?.span_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     const body =

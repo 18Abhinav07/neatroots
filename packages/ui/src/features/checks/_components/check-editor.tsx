@@ -1,12 +1,18 @@
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { PendingButton } from "@/components/pending-button";
+import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import { api, type Status } from "@/lib/api";
 import { pct } from "@/lib/format";
 import { go } from "@/lib/router";
+import { appKeys } from "../../runs/_services/run-keys";
 import { useCheckActions, type PreviewResult } from "../_services/check-queries";
+
+const aborted = (e: unknown) => (e as Error)?.name === "AbortError";
 
 /** Write a check: describe it, let the LLM draft the YAML, preview it on recent runs, save. */
 export function CheckEditor({ open, initialYaml, userDir, onClose }: { open: boolean; initialYaml: string; userDir?: string; onClose: () => void }) {
@@ -14,6 +20,16 @@ export function CheckEditor({ open, initialYaml, userDir, onClose }: { open: boo
   const [concern, setConcern] = useState("");
   const [yaml, setYaml] = useState(initialYaml);
   const [preview, setPreview] = useState<PreviewResult>();
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const ctrl = useRef<AbortController | null>(null);
+  const waiting = a.draft.isPending || a.preview.isPending;
+  const { data: status } = useQuery({ queryKey: appKeys.status, queryFn: () => api<Status>("/api/status"), enabled: open, refetchInterval: waiting ? 3000 : false });
+  const busy = Math.max(0, (status?.engine?.llm.busy ?? 0) - 1);
+  const start = () => {
+    ctrl.current?.abort();
+    ctrl.current = new AbortController();
+    return ctrl.current.signal;
+  };
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
@@ -41,17 +57,26 @@ export function CheckEditor({ open, initialYaml, userDir, onClose }: { open: boo
                 pending={a.draft.isPending}
                 pendingLabel="Drafting…"
                 onClick={() =>
-                  a.draft.mutate(concern, {
-                    onSuccess: (r) => {
-                      setYaml(r.yaml);
-                      setPreview(undefined);
+                  a.draft.mutate(
+                    { concern, signal: start() },
+                    {
+                      onSuccess: (r) => {
+                        setYaml(r.yaml);
+                        setPreview(undefined);
+                        setWarnings(r.warnings ?? []);
+                      },
+                      onError: (e) => !aborted(e) && toast.error(`Couldn't draft the check: ${(e as Error).message}. Your description is still here.`),
                     },
-                    onError: (e) => toast.error(`Couldn't draft the check: ${(e as Error).message}. Your description is still here.`),
-                  })
+                  )
                 }
               >
                 Draft check
               </PendingButton>
+              {a.draft.isPending && (
+                <Button variant="ghost" size="sm" className="ml-2" onClick={() => ctrl.current?.abort()}>
+                  Cancel draft
+                </Button>
+              )}
             </div>
           </Field>
           <Field>
@@ -61,16 +86,34 @@ export function CheckEditor({ open, initialYaml, userDir, onClose }: { open: boo
               rows={14}
               className="h-72 resize-none font-mono text-xs"
               value={yaml}
-              onChange={(e) => setYaml(e.target.value)}
+              onChange={(e) => {
+                setYaml(e.target.value);
+                setWarnings([]);
+              }}
               placeholder={"id: my-check\nkind: yes_no\nscope: trace\nask: Did the agent ...?\nflag_at: 0.8"}
             />
           </Field>
+          {waiting && busy > 0 && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              The model is also working through {busy} background check{busy === 1 ? "" : "s"}; yours goes first.
+            </p>
+          )}
+          {warnings.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-lg border border-warning-border bg-warning-surface px-3 py-2.5 text-xs text-foreground" role="status">
+              {warnings.map((w) => (
+                <span key={w}>{w}</span>
+              ))}
+            </div>
+          )}
           {preview && (
             <div className="flex flex-col gap-1.5 rounded-lg bg-surface-subtle px-3 py-2.5">
               <span className="text-sm text-foreground tabular-nums">
                 Fires on {preview.hits.length} of {preview.checked} runs · hit rate {pct(preview.hit_rate)}
                 {preview.truncated ? ` (stopped early; ${preview.total} available)` : ""}
               </span>
+              {preview.checked > 0 && preview.hits.length === 0 && (
+                <span className="text-xs text-muted-foreground">It fired on none of these runs. If one of them has the problem, make sure the check's evidence includes what it asks about.</span>
+              )}
               <div className="flex max-h-40 flex-col overflow-y-auto">
                 {preview.hits.map((h) => (
                   <button
@@ -89,12 +132,28 @@ export function CheckEditor({ open, initialYaml, userDir, onClose }: { open: boo
           )}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-3">
+          {a.preview.isPending && (
+            <Button variant="ghost" onClick={() => ctrl.current?.abort()}>
+              Cancel preview
+            </Button>
+          )}
           <PendingButton
             variant="secondary"
             disabled={!yaml}
             pending={a.preview.isPending}
             pendingLabel="Previewing…"
-            onClick={() => a.preview.mutate(yaml, { onSuccess: setPreview, onError: (e) => toast.error(`Couldn't preview the check: ${(e as Error).message}`) })}
+            onClick={() =>
+              a.preview.mutate(
+                { yaml, signal: start() },
+                {
+                  onSuccess: (r) => {
+                    setPreview(r);
+                    setWarnings(r.warnings ?? []);
+                  },
+                  onError: (e) => !aborted(e) && toast.error(`Couldn't preview the check: ${(e as Error).message}`),
+                },
+              )
+            }
           >
             Preview on recent runs
           </PendingButton>

@@ -186,6 +186,20 @@ export function ChatView({ traceId, onOpenSpan, fork }: { traceId: string; onOpe
           <ol className="flex flex-col" data-testid="chat-view">
             {data.items.map((item, i) => {
               const open = () => onOpenSpan(item.span_id);
+              const isHistory = (x: ChatItem | undefined) => !!x && (x.type === "user" || x.type === "assistant") && !!x.history;
+              // Earlier turns, replayed in this turn's input: one label, then muted messages.
+              if (isHistory(item)) {
+                const h = item as Extract<ChatItem, { type: "user" | "assistant" }>;
+                return (
+                  <li key={i} className="flex flex-col gap-1 pb-3 pl-11">
+                    {!isHistory(data.items[i - 1]) && <span className="text-eyebrow pb-1 text-2xs text-muted-foreground">Earlier in this conversation</span>}
+                    <span className="flex gap-2 text-sm text-muted-foreground">
+                      <span className="w-16 shrink-0 text-2xs uppercase">{h.type === "user" ? "user" : "assistant"}</span>
+                      <span className="line-clamp-3 min-w-0 break-words whitespace-pre-wrap">{h.text}</span>
+                    </span>
+                  </li>
+                );
+              }
               switch (item.type) {
                 case "system":
                   return (
@@ -216,7 +230,7 @@ export function ChatView({ traceId, onOpenSpan, fork }: { traceId: string; onOpe
                     >
                       {item.text ? <Body text={item.text} /> : null}
                       {item.tool_calls.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           {item.tool_calls.map((c, j) => (
                             <span key={j} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-surface-subtle px-2 py-0.5 font-mono text-xs text-foreground" title={argText(c.arguments)}>
                               <Icon icon={Wrench01Icon} size="xs" className="shrink-0 text-info-fg" />
@@ -224,6 +238,7 @@ export function ChatView({ traceId, onOpenSpan, fork }: { traceId: string; onOpe
                               <span className="truncate text-muted-foreground">({argText(c.arguments)})</span>
                             </span>
                           ))}
+                          {item.inferred && <span className="text-2xs text-muted-foreground">read from the tool spans that ran next; the SDK didn't record this call</span>}
                         </div>
                       )}
                       {item.error && <pre className="rounded-lg border border-danger-border bg-danger-surface px-3 py-2 font-mono text-xs whitespace-pre-wrap text-danger-fg">{item.error}</pre>}

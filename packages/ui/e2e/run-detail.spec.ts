@@ -9,6 +9,12 @@ test.describe("run page", () => {
     await expect(problems.getByText(/secret key/i).first()).toBeVisible();
   });
 
+  test("says how much of the run was checked, next to the result", async ({ page }) => {
+    await open(page, `runs/${state().researchRun}`);
+    // Rules always run; the question count comes from the run's plan and the baseline questions.
+    await expect(page.getByTestId("problems").getByText(/\d+ of \d+ questions answered · rules on every span/)).toBeVisible({ timeout: 30_000 });
+  });
+
   test("Overview reads the run as a conversation", async ({ page }) => {
     await open(page, `runs/${state().supportRun}`);
     const chat = page.getByTestId("chat-view");

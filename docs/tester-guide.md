@@ -58,7 +58,7 @@ neatroots steering gate --project support-agent
 uv run ~/.neatroots/app/examples/samples/run_samples.py
 ```
 
-Wait about a minute, then check the **Runs** page against this table:
+Then check the **Runs** page against this table. On a local model, checks finish a few minutes after the runs do; each run page shows how many of its questions have been answered so far.
 
 | Scenario (the request) | What neatroots should flag |
 | --- | --- |
@@ -71,6 +71,12 @@ Wait about a minute, then check the **Runs** page against this table:
 | happy | Nothing |
 
 Rules alone, with no LLM, catch loop-404 and secret-leak. The others need a local or hosted LLM.
+
+To score it rather than eyeball it, run the scorer. It waits until every sample is fully checked (several minutes on a local model), then prints what each one raised against what it should:
+
+```bash
+uv run ~/.neatroots/app/examples/samples/score.py
+```
 
 - [ ] Every flagged scenario shows its problem. Note any that don't.
 - [ ] `happy` shows no problems. Note any false alarm.

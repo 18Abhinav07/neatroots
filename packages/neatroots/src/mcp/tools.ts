@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { checkWarnings } from "../checks/lint.js";
 import type { Roots } from "../core.js";
 import { runDetail, runSummary, spanDetail, checkFromInput } from "../server/api.js";
 import { draftCheckFromConcern, askRuns } from "../engine/assist.js";
@@ -275,7 +276,7 @@ export const TOOLS = [
     run: async (roots, a) => {
       if (!roots.engine) throw new Error("engine not running");
       const traceId = resolveTrace(roots, a.trace_id);
-      const exp = await roots.engine.explainRun(traceId, { force: a.refresh });
+      const exp = await roots.engine.explainRun(traceId, { force: a.refresh, priority: "interactive" });
       if (!exp) return { trace_id: traceId, explanation: null, reason: "The local LLM could not explain this run." };
       return { trace_id: traceId, cause: exp.cause, fix: exp.fix, evidence_span_ids: exp.evidence_span_ids, grounding: exp.grounding, model: exp.model };
     },
@@ -325,10 +326,10 @@ export const TOOLS = [
       } else if (a.concern) {
         check = await draftCheckFromConcern(roots, a.concern, { workflow: a.workflow });
       } else throw new Error("give concern or check");
-      if (a.save === false) return { saved: false, id: check.id, yaml: checkToYaml(check) };
+      if (a.save === false) return { saved: false, id: check.id, yaml: checkToYaml(check), warnings: checkWarnings(check) };
       if (a.dir && !roots.config.checkDirs.includes(a.dir)) throw new Error("dir must be a registered project checks directory (neatroots init registers one)");
       const saved = roots.checks.save(check, a.dir ? { dir: a.dir } : "user", "mcp");
-      return { saved: true, id: saved.check.id, path: saved.path, yaml: checkToYaml(saved.check) };
+      return { saved: true, id: saved.check.id, path: saved.path, yaml: checkToYaml(saved.check), warnings: checkWarnings(saved.check) };
     },
   }),
   def({
@@ -351,7 +352,7 @@ export const TOOLS = [
       }
       if (!check) throw new Error("check not found or invalid");
       const r = await roots.engine.previewCheck(check, { limit: a.limit ?? 50, workflow: a.workflow });
-      return { id: check.id, checked: r.checked, total: r.total, hits: r.hits.length, hit_rate: r.checked ? r.hits.length / r.checked : null, truncated: r.truncated, examples: r.hits.slice(0, 10) };
+      return { id: check.id, checked: r.checked, total: r.total, hits: r.hits.length, hit_rate: r.checked ? r.hits.length / r.checked : null, truncated: r.truncated, examples: r.hits.slice(0, 10), warnings: checkWarnings(check) };
     },
   }),
   def({

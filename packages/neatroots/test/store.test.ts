@@ -67,6 +67,28 @@ describe("store", () => {
     expect(st.getRun(b)).toBeUndefined();
   });
 
+  it("finds text anywhere in long outputs, including the very end", () => {
+    const st = store();
+    const t = hex(16);
+    const filler = (n: number) => "x ".repeat(n / 2);
+    const out = `${filler(1_000)} QA_AT_1K ${filler(9_000)} QA_AT_10K ${filler(15_000)} QA_AT_25K ${filler(25_000)} QA_TAIL`;
+    st.ingest([batch([toolSpan(t, "", "fetch_page", '{"url":"x"}', JSON.stringify(out))])]);
+    for (const marker of ["QA_AT_1K", "QA_AT_10K", "QA_AT_25K", "QA_TAIL"]) expect(st.searchSpans(marker).map((h) => h.trace_id)).toEqual([t]);
+  });
+
+  it("re-indexes spans that were stored with the old 4,000-character index", async () => {
+    const st = store();
+    const t = hex(16);
+    st.ingest([batch([toolSpan(t, "", "fetch_page", "{}", JSON.stringify(`${"y ".repeat(5_000)} OLD_TAIL`))])]);
+    // As a database written by an earlier version: a truncated index, no version marker.
+    st.db.prepare("UPDATE span_fts SET body = substr(body, 1, 4000)").run();
+    st.db.prepare("DELETE FROM meta WHERE key = 'search_index'").run();
+    expect(st.searchSpans("OLD_TAIL")).toEqual([]);
+    const n = await new Promise<number>((r) => st.reindexSearch(r));
+    expect(n).toBe(1);
+    expect(st.searchSpans("OLD_TAIL").map((h) => h.trace_id)).toEqual([t]);
+  });
+
   it("serves the doctor read-back shape", () => {
     const st = store();
     const t = hex(16);

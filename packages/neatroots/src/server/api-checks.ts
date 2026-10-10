@@ -3,6 +3,7 @@ import YAML from "yaml";
 import type { Roots } from "../core.js";
 import { AnyCheck, isQuestion, type Check } from "../checks/types.js";
 import { parseChecks } from "../checks/registry.js";
+import { checkWarnings } from "../checks/lint.js";
 import { draftCheckFromConcern } from "../engine/assist.js";
 import { err, body } from "./util.js";
 
@@ -55,7 +56,7 @@ export function mountChecksApi(app: Hono, roots: Roots): void {
     const dir = (raw as { dir?: string })?.dir;
     if (dir && !roots.config.checkDirs.includes(dir)) return err(c, 400, "dir must be a registered project checks directory");
     const saved = roots.checks.save(check, dir ? { dir } : "user");
-    return c.json({ ok: true, id: saved.check.id, path: saved.path, source: saved.source });
+    return c.json({ ok: true, id: saved.check.id, path: saved.path, source: saved.source, warnings: checkWarnings(check) });
   });
 
   app.post("/api/checks/:id/enabled", async (c) => {
@@ -71,8 +72,8 @@ export function mountChecksApi(app: Hono, roots: Roots): void {
     const b = await body<{ concern?: string; workflow?: string; project?: string }>(c);
     if (!b.concern || b.concern.length < 8) return err(c, 400, "describe the concern in a sentence");
     try {
-      const check = await draftCheckFromConcern(roots, b.concern, { workflow: b.workflow, project: b.project });
-      return c.json({ check, yaml: YAML.stringify(check) });
+      const check = await draftCheckFromConcern(roots, b.concern, { workflow: b.workflow, project: b.project, signal: c.req.raw.signal });
+      return c.json({ check, yaml: YAML.stringify(check), warnings: checkWarnings(check) });
     } catch (e) {
       return err(c, 503, (e as Error).message);
     }
@@ -84,8 +85,8 @@ export function mountChecksApi(app: Hono, roots: Roots): void {
     const { check, error } = checkFromInput(b.yaml ? { yaml: b.yaml } : b.check);
     if (!check) return err(c, 400, error ?? "invalid check");
     try {
-      const r = await engine.previewCheck(check, { limit: b.limit ?? 50, workflow: b.workflow, project: b.project });
-      return c.json({ ...r, hit_rate: r.checked ? r.hits.length / r.checked : null });
+      const r = await engine.previewCheck(check, { limit: b.limit ?? 50, workflow: b.workflow, project: b.project, signal: c.req.raw.signal });
+      return c.json({ ...r, hit_rate: r.checked ? r.hits.length / r.checked : null, warnings: checkWarnings(check) });
     } catch (e) {
       return err(c, 503, (e as Error).message);
     }

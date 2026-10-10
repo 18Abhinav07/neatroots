@@ -35,6 +35,7 @@ import type { Explanation, Finding, Note, PlanRow } from "../types.js";
 import type { Plain } from "../otlp/types.js";
 import { preview } from "../semantics/view.js";
 import { log } from "../util/log.js";
+import { CheckProgress } from "./progress.js";
 
 /** Default library questions when no LLM is available to plan. */
 export const DEFAULT_PLAN = ["ignored-tool-error", "repeat-without-progress", "unfinished-task", "contradicts-tool-output"];
@@ -73,6 +74,8 @@ interface LiveRun {
   ended: boolean;
   endHandled: boolean;
   doctor: boolean;
+  /** Resuming after a restart: answers already stored are not asked again. */
+  answered?: { traceChecks: Set<string>; toolSpans: Set<string> };
 }
 
 export interface EngineStatus {
@@ -116,6 +119,7 @@ export class Engine {
   private jobs = new Map<string, number>();
   private idleWaiters = new Map<string, (() => void)[]>();
   private decisionDown = false;
+  readonly progress: CheckProgress;
 
   constructor(
     private readonly roots: Roots,
@@ -124,6 +128,7 @@ export class Engine {
     readonly registry: CheckRegistry,
     readonly steering: SteeringHub,
   ) {
+    this.progress = new CheckProgress(roots.store);
     roots.bus.on("trace", (u) => this.onTrace(u));
     steering.idleWaiter = (traceId, ms) => this.waitIdle(traceId, ms);
   }
@@ -132,6 +137,7 @@ export class Engine {
 
   private track<T>(traceId: string, p: Promise<T>): Promise<T | undefined> {
     this.jobs.set(traceId, (this.jobs.get(traceId) ?? 0) + 1);
+    this.progress.checking(traceId);
     return p
       .catch((err) => {
         log.warn(`check job failed for ${traceId.slice(0, 8)}: ${(err as Error).message}`);
@@ -141,6 +147,7 @@ export class Engine {
         const n = (this.jobs.get(traceId) ?? 1) - 1;
         if (n <= 0) {
           this.jobs.delete(traceId);
+          if (this.live.get(traceId)?.endHandled) this.progress.done(traceId);
           for (const fn of this.idleWaiters.get(traceId) ?? []) fn();
           this.idleWaiters.delete(traceId);
         } else this.jobs.set(traceId, n);
@@ -259,7 +266,7 @@ export class Engine {
     const fresh = snap.spans.filter((s) => spanIds.includes(s.id));
     this.applyRules(run, snap, false);
     this.ensurePlan(run, snap);
-    for (const s of fresh) if (s.kind === "TOOL" || s.kind === "MCP_TOOL") void this.track(run.traceId, this.labelTool(run, s, snap));
+    for (const s of fresh) if ((s.kind === "TOOL" || s.kind === "MCP_TOOL") && !run.answered?.toolSpans.has(s.id)) void this.track(run.traceId, this.labelTool(run, s, snap));
     if (run.plan) this.scheduleQuestions(run, snap, fresh);
   }
 
@@ -388,6 +395,7 @@ export class Engine {
   }
 
   private async askTrace(run: LiveRun, check: QuestionCheck, params: Record<string, string>, snap: TraceSnapshot): Promise<void> {
+    if (run.answered?.traceChecks.has(check.id)) return;
     const ev = buildEvidence(snap, check.evidence);
     if (!ev.spanIds.length && !check.evidence?.final_output) return;
     const key = ev.spanIds.join(",") + (check.evidence?.final_output ? `|${finalOutput(snap) ?? ""}` : "");
@@ -902,7 +910,7 @@ ${library}`;
   }
 
   /** Explains a whole run: likely cause, the spans that show it, and a fix. */
-  async explainRun(traceId: string, opts: { force?: boolean } = {}): Promise<Explanation | undefined> {
+  async explainRun(traceId: string, opts: { force?: boolean; priority?: "interactive" | "low" } = {}): Promise<Explanation | undefined> {
     if (!opts.force) {
       const existing = this.roots.store.explanationFor("run", traceId);
       if (existing) return existing;
@@ -920,7 +928,7 @@ ${library}`;
         { role: "system", content: INVESTIGATE_SYSTEM },
         { role: "user", content: `${header}\n\nExplain the most likely cause of any problem in this run. If the run looks fine, say so.\n\n${wrapRun(ev.text)}` },
       ],
-      { schema: { name: "investigation", schema: INVESTIGATE_SCHEMA }, maxTokens: 450, priority: "low" },
+      { schema: { name: "investigation", schema: INVESTIGATE_SCHEMA }, maxTokens: 450, priority: opts.priority ?? "low" },
     );
     const out = r.json as { cause?: string; evidence?: string[]; fix?: string } | undefined;
     if (!out?.cause) return undefined;
@@ -983,12 +991,12 @@ ${library}`;
       text = ev.text;
       spanIds = ev.spanIds;
     }
-    const r = await this.decisions.decide(text, [{ name: "q", type: "yes_no", ask }]);
+    const r = await this.decisions.decide(text, [{ name: "q", type: "yes_no", ask }], { priority: "interactive" });
     return { probability: r.answers.q?.probability ?? 0, evidence_span_ids: spanIds, backend: r.backend, model: r.model };
   }
 
   /** Runs a question over recent runs without raising findings, to see how often it would fire. */
-  async previewCheck(check: QuestionCheck | RuleCheck, opts: { limit?: number; workflow?: string; project?: string; timeBudgetMs?: number } = {}): Promise<{
+  async previewCheck(check: QuestionCheck | RuleCheck, opts: { limit?: number; workflow?: string; project?: string; timeBudgetMs?: number; signal?: AbortSignal } = {}): Promise<{
     checked: number;
     hits: { trace_id: string; probability: number | null; evidence_span_ids: string[]; root_name: string | null }[];
     total: number;
@@ -1012,7 +1020,8 @@ ${library}`;
         const ev = buildEvidence(snap, check.evidence, { focus });
         if (!ev.spanIds.length && !check.evidence?.final_output) continue;
         try {
-          const res = await this.decisions.decide(ev.text, [toQuestion(check, check.params ?? {})]);
+          if (opts.signal?.aborted) break;
+          const res = await this.decisions.decide(ev.text, [toQuestion(check, check.params ?? {})], { priority: "interactive", signal: opts.signal });
           const v = flagged(check, res);
           if (v.flagged) {
             hits.push({ trace_id: r.trace_id, probability: v.probability, evidence_span_ids: ev.spanIds, root_name: r.root_name });
@@ -1026,17 +1035,42 @@ ${library}`;
     return { checked, hits, total: runs.length, truncated: checked < runs.length };
   }
 
-  /** Re-runs the checks for a finished run, e.g. after checks changed. */
-  async recheck(traceId: string): Promise<void> {
+  /** Re-runs the checks for a finished run, e.g. after checks changed. `resume` keeps stored answers. */
+  async recheck(traceId: string, opts: { resume?: boolean } = {}): Promise<void> {
     const row = this.roots.store.getRun(traceId);
     if (!row) return;
     this.live.delete(traceId);
     const run = this.liveRun(traceId)!;
     run.ended = row.status !== "running";
+    if (opts.resume) {
+      const done = this.roots.store.decisionsForTrace(traceId);
+      for (const d of done) if (d.span_id) run.spanDone.add(`${d.check_id}:${d.span_id}`);
+      run.answered = {
+        traceChecks: new Set(done.filter((d) => !d.span_id).map((d) => d.check_id)),
+        toolSpans: new Set(done.filter((d) => d.check_id === "neatroots.tool-result" && d.span_id).map((d) => d.span_id!)),
+      };
+    }
     const snap = loadTrace(this.roots.store, traceId);
     await this.track(traceId, this.handleSpans(run, snap.spans.map((s) => s.id)));
     if (run.ended) await this.track(traceId, this.handleEnd(run));
   }
+}
+
+/** How many interrupted runs a restart finishes; older ones are marked interrupted for Re-run checks. */
+const RESUME_LIMIT = 200;
+
+export async function resumeUnfinished(engine: Engine, roots: Roots): Promise<number> {
+  const ids = engine.progress.unfinished();
+  const ended = ids.filter((id) => {
+    const r = roots.store.getRun(id);
+    if (!r) engine.progress.done(id);
+    return !!r && r.status !== "running";
+  });
+  for (const id of ended.slice(RESUME_LIMIT)) engine.progress.interrupted(id);
+  const todo = ended.slice(0, RESUME_LIMIT);
+  if (todo.length) log.info(`finishing checks for ${todo.length} run${todo.length === 1 ? "" : "s"} a restart interrupted`);
+  for (const id of todo) await engine.recheck(id, { resume: true });
+  return todo.length;
 }
 
 function slug(s: string): string {

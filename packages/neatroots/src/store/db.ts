@@ -303,6 +303,40 @@ function json<T>(s: string | null | undefined, fallback: T): T {
   }
 }
 
+const REQUEST_KEYS = ["request", "question", "query", "input", "message", "prompt", "task", "goal", "text"];
+
+/**
+ * What a run was asked, when its input shows it: a request-like field, or the last user message
+ * of a chat history. A chat turn's input usually carries the whole history first, so a plain
+ * preview would show old turns and cut off the current request.
+ */
+export function currentRequest(v: Parameters<typeof preview>[0]): string | undefined {
+  const lastUser = (a: unknown[]): string | undefined => {
+    for (let i = a.length - 1; i >= 0; i--) {
+      const m = a[i] as Record<string, unknown> | null;
+      if (m && typeof m === "object" && m.role === "user") return typeof m.content === "string" ? m.content : preview(m.content as never, 300);
+    }
+    return undefined;
+  };
+  if (Array.isArray(v)) return lastUser(v)?.slice(0, 300);
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  const key = REQUEST_KEYS.find((k) => typeof o[k] === "string" && (o[k] as string).trim());
+  if (key) return (o[key] as string).trim().slice(0, 300);
+  for (const val of Object.values(o)) if (Array.isArray(val)) { const u = lastUser(val); if (u) return u.slice(0, 300); }
+  return undefined;
+}
+
+/** Search covers this much of each input, output and error: the start and the end of long values. */
+export const SEARCH_LIMIT = { head: 150_000, tail: 50_000 };
+const SEARCH_INDEX_VERSION = 2;
+
+function searchText(v: Parameters<typeof preview>[0]): string {
+  if (v === undefined || v === null) return "";
+  const s = preview(v, Number.MAX_SAFE_INTEGER);
+  return s.length <= SEARCH_LIMIT.head + SEARCH_LIMIT.tail ? s : `${s.slice(0, SEARCH_LIMIT.head)}\n…\n${s.slice(-SEARCH_LIMIT.tail)}`;
+}
+
 export class Store {
   readonly db: Database.Database;
   readonly blobs: BlobStore;
@@ -468,15 +502,7 @@ export class Store {
         blobs: used.size ? JSON.stringify([...used]) : null,
       });
     if (!view.isMarker) {
-      this.db.prepare("DELETE FROM span_fts WHERE trace_id = ? AND span_id = ?").run(span.traceId, span.spanId);
-      const body = [
-        view.input !== undefined ? preview(view.input, 4000) : "",
-        view.output !== undefined ? preview(view.output, 4000) : "",
-        view.error ?? "",
-      ].join("\n");
-      this.db
-        .prepare("INSERT INTO span_fts (trace_id, span_id, name, tool_name, body) VALUES (?, ?, ?, ?, ?)")
-        .run(span.traceId, span.spanId, span.name, view.toolName ?? "", body);
+      this.indexSpan(span.traceId, span.spanId, span.name, view);
     }
     return row;
   }
@@ -555,7 +581,7 @@ export class Store {
       );
       p.root = span.spanId;
       p.rootName = span.name;
-      p.inp = view.input !== undefined ? preview(view.input, 300) : null;
+      p.inp = view.input !== undefined ? (currentRequest(view.input) ?? preview(view.input, 300)) : null;
       p.out = view.output !== undefined ? preview(view.output, 300) : null;
       if (!view.interrupted && run.status !== "interrupted") {
         sets.push("status = @status");
@@ -1204,6 +1230,42 @@ export class Store {
       },
       all: () => ({ ...data }),
     };
+  }
+
+  /** Full-text index for a span: its input, output and error, as much as SEARCH_LIMIT allows. */
+  private indexSpan(traceId: string, spanId: string, name: string, view: SpanView): void {
+    this.db.prepare("DELETE FROM span_fts WHERE trace_id = ? AND span_id = ?").run(traceId, spanId);
+    const body = [searchText(view.input), searchText(view.output), searchText(view.error ?? undefined)].join("\n");
+    this.db.prepare("INSERT INTO span_fts (trace_id, span_id, name, tool_name, body) VALUES (?, ?, ?, ?, ?)").run(traceId, spanId, name, view.toolName ?? "", body);
+  }
+
+  /**
+   * Re-indexes spans stored before the index covered whole values (it kept 4,000 characters of
+   * each), a few hundred at a time so startup isn't held up. Runs once per database.
+   */
+  reindexSearch(onDone?: (n: number) => void): void {
+    if (this.getMeta("search_index") === String(SEARCH_INDEX_VERSION)) return;
+    let after = 0;
+    let n = 0;
+    const step = () => {
+      if (!this.db.open) return;
+      const rows = this.db.prepare("SELECT seq, trace_id, span_id FROM spans WHERE seq > ? ORDER BY seq LIMIT 300").all(after) as { seq: number; trace_id: string; span_id: string }[];
+      for (const r of rows) {
+        after = r.seq;
+        const full = this.getOtlpSpan(r.trace_id, r.span_id);
+        if (!full) continue;
+        const view = buildView(full.span, full.resource.attributes);
+        if (view.isMarker) continue;
+        this.indexSpan(r.trace_id, r.span_id, full.span.name, view);
+        n++;
+      }
+      if (rows.length) setImmediate(step);
+      else {
+        this.setMeta("search_index", String(SEARCH_INDEX_VERSION));
+        onDone?.(n);
+      }
+    };
+    setImmediate(step);
   }
 
   getMeta(key: string): string | undefined {

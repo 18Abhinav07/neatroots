@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stands in for `codex exec --json` in the UI tests: one short turn per message.
+for a in "$@"; do prompt="$a"; done
+echo '{"type":"thread.started","thread_id":"thread_e2e"}'
+case "$prompt" in
+  *SIGN_IN_FAIL*)
+    echo '{"type":"turn.failed","error":{"message":"401 Unauthorized: your session has expired"}}'
+    exit 1
+    ;;
+esac
+sleep 0.3
+echo '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"E2E_CHAT_OK"}}'
+echo '{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":2}}'

@@ -143,7 +143,11 @@ function ChatPane({ id }: { id: string }) {
   const { send, stop, update, remove } = useChatActions();
   const [text, setText] = useState("");
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [events.length]);
+  // Block bodies only: an effect must return nothing or a cleanup function, and some browsers
+  // return a value from scrollIntoView (React then calls it as a cleanup and the page goes blank).
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [events.length]);
   // A chat opened from a run starts with the obvious question.
   useEffect(() => {
     if (session?.trace_id && !events.length && !text) setText("What went wrong in this run, and what should I change to fix it?");
@@ -238,7 +242,9 @@ export function AgentsPage({ sessionId, query }: { sessionId?: string; query: UR
   const { data } = useChatSessions();
   const traceId = query.get("trace") ?? undefined;
   const [creating, setCreating] = useState(!sessionId);
-  useEffect(() => setCreating(!sessionId), [sessionId]);
+  useEffect(() => {
+    setCreating(!sessionId);
+  }, [sessionId]);
   const sessions = data?.sessions ?? [];
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">

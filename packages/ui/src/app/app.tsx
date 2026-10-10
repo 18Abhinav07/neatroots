@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { PageErrorBoundary } from "@/components/page-error-boundary";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChecksPage } from "@/features/checks/_components/checks-page";
@@ -59,6 +60,7 @@ export function App() {
           </div>
           <PushBanner />
           <div className="min-h-0 flex-1">
+          <PageErrorBoundary key={route.join("/")}>
           {page === "checks" ? (
             <ChecksPage />
           ) : page === "search" ? (
@@ -76,6 +78,7 @@ export function App() {
           ) : (
             <HomePage status={status} />
           )}
+          </PageErrorBoundary>
           </div>
         </SidebarInset>
       </SidebarProvider>

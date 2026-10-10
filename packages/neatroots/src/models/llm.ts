@@ -35,8 +35,12 @@ export interface ChatOptions {
   topLogprobs?: number;
   timeoutSec?: number;
   signal?: AbortSignal;
-  /** urgent: notes for a running agent. high: decisions and planning. low: investigations and summaries. */
-  priority?: "urgent" | "high" | "low";
+  /**
+   * urgent: notes for a running agent. interactive: something a person or coding agent is waiting
+   * on (drafting a check, a preview, ask, judge, explain). high: background decisions and
+   * planning. low: background investigations and summaries.
+   */
+  priority?: "urgent" | "interactive" | "high" | "low";
   /** Use this model instead of the configured one (replays). */
   model?: string;
 }
@@ -428,6 +432,7 @@ export class LlmClient {
   private ext?: { key: string; transport: OpenAiTransport | AnthropicTransport };
   private keyCache?: { provider: string; at: number; key?: string };
   private urgent: (() => Promise<void>)[] = [];
+  private interactive: (() => Promise<void>)[] = [];
   private high: (() => Promise<void>)[] = [];
   private low: (() => Promise<void>)[] = [];
   private active = 0;
@@ -565,11 +570,17 @@ export class LlmClient {
     return { active, local, external };
   }
 
-  /** Queues a chat call; urgent calls go first, then high, then low. */
+  /**
+   * Queues a chat call: urgent first, then interactive, high, low. A call whose signal aborts
+   * while it waits leaves the queue without reaching the model.
+   */
   chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
     this.pending++;
     return new Promise<ChatResult>((resolve, reject) => {
+      const queue = opts.priority === "low" ? this.low : opts.priority === "urgent" ? this.urgent : opts.priority === "interactive" ? this.interactive : this.high;
+      let started = false;
       const job = async () => {
+        started = true;
         try {
           resolve(await this.chatNow(messages, opts));
         } catch (err) {
@@ -578,7 +589,19 @@ export class LlmClient {
           this.pending--;
         }
       };
-      (opts.priority === "low" ? this.low : opts.priority === "urgent" ? this.urgent : this.high).push(job);
+      opts.signal?.addEventListener(
+        "abort",
+        () => {
+          if (started) return;
+          const i = queue.indexOf(job);
+          if (i < 0) return;
+          queue.splice(i, 1);
+          this.pending--;
+          reject(new Error("cancelled before the model started on it"));
+        },
+        { once: true },
+      );
+      queue.push(job);
       void this.pump();
     });
   }
@@ -586,7 +609,7 @@ export class LlmClient {
   private async pump(): Promise<void> {
     const limit = this.externalEnabled && (await this.externalKey()) ? 4 : 1;
     while (this.active < limit) {
-      const job = this.urgent.shift() ?? this.high.shift() ?? this.low.shift();
+      const job = this.urgent.shift() ?? this.interactive.shift() ?? this.high.shift() ?? this.low.shift();
       if (!job) return;
       this.active++;
       void job().finally(() => {

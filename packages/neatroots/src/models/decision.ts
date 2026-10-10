@@ -44,7 +44,8 @@ export interface DecisionResult {
 export class DecisionUnavailableError extends Error {}
 
 export interface DecideOptions {
-  priority?: "urgent" | "high" | "low";
+  priority?: "urgent" | "interactive" | "high" | "low";
+  signal?: AbortSignal;
 }
 
 export interface DecisionBackend {
@@ -293,6 +294,7 @@ export class LlmDecisionBackend implements DecisionBackend {
             topLogprobs: 10,
             timeoutSec: 60,
             priority: opts.priority ?? "high",
+            signal: opts.signal,
           },
         );
         model = r.model;

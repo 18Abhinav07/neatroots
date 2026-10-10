@@ -95,6 +95,10 @@ You can also do this in the app under **Settings → Models**.
 - **Fallback:** if the provider fails or has no key, neatroots falls back to the local LLM. Turn this off with `--no-fallback`.
 - **Cost:** neatroots asks the LLM a few questions per run while Laya is learning, and more when it investigates a problem. Pick a smaller model, such as `claude-haiku-5-5`, if your agent runs a lot.
 
+### How long checks take
+
+Rules are instant. Questions take as long as the model answering them: with a local LLM standing in (before Laya has earned a question), each answer is a model call, and the calls run one at a time. On a 24 GB Apple silicon Mac with `gemma4`, the seven sample runs are fully checked about five minutes after they finish, and a busy batch of examples can queue 50 answers. A hosted LLM answers four questions at a time, so the same batch finishes several times faster; questions Laya has earned are answered by Laya instead of the LLM, which is quicker still. The run page shows each run's progress, and anything you ask for yourself (drafting a check, a preview, Explain run, a coding agent's question) goes ahead of the background queue.
+
 ### Jev cloud (opt-in)
 
 [Jev](https://typesafe.ai) is a hosted typed-decision model. To use it for decisions:
@@ -181,6 +185,7 @@ neatroots import neatlogs-cloud --since 24h     # your Neatlogs Cloud project (n
 
 The **Runs** page lists each run with what it was asked to do and its most important open problem. A run page:
 - leads with the **problems**, each with a one-line cause. Open one to see the suggested fix, the spans that show it, and how sure neatroots is;
+- says how much of the run was checked: "4 of 5 questions answered · rules on every span", with a spinner while checks are still running. A green "Nothing found" means every question ran. If no model could answer (none set up, or the provider is down), it says **Only rules checked this run** instead, with **Re-run checks** for when a model is available. Checks that were still queued when neatroots stopped or restarted are finished when it starts again;
 - has **Explain run**, where the LLM writes a likely cause for the whole run;
 - shows the run four ways:
 
@@ -207,7 +212,7 @@ The **Runs** page lists each run with what it was asked to do and its most impor
 | `has:problems` | runs with open problems |
 | `since:` | `since:24h`, `since:7d`, `since:2026-10-01` |
 
-A hit opens the run at that span.
+A hit opens the run at that span. Search covers span names, errors, and the first 150,000 and last 50,000 characters of every input and output.
 
 ## 6. Replay and fork
 
@@ -229,8 +234,8 @@ neatroots replay <trace-id> --input "Refund order 2002" --model gpt-4o-mini
 
 The **Checks** page lists everything neatroots watches for:
 - **Rules** run in code on every span.
-- **Questions** go to the decision model. For each agent, the LLM picks the library questions that fit its goal, system prompt and tools, and may write new ones for risks the library does not cover. Three questions always run: ignored tool errors, followed injected instructions, and personal data in the answer.
-- **Your own checks:** click **New check**, describe the problem in a sentence, and neatroots drafts a yes/no question. **Preview on recent runs** shows how often it would fire before you save it.
+- **Questions** go to the decision model. For each agent, the LLM picks the library questions that fit its goal, system prompt and tools, and may write new ones for risks the library does not cover. Four questions always run on agents that use tools: ignored tool errors, answers that contradict the tools, followed injected instructions, and personal data in the answer.
+- **Your own checks:** click **New check**, describe the problem in a sentence, and neatroots drafts a yes/no question. **Preview on recent runs** shows how often it would fire before you save it; preview it on a run that has the problem and one that doesn't. If a check asks about the agent's answer but can't see it, the editor says so (see [checks.md](checks.md)). Drafting and previews go ahead of background checks in the model's queue, and **Cancel draft** / **Cancel preview** stop them.
 - **Sharing checks:** keep them in your repository's `.neatroots/checks/` folder to share with your team. `neatroots checks validate <file>` checks the YAML. The format is in [checks.md](checks.md).
 
 ## 8. Steering (opt-in)

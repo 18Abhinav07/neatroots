@@ -12,6 +12,7 @@ import { mountChecksApi } from "./api-checks.js";
 import { mountInsightsApi } from "./api-insights.js";
 import { mountAgentsApi } from "./api-agents.js";
 import { importSource, mountExploreApi } from "./api-explore.js";
+import { checkCoverage } from "./coverage.js";
 import { installInfo } from "../util/install.js";
 import { err, body } from "./util.js";
 import { askRuns } from "../engine/assist.js";
@@ -173,9 +174,9 @@ export function mountApi(app: Hono, roots: Roots): void {
     return c.json({ runs: runs.map((r) => runSummary(roots, r)), total: roots.store.countRuns() });
   });
 
-  app.get("/api/runs/:traceId", (c) => {
+  app.get("/api/runs/:traceId", async (c) => {
     const d = runDetail(roots, c.req.param("traceId"));
-    return d ? c.json(d) : err(c, 404, "run not found");
+    return d ? c.json({ ...d, coverage: await checkCoverage(roots, c.req.param("traceId")) }) : err(c, 404, "run not found");
   });
 
   app.get("/api/runs/:traceId/spans/:spanId", (c) => {
@@ -197,7 +198,7 @@ export function mountApi(app: Hono, roots: Roots): void {
   app.post("/api/runs/:traceId/explain", async (c) => {
     if (!engine) return err(c, 503, "engine not running");
     try {
-      const exp = await engine.explainRun(c.req.param("traceId"), { force: true });
+      const exp = await engine.explainRun(c.req.param("traceId"), { force: true, priority: "interactive" });
       return exp ? c.json(exp) : err(c, 422, "could not explain this run");
     } catch (e) {
       return err(c, 503, (e as Error).message);

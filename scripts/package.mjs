@@ -53,7 +53,9 @@ const copy = (from, to, filter) => fs.cpSync(path.join(root, from), path.join(st
 const skipCaches = (src) => !/(__pycache__|\.pytest_cache|\.venv|node_modules|\.DS_Store)/.test(src);
 for (const f of ["dist", "package.json", "README.md", "LICENSE"]) copy(`packages/steer-ts/${f}`, `steer/ts/${f}`);
 for (const f of ["src", "pyproject.toml", "README.md", "LICENSE"]) copy(`python/neatroots-steer/${f}`, `steer/python/neatroots-steer/${f}`, skipCaches);
-for (const f of ["getting-started.md", "tester-guide.md", "replay.md", "mcp.md", "steering.md", "checks.md", "cloud.md"]) copy(`docs/${f}`, `docs/${f}`);
+// Every doc (they link to each other) and the images they show.
+for (const f of fs.readdirSync(path.join(root, "docs")).filter((f) => f.endsWith(".md"))) copy(`docs/${f}`, `docs/${f}`);
+copy("docs/images", "docs/images");
 copy("skills", "skills", skipCaches);
 // The examples as committed (no node_modules or venvs), with the hook paths pointed at steer/.
 for (const f of execFileSync("git", ["ls-files", "examples"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean)) {
@@ -72,6 +74,21 @@ try {
   /* not a checkout */
 }
 fs.writeFileSync(path.join(stage, ".neatroots-bundle"), `${JSON.stringify({ version, commit, built: new Date().toISOString() }, null, 2)}\n`);
+
+// ------------------------------------------------------------ links in the shipped docs resolve
+{
+  const broken = [];
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === "node_modules" ? [] : walk(path.join(dir, e.name))) : e.name.endsWith(".md") ? [path.join(dir, e.name)] : []));
+  for (const file of [...walk(path.join(stage, "docs")), ...walk(path.join(stage, "examples"))]) {
+    for (const m of fs.readFileSync(file, "utf8").matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = m[1].split("#")[0];
+      if (!target || /^(https?:|mailto:)/.test(target)) continue;
+      if (!fs.existsSync(path.resolve(path.dirname(file), target))) broken.push(`${path.relative(stage, file)} → ${m[1]}`);
+    }
+  }
+  if (broken.length) throw new Error(`the bundle's docs link to files it doesn't ship:\n  ${broken.join("\n  ")}`);
+  log("every relative link in the shipped docs and examples resolves");
+}
 
 // ------------------------------------------------------------ smoke test, with this machine's Node
 const out = execFileSync(process.execPath, [path.join(stage, "neatroots/dist/cli.js"), "--version"], { encoding: "utf8" }).trim();

@@ -1,11 +1,11 @@
-import { AiBrain01Icon, ArrowDown01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
+import { AiBrain01Icon, Alert02Icon, ArrowDown01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Spinner } from "@/components/ui/spinner";
 import { StatusPill } from "@/components/ui/status-pill";
-import type { Explanation, Finding, Plan } from "@/lib/api";
+import type { CheckCoverage, Explanation, Finding, Plan } from "@/lib/api";
 import { pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { FINDING_STATE } from "../_libs/labels";
@@ -22,22 +22,26 @@ const isOpen = (f: Finding) => f.status === "raised" || f.status === "active";
 export function ProblemsPanel({
   findings,
   plan,
+  coverage,
   running,
   explanation,
   names,
   onPick,
   onSetStatus,
   onInvestigate,
+  onRecheck,
   investigating,
 }: {
   findings: Finding[];
   plan: Plan | null;
+  coverage?: CheckCoverage | null;
   running: boolean;
   explanation: Explanation | null;
   names: Map<string, string>;
   onPick: (id: string) => void;
   onSetStatus: (id: string, status: string) => void;
   onInvestigate: (id: string) => void;
+  onRecheck?: () => void;
   investigating?: string;
 }) {
   const live = findings.filter((f) => f.status !== "failed").sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.triage_score ?? 0) - (a.triage_score ?? 0));
@@ -48,7 +52,7 @@ export function ProblemsPanel({
     <Panel data-testid="problems">
       <PanelHeader
         title={open.length ? `${open.length} problem${open.length > 1 ? "s" : ""}` : "Problems"}
-        actions={plan ? <span className="hidden text-xs text-muted-foreground sm:inline">{plan.check_ids.length} questions for this agent, plus rules on every span</span> : undefined}
+        actions={coverage ? <CoverageLine c={coverage} /> : plan ? <span className="hidden text-xs text-muted-foreground sm:inline">{plan.check_ids.length} questions for this agent, plus rules on every span</span> : undefined}
       />
       <PanelContent className="flex flex-col gap-4">
         {explanation && (
@@ -61,10 +65,7 @@ export function ProblemsPanel({
           </div>
         )}
         {live.length === 0 ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Icon icon={CheckmarkCircle02Icon} size="sm" className="text-success-fg" />
-            {running ? "Nothing found yet. neatroots checks each span as it arrives." : "Nothing found. Every check that ran on this run passed."}
-          </p>
+          <CleanResult c={coverage} running={running} onRecheck={onRecheck} />
         ) : (
           <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {live.map((f) => (
@@ -178,5 +179,65 @@ function ProblemRow({
         </div>
       )}
     </li>
+  );
+}
+
+/** "4 of 5 questions answered": what actually ran, next to the result. */
+function CoverageLine({ c }: { c: CheckCoverage }) {
+  if (!c.questions) return <span className="hidden text-xs text-muted-foreground sm:inline">Rules on every span</span>;
+  return (
+    <span className="hidden items-center gap-1.5 text-xs text-muted-foreground tabular-nums sm:inline-flex">
+      {c.state === "checking" && <Spinner size="xxs" />}
+      {c.answered} of {c.questions} questions answered{c.failed ? ` · ${c.failed} failed` : ""} · rules on every span
+    </span>
+  );
+}
+
+/**
+ * The result when nothing was found. Green only when the questions really ran; otherwise it says
+ * what is still running, what failed, or that only rules checked the run.
+ */
+function CleanResult({ c, running, onRecheck }: { c?: CheckCoverage | null; running: boolean; onRecheck?: () => void }) {
+  if (!c || c.state === "done" || !c.questions) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Icon icon={CheckmarkCircle02Icon} size="sm" className="text-success-fg" />
+        {running ? "Nothing found yet. neatroots checks each span as it arrives." : c?.questions ? `Nothing found. Rules and all ${c.questions} questions passed.` : "Nothing found. Every check that ran on this run passed."}
+      </p>
+    );
+  }
+  if (c.state === "checking") {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">
+        <Spinner size="xs" />
+        Nothing found so far. Checking: {c.answered} of {c.questions} questions answered.
+      </p>
+    );
+  }
+  const text =
+    c.state === "rules-only"
+      ? `Only rules checked this run. Its ${c.questions} questions didn't run because no model is available.`
+      : c.state === "interrupted"
+        ? `Checking stopped when neatroots restarted: ${c.answered} of ${c.questions} questions were answered.`
+        : `Rules found nothing, but only ${c.answered} of ${c.questions} questions were answered${c.failed ? ` (${c.failed} failed)` : ""}.`;
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-warning-border bg-warning-surface px-4 py-3 text-sm" role="status">
+      <span className="flex items-start gap-2 text-foreground">
+        <Icon icon={Alert02Icon} size="sm" className="mt-0.5 shrink-0 text-warning-fg" />
+        {text}
+      </span>
+      <span className="flex flex-wrap items-center gap-2 pl-6">
+        {!c.model.available && (
+          <a href="#/settings/models" className="text-xs text-foreground underline-offset-4 hover:underline">
+            Set up a model
+          </a>
+        )}
+        {onRecheck && (
+          <Button size="sm" variant="secondary" onClick={onRecheck}>
+            Re-run checks
+          </Button>
+        )}
+      </span>
+    </div>
   );
 }

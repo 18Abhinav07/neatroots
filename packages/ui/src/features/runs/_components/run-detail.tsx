@@ -186,7 +186,11 @@ export function RunDetail({ traceId, query }: { traceId: string; query?: URLSear
       </DetailRailGroup>
       <DetailRailGroup label="Checks">
         <PropertyRow label="Open problems" value={openFindings.length} />
-        {d.plan && <PropertyRow label="Questions" value={d.plan.check_ids.length} tooltip="Questions picked for this agent. Rules run on every span as well." />}
+        {d.coverage ? (
+          <PropertyRow label="Questions" value={`${d.coverage.answered} of ${d.coverage.questions}`} tooltip="Questions answered for this run: the ones picked for this agent, the ones every tool-using agent gets, and your own. Rules run on every span as well." />
+        ) : (
+          d.plan && <PropertyRow label="Questions" value={d.plan.check_ids.length} tooltip="Questions picked for this agent. Rules run on every span as well." />
+        )}
         <PropertyRow label="Steering" value={r.steering === "off" ? "off" : r.steering} tooltip="Whether neatroots could add notes to this run while it ran." />
         <PropertyRow label="Sent to Cloud" value={d.forwarded ? "yes" : "no"} />
         <PropertyRow label="Replays" value={d.replays.length} />
@@ -236,6 +240,8 @@ export function RunDetail({ traceId, query }: { traceId: string; query?: URLSear
         <ProblemsPanel
           findings={d.findings}
           plan={d.plan}
+          coverage={d.coverage}
+          onRecheck={() => actions.recheck.mutate(undefined, { onSuccess: () => toast.success("Re-running checks on this run") })}
           running={r.status === "running"}
           explanation={d.explanation}
           names={names}

@@ -107,6 +107,16 @@ export interface Annotation {
   created_ms: number;
 }
 
+/** How much of a run was actually checked: rules always run, questions need a model. */
+export interface CheckCoverage {
+  state: "checking" | "done" | "rules-only" | "partial" | "interrupted";
+  questions: number;
+  answered: number;
+  failed: number;
+  pending: number;
+  model: { available: boolean; backend: string | null };
+}
+
 export interface RunDetail {
   run: Run;
   spans: Span[];
@@ -121,6 +131,7 @@ export interface RunDetail {
   replay_of: Replay | null;
   /** Where an imported run came from (neatlogs-cloud or file). */
   import_source: string | null;
+  coverage?: CheckCoverage | null;
 }
 
 export interface Replay {
@@ -150,8 +161,10 @@ export interface ReplayOptions {
 
 export type ChatItem =
   | { type: "system"; text: string; span_id: string }
-  | { type: "user"; text: string; span_id: string }
-  | { type: "assistant"; text: string; span_id: string; model?: string; tokens?: number; tool_calls: { name: string; arguments: unknown }[]; error?: string }
+  /** history: an earlier turn replayed in this call's input. */
+  | { type: "user"; text: string; span_id: string; history?: boolean }
+  /** inferred: tool calls read from the tool spans that ran next (the SDK didn't record them). */
+  | { type: "assistant"; text: string; span_id: string; model?: string; tokens?: number; tool_calls: { name: string; arguments: unknown }[]; error?: string; history?: boolean; inferred?: boolean }
   | { type: "tool"; name: string; span_id: string; input: unknown; output: unknown; status: "ok" | "error" | "unset"; error?: string; duration_ms: number }
   | { type: "agent"; name: string; span_id: string; status: "ok" | "error" | "unset"; duration_ms: number; llm_calls: number; tool_calls: number; input?: string; output?: string; error?: string };
 

@@ -72,6 +72,9 @@ describe("rules", () => {
   it("fills templates and labels tool results", () => {
     expect(fillTemplate("Called {tool} {count} times ({args}).", { tool: "x", count: "3", args: "{}" })).toBe("Called x 3 times ({}).");
     expect(fillTemplate("Hi {missing}.", {})).toBe("Hi .");
+    const ask = 'Does this reply break an instruction[[, namely "{instruction}"]]?';
+    expect(fillTemplate(ask, { instruction: "Never share keys" })).toBe('Does this reply break an instruction, namely "Never share keys"?');
+    expect(fillTemplate(ask, {})).toBe("Does this reply break an instruction?");
     const base = { id: "a", ref: "a", parentId: null, name: "t", kind: "TOOL" as const, startMs: 0, endMs: 1, durationMs: 1, seq: 1 };
     expect(heuristicToolLabel({ ...base, status: "error" })).toBe("error");
     expect(heuristicToolLabel({ ...base, status: "ok", output: [] })).toBe("empty");

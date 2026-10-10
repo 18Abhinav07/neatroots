@@ -1,5 +1,6 @@
 import type { Roots } from "../core.js";
 import { AnyCheck, type QuestionCheck } from "../checks/types.js";
+import { fitEvidence } from "../checks/lint.js";
 import { ASK_SCHEMA, ASK_SYSTEM, CONCERN_SCHEMA, CONCERN_SYSTEM, wrapRun } from "./prompts.js";
 import { buildEvidence, describeSpan, loadTrace, type SpanInfo } from "./trace.js";
 
@@ -20,13 +21,13 @@ function slug(s: string): string {
 }
 
 /** Turns a plain-language concern into a yes/no question check (not saved). */
-export async function draftCheckFromConcern(roots: Roots, concern: string, opts: { workflow?: string; project?: string } = {}): Promise<QuestionCheck> {
+export async function draftCheckFromConcern(roots: Roots, concern: string, opts: { workflow?: string; project?: string; signal?: AbortSignal } = {}): Promise<QuestionCheck> {
   const r = await roots.llm.chat(
     [
       { role: "system", content: CONCERN_SYSTEM },
       { role: "user", content: `Concern: ${concern}${opts.workflow ? `\nAgent workflow: ${opts.workflow}` : ""}` },
     ],
-    { schema: { name: "check", schema: CONCERN_SCHEMA }, maxTokens: 300, priority: "high" },
+    { schema: { name: "check", schema: CONCERN_SCHEMA }, maxTokens: 300, priority: "interactive", signal: opts.signal },
   );
   const out = r.json as { id?: string; title?: string; ask?: string; scope?: string; span_type?: string; guidance?: string } | undefined;
   if (!out?.ask) throw new Error("the local LLM did not return a usable check");
@@ -45,7 +46,7 @@ export async function draftCheckFromConcern(roots: Roots, concern: string, opts:
     ...(out.guidance ? { guidance: out.guidance } : {}),
     ...(opts.workflow ? { applies_to: { workflow: opts.workflow } } : opts.project ? { applies_to: { project: opts.project } } : {}),
   };
-  return AnyCheck.parse(check) as QuestionCheck;
+  return fitEvidence(AnyCheck.parse(check) as QuestionCheck);
 }
 
 export interface AskResult {
@@ -106,7 +107,7 @@ export async function askRuns(roots: Roots, question: string, opts: { traceId?: 
       { role: "system", content: ASK_SYSTEM },
       { role: "user", content: `Question: ${question}\n\n${wrapRun(context)}` },
     ],
-    { schema: { name: "answer", schema: ASK_SCHEMA }, maxTokens: 400, priority: "high" },
+    { schema: { name: "answer", schema: ASK_SCHEMA }, maxTokens: 400, priority: "interactive" },
   );
   const out = r.json as { answer?: string; evidence?: string[] } | undefined;
   const evidence: AskResult["evidence"] = [];
