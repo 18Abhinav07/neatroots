@@ -19,7 +19,7 @@ body:
     id: install
     attributes:
       label: Install
-      description: Did it work? How long did it take? Log lines from ~/.neatroots/install.log if it failed.
+      description: Did it work? How long did it take? Did you download Laya or choose Jev cloud, and was the reason for the choice clear? Log lines from ~/.neatroots/install.log if it failed.
     validations:
       required: true
   - type: textarea

@@ -42,6 +42,8 @@ neatroots doctor
 ```
 
 - [ ] The installer finished without errors. Note how long it took.
+- [ ] It explained what Laya is for before asking, and nothing large downloaded until you said yes.
+  Your choice shows on Home ("Choose how checks get answered") and in Settings → Decision model.
 - [ ] `neatroots doctor` shows ✓ for "neatroots answers" and for "trace round trip".
 - [ ] http://localhost:4100 opens, and Home shows how to get started.
 
@@ -169,7 +171,7 @@ Open a [tester report](https://github.com/neatlogs/neatroots/issues/new?template
 on GitHub. It asks for:
 
 - **Machine and setup:** e.g. M3 Pro 36 GB, macOS 26; which LLM; which coding agent.
-- **Install:** worked or not, how long, log lines if it failed.
+- **Install:** worked or not, how long, Laya or Jev cloud (and whether the choice was clear), log lines if it failed.
 - **Samples:** which of the six problems were caught; any false alarm on `happy`.
 - **Your agent:** framework and how it sends runs; real problems found, false alarms, misses.
 - **Before and after:** how you debugged before, and how long it took; how long the same kind of
