@@ -84,6 +84,11 @@ export function createApp(roots: Roots): Hono {
 
   const uiDir = findUiDir();
   app.get("*", (c) => {
+    // Unmatched API/collector routes must not fall through to the SPA: a script,
+    // SDK or coding agent calling the API should get a 404 JSON error, not HTML 200.
+    if (c.req.path.startsWith("/api/") || c.req.path.startsWith("/v1/")) {
+      return c.json({ error: "not found" }, 404);
+    }
     if (!uiDir) {
       return c.html(
         `<!doctype html><title>neatroots</title><body style="font-family:system-ui;padding:2rem"><h1>neatroots is running</h1><p>The app UI is not built. Run <code>pnpm build</code> in the neatroots repo.</p><p>Collector: <code>POST /v1/traces</code></p></body>`,

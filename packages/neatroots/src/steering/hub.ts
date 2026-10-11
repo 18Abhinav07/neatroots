@@ -109,7 +109,12 @@ export class SteeringHub {
    * delivered. A halt note always wins; an LLM-written note wins over a template.
    */
   claim(traceId: string, spanId?: string | null): Note | undefined {
-    const pending = this.roots.store.notesForTrace(traceId, "pending");
+    let pending = this.roots.store.notesForTrace(traceId, "pending");
+    if (!pending.length) return undefined;
+    // If steering was turned off after a note was queued, don't deliver it.
+    // A halt note still wins (it matches push()'s halt exception).
+    const run = this.roots.store.getRun(traceId);
+    if (this.mode(run?.project) === "off") pending = pending.filter((n) => n.kind === "halt");
     if (!pending.length) return undefined;
     const rank = (n: Note) => (n.kind === "halt" ? 0 : n.kind === "llm" ? 1 : 2);
     const pick = [...pending].sort((a, b) => rank(a) - rank(b) || a.created_ms - b.created_ms)[0];

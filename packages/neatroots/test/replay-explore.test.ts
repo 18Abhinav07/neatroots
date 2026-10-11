@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadTrace } from "../src/engine/trace.js";
 import { EXPLORE_TOOLS } from "../src/mcp/explore-tools.js";
 import { toChat } from "../src/replay/replay.js";
+import { Replays } from "../src/replay/replay.js";
 import { buildChat } from "../src/semantics/chat-view.js";
 import { parseSearch } from "../src/server/api-explore.js";
 import { batch, hex, llmSpan, makeRoots, mockLlm, span, toolSpan, until, type TestRoots } from "./helpers.js";
@@ -81,6 +82,24 @@ describe("replay", () => {
     expect(run.output_preview).toContain("model=small-model");
     expect(() => t!.roots.replays.startRun(hex(16))).toThrow(/run not found/);
   }, 30_000);
+
+  it("marks replays left running as failed on restart", async () => {
+    t = await makeRoots({ noEngine: true });
+    const id = `rp_${hex(6)}`;
+    // A replay that was in-flight when the process stopped.
+    t.roots.store.db
+      .prepare(
+        `INSERT INTO replays (id, trace_id, span_id, kind, via, overrides, state, new_trace_id, output_preview, error, log_tail, created_ms, finished_ms)
+         VALUES (?, ?, null, 'run', 'command', '{}', 'running', null, null, null, null, ?, null)`,
+      )
+      .run(id, hex(16), Date.now());
+    // Simulate a restart: a fresh Replays runs its startup cleanup on the same DB.
+    new Replays(t.roots);
+    const r = t.roots.replays.get(id)!;
+    expect(r.state).toBe("failed");
+    expect(r.error).toMatch(/interrupted by a restart/);
+    expect(r.finished_ms).not.toBeNull();
+  });
 });
 
 describe("search and exploring tools", () => {
