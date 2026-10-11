@@ -197,19 +197,28 @@ function normSpan(s: any): OtlpSpan | null {
   };
 }
 
+/**
+ * A repeated field as a list of objects. Anything else (a string iterates as characters) would
+ * silently drop the data with a 200, so it is rejected and the collector answers 400, like the
+ * protobuf path does for malformed input. A missing field is an empty list.
+ */
+function objects(v: unknown, name: string): any[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw new Error(`${name} must be an array`);
+  v.forEach((x, i) => {
+    if (!x || typeof x !== "object" || Array.isArray(x)) throw new Error(`${name}[${i}] must be an object`);
+  });
+  return v;
+}
+
 function normRequest(obj: any): ResourceSpansBatch[] {
   const out: ResourceSpansBatch[] = [];
-  const rss = g(obj, "resourceSpans", "resource_spans") ?? [];
-  // A non-array resourceSpans (e.g. a string) would iterate as characters and
-  // silently drop everything with a 200. Reject it so the collector returns 400,
-  // matching the protobuf path's behaviour for malformed input.
-  if (!Array.isArray(rss)) throw new Error("resourceSpans must be an array");
-  for (const rs of rss) {
+  for (const rs of objects(g(obj, "resourceSpans", "resource_spans"), "resourceSpans")) {
     const resource = normResource(rs.resource);
     resource.schemaUrl = g(rs, "schemaUrl", "schema_url") || undefined;
-    for (const ss of g(rs, "scopeSpans", "scope_spans") ?? g(rs, "instrumentationLibrarySpans", "instrumentation_library_spans") ?? []) {
+    for (const ss of objects(g(rs, "scopeSpans", "scope_spans") ?? g(rs, "instrumentationLibrarySpans", "instrumentation_library_spans"), "scopeSpans")) {
       const scope = normScope(ss.scope ?? g(ss, "instrumentationLibrary", "instrumentation_library"), g(ss, "schemaUrl", "schema_url"));
-      const spans = (ss.spans ?? []).map(normSpan).filter((x: OtlpSpan | null): x is OtlpSpan => x !== null);
+      const spans = objects(ss.spans, "spans").map(normSpan).filter((x: OtlpSpan | null): x is OtlpSpan => x !== null);
       if (spans.length) out.push({ resource, scope, spans });
     }
   }

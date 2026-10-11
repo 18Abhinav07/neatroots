@@ -57,7 +57,9 @@ export function SpanSheet({
   };
   const v = d?.view;
   const kind = d ? spanKindBadge(d.kind) : null;
-  const durationMs = d ? Number(BigInt(d.end_ns || "0") - BigInt(d.start_ns || "0")) / 1e6 : 0;
+  // An end of 0 means the span hasn't ended (OTLP); an end before the start counts as 0 ms.
+  const ended = !!d && !!d.end_ns && d.end_ns !== "0";
+  const durationMs = d && ended ? Math.max(0, Number(BigInt(d.end_ns) - BigInt(d.start_ns || "0")) / 1e6) : 0;
   return (
     <Sheet open={!!spanId} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
@@ -79,7 +81,7 @@ export function SpanSheet({
             {d && (
               <>
                 <span>
-                  {[dur(durationMs), v?.model, v?.totalTokens !== undefined ? `${num(v.promptTokens)} in / ${num(v.completionTokens)} out tokens` : null].filter(Boolean).join(" · ")}
+                  {[ended ? dur(durationMs) : "not ended", v?.model, v?.totalTokens !== undefined ? `${num(v.promptTokens)} in / ${num(v.completionTokens)} out tokens` : null].filter(Boolean).join(" · ")}
                 </span>
                 <span className="inline-flex items-center gap-1 font-mono">
                   {midId(d.span_id)}

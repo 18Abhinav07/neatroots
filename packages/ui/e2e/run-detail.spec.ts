@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { open, state } from "./util";
+import { open, state, watchErrors } from "./util";
 
 test.describe("run page", () => {
   test("leads with the problems a rule found", async ({ page }) => {
@@ -17,6 +17,16 @@ test.describe("run page", () => {
     await expect(problems.getByText(/Same tool called repeatedly|Several tool calls failed in a row/).first()).toBeVisible();
     // The run's side panel counts problems the same way.
     await expect(page.locator("body")).toContainText(/Open problems\s*1(?!\d)/);
+  });
+
+  test("a run whose spans' parents point at each other still opens, with every span shown", async ({ page }) => {
+    const errors = watchErrors(page);
+    await open(page, `runs/${state().cycleRun}`);
+    const views = page.getByTestId("run-views");
+    await views.getByRole("tab", { name: "Trace" }).click();
+    await expect(views.getByRole("treeitem", { name: /cycle-agent/ })).toBeVisible();
+    await expect(views.getByRole("treeitem", { name: /cycle-tool/ })).toBeVisible();
+    expect(errors).toEqual([]);
   });
 
   test("says how much of the run was checked, next to the result", async ({ page }) => {

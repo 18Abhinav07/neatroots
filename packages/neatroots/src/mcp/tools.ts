@@ -105,8 +105,12 @@ function outline(roots: Roots, traceId: string, maxSpans: number) {
   }
   const lines: string[] = [];
   let count = 0;
+  // Parent links can loop; each span is listed once, and spans no root reaches are listed after.
+  const listed = new Set<string>();
   const walk = (parent: string | null, depth: number) => {
     for (const s of children.get(parent) ?? []) {
+      if (listed.has(s.span_id)) continue;
+      listed.add(s.span_id);
       if (count++ >= maxSpans) return;
       const bits = [
         `${"  ".repeat(depth)}${s.span_id.slice(0, 8)} ${s.span_kind} ${s.tool_name ?? s.name}`,
@@ -123,6 +127,7 @@ function outline(roots: Roots, traceId: string, maxSpans: number) {
     }
   };
   walk(null, 0);
+  for (const s of d.spans) if (!listed.has(s.span_id)) walk(s.parent_span_id, 0);
   return {
     run: {
       trace_id: d.run.trace_id,
