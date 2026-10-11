@@ -199,7 +199,12 @@ function normSpan(s: any): OtlpSpan | null {
 
 function normRequest(obj: any): ResourceSpansBatch[] {
   const out: ResourceSpansBatch[] = [];
-  for (const rs of g(obj, "resourceSpans", "resource_spans") ?? []) {
+  const rss = g(obj, "resourceSpans", "resource_spans") ?? [];
+  // A non-array resourceSpans (e.g. a string) would iterate as characters and
+  // silently drop everything with a 200. Reject it so the collector returns 400,
+  // matching the protobuf path's behaviour for malformed input.
+  if (!Array.isArray(rss)) throw new Error("resourceSpans must be an array");
+  for (const rs of rss) {
     const resource = normResource(rs.resource);
     resource.schemaUrl = g(rs, "schemaUrl", "schema_url") || undefined;
     for (const ss of g(rs, "scopeSpans", "scope_spans") ?? g(rs, "instrumentationLibrarySpans", "instrumentation_library_spans") ?? []) {

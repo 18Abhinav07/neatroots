@@ -102,6 +102,25 @@ describe("store", () => {
     expect(st.listRuns({ limit: 9999 }).length).toBe(5);
   });
 
+  it("treats LIKE wildcards (% and _) in run search as literal text", () => {
+    const st = store();
+    const underscore = hex(16);
+    const plain = hex(16);
+    // one run whose input literally contains an underscore, one that does not
+    st.ingest([batch([span({ traceId: underscore, spanId: hex(8), name: "r", kind: "workflow", attrs: [s("neatlogs.workflow.input", '"order_id lookup"')] })])]);
+    st.ingest([batch([span({ traceId: plain, spanId: hex(8), name: "r", kind: "workflow", attrs: [s("neatlogs.workflow.input", '"plain request"')] })])]);
+
+    // "%" and "_" must NOT behave as wildcards (they'd otherwise match every run)
+    expect(st.listRuns({ text: "%" }).length).toBe(0);
+    // "_" matches only the run that literally contains an underscore, not everything
+    const us = st.listRuns({ text: "_" }).map((r) => r.trace_id);
+    expect(us).toContain(underscore);
+    expect(us).not.toContain(plain);
+    // a normal substring search still works
+    expect(st.listRuns({ text: "plain" }).map((r) => r.trace_id)).toContain(plain);
+    expect(st.listRuns({ text: "nope-nothing" }).length).toBe(0);
+  });
+
   it("serves the doctor read-back shape", () => {
     const st = store();
     const t = hex(16);

@@ -46,4 +46,22 @@ flag_at: 0.8
     expect(checkWarnings(c)).toEqual([]);
     expect(fitEvidence(c).scope).toBe("span");
   });
+
+  it("names the offending field for a bad check instead of 'Invalid input'", () => {
+    // A rule with a typo'd metric (total_token, should be total_tokens).
+    const { checks, errors } = parseChecks(`
+id: typo-check
+kind: rule
+title: Token budget with a typo
+rule:
+  type: threshold
+  metric: total_token
+  at_least: 200000
+`);
+    expect(checks).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    // Must point at the real field, not a generic top-level "Invalid input".
+    expect(errors[0].message).toMatch(/rule\.metric/);
+    expect(errors[0].message).not.toMatch(/^check: Invalid input$/);
+  });
 });

@@ -49,6 +49,20 @@ describe("engine", () => {
     expect(tb.roots.store.notesForTrace(t)).toEqual([]);
   });
 
+  it("stops delivering a queued note once steering is turned off (but still halts)", async () => {
+    const { tb } = await setup();
+    tb.roots.steering.setMode("test-agent", "advisory");
+    const { t, root } = startRun(tb);
+    for (let i = 0; i < 3; i++) tb.roots.ingest([batch([toolSpan(t, root, "lookup_order", '{"order_id":"4512"}', undefined, "404")])]);
+    await until(() => tb.roots.store.notesForTrace(t, "pending").length > 0);
+    // user turns steering off while the note is still pending
+    tb.roots.steering.setMode("test-agent", "off");
+    expect(tb.roots.steering.claim(t, null)).toBeUndefined();
+    // a halt note still gets through
+    tb.roots.steering.push({ traceId: t, findingId: null, kind: "halt", text: "stop" });
+    expect(tb.roots.steering.claim(t, null)?.kind).toBe("halt");
+  });
+
   it("plans, asks questions, triages and summarizes at run end", async () => {
     const { tb, llm } = await setup(["carry on as if a tool call had succeeded"]);
     const { t, root } = startRun(tb);
