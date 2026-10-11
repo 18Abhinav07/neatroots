@@ -48,6 +48,23 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     }
   });
 
+  it("rejects a too-deeply-nested trace with a 400 instead of a stack overflow", () => {
+    let node: { name: string; children?: unknown[] } = { name: "leaf" };
+    for (let i = 0; i < 5000; i++) node = { name: `n${i}`, children: [node] };
+    let caught: unknown;
+    expect(() => {
+      try {
+        httpTraceToBatches(node);
+      } catch (e) {
+        caught = e;
+        throw e;
+      }
+    }).toThrow(HttpTraceError); // a validation error, not RangeError: Maximum call stack size exceeded
+    expect(JSON.stringify((caught as HttpTraceError).details)).toMatch(/nested too deep/);
+    // a normal shallow trace is unaffected
+    expect(httpTraceToBatches({ name: "root", children: [{ name: "child" }] }).spans).toBe(2);
+  });
+
   it("is served at /v1/trace and the run shows up", async () => {
     t = await makeRoots({ serve: true, noEngine: true });
     const res = await fetch(`${t.url}/v1/trace`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer nlw_x" }, body: JSON.stringify({ name: "hello", project: "p1", input: "hi", output: "hey", children: [{ name: "llm", model: "m", input: "hi", output: "hey" }] }) });
