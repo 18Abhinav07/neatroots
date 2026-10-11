@@ -293,6 +293,11 @@ program
       console.log(mode === "stop" ? "steering is off everywhere; nothing will be sent to agents" : "steering is on for projects that enabled it");
       return;
     }
+    const modes: SteeringMode[] = ["off", "advisory", "gate", "self-check"];
+    if (!modes.includes(mode as SteeringMode)) {
+      console.error(`steering mode must be one of: ${modes.join(", ")} (or stop/start)`);
+      process.exit(1);
+    }
     if (!opts.project) {
       console.error("give --project <name>");
       process.exit(1);
