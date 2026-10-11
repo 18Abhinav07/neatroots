@@ -113,6 +113,14 @@ function allowedEndpoint(u: string): boolean {
   }
 }
 
+/** Parse a query param as an integer and clamp it to [min, max]; non-numbers fall back to `dflt`. */
+function clampInt(raw: string | undefined, dflt: number, min: number, max: number): number {
+  if (raw === undefined || raw === "") return dflt;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(Math.max(Math.trunc(n), min), max);
+}
+
 export function mountApi(app: Hono, roots: Roots): void {
   const engine = roots.engine;
   mountModelsApi(app, roots);
@@ -168,8 +176,8 @@ export function mountApi(app: Hono, roots: Roots): void {
       checkId: q.check || undefined,
       text: q.q || undefined,
       sinceMs: q.since ? Number(q.since) : undefined,
-      limit: q.limit ? Number(q.limit) : 100,
-      offset: q.offset ? Number(q.offset) : 0,
+      limit: clampInt(q.limit, 100, 1, 500),
+      offset: clampInt(q.offset, 0, 0, Number.MAX_SAFE_INTEGER),
     });
     return c.json({ runs: runs.map((r) => runSummary(roots, r)), total: roots.store.countRuns() });
   });
