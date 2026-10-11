@@ -47,6 +47,32 @@ flag_at: 0.8
     expect(fitEvidence(c).scope).toBe("span");
   });
 
+  it("rejects a choice check whose flag_on is not one of its options", () => {
+    const { checks, errors } = parseChecks(`
+id: bad-choice
+kind: choice
+ask: What is the sentiment of the final reply?
+options: { positive: positive, neutral: neutral, negative: negative }
+flag_on: [angry]
+`);
+    expect(checks).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toMatch(/flag_on/);
+    expect(errors[0].message).toMatch(/angry/);
+  });
+
+  it("accepts a choice check whose flag_on is a real option", () => {
+    const { checks, errors } = parseChecks(`
+id: good-choice
+kind: choice
+ask: What is the sentiment of the final reply?
+options: { positive: positive, neutral: neutral, negative: negative }
+flag_on: [negative]
+`);
+    expect(errors).toHaveLength(0);
+    expect(checks).toHaveLength(1);
+  });
+
   it("names the offending field for a bad check instead of 'Invalid input'", () => {
     // A rule with a typo'd metric (total_token, should be total_tokens).
     const { checks, errors } = parseChecks(`
