@@ -445,7 +445,9 @@ export class Store {
     const attributes = this.blobs.offload(span.attributes, used);
     const events = span.events.map((e) => ({ ...e, attributes: this.blobs.offload(e.attributes, used) }));
     const startMs = nsToMs(span.startTimeUnixNano);
-    const endMs = nsToMs(span.endTimeUnixNano) || startMs;
+    // An end of 0 means the span hasn't ended (OTLP); an end before the start is a clock or exporter
+    // bug. Both are stored as lasting 0 ms (end_ns keeps the raw value), never as negative.
+    const endMs = Math.max(nsToMs(span.endTimeUnixNano) || startMs, startMs);
     const extra = {
       traceState: span.traceState,
       flags: span.flags,
@@ -571,27 +573,24 @@ export class Store {
       }
     }
     if (!span.parentSpanId && !view.isMarker) {
-      sets.push(
-        "root_span_id = @root",
-        "root_name = @rootName",
-        "root_ended = 1",
-        "ended_ms = @end",
-        "input_preview = @inp",
-        "output_preview = @out",
-      );
+      sets.push("root_span_id = @root", "root_name = @rootName", "input_preview = @inp", "output_preview = @out");
       p.root = span.spanId;
       p.rootName = span.name;
       p.inp = view.input !== undefined ? (currentRequest(view.input) ?? preview(view.input, 300)) : null;
       p.out = view.output !== undefined ? preview(view.output, 300) : null;
-      if (!view.interrupted && run.status !== "interrupted") {
-        sets.push("status = @status");
-        p.status = span.status.code === 2 ? "error" : "ok";
-      }
       if (view.workflow) {
         sets.push("workflow = @wf");
         p.wf = view.workflow;
       }
-      if (!run.root_ended) flags.rootEnded = true;
+      // A root sent before it ended (end time 0) names the run but doesn't finish it.
+      if (nsToMs(span.endTimeUnixNano) > 0) {
+        sets.push("root_ended = 1", "ended_ms = @end");
+        if (!view.interrupted && run.status !== "interrupted") {
+          sets.push("status = @status");
+          p.status = span.status.code === 2 ? "error" : "ok";
+        }
+        if (!run.root_ended) flags.rootEnded = true;
+      }
     }
     if (view.sessionId && (!run.session_id || !span.parentSpanId)) {
       sets.push("session_id = @session");

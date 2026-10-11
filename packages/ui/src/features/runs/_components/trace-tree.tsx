@@ -30,14 +30,20 @@ export function treeOrder(spans: Span[]): { span: Span; depth: number }[] {
     children.set(parent, [...(children.get(parent) ?? []), s]);
   }
   for (const list of children.values()) list.sort((a, b) => a.start_ms - b.start_ms);
+  // Parent links come from outside and can loop: each span appears once, and spans in a loop (no
+  // root reaches them) are shown at the top level instead of disappearing.
   const out: { span: Span; depth: number }[] = [];
+  const seen = new Set<string>();
   const walk = (parent: string | null, depth: number) => {
     for (const s of children.get(parent) ?? []) {
+      if (seen.has(s.span_id)) continue;
+      seen.add(s.span_id);
       out.push({ span: s, depth });
       walk(s.span_id, depth + 1);
     }
   };
   walk(null, 0);
+  for (const s of [...spans].sort((a, b) => a.start_ms - b.start_ms)) if (!seen.has(s.span_id)) walk(s.parent_span_id, 0);
   return out;
 }
 
@@ -89,7 +95,7 @@ export function TraceTree({ spans, flagged, selected, onSelect }: { spans: Span[
             <span aria-hidden className="relative h-1.5 rounded-full bg-muted">
               <span className={cn("absolute inset-y-0 rounded-full", failed ? "bg-danger-fg" : guidance ? "bg-brand-violet" : "bg-foreground-subtle")} style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }} />
             </span>
-            <span className="text-right font-mono text-xs text-muted-foreground tabular-nums">{dur(s.duration_ms)}</span>
+            <span className="text-right font-mono text-xs text-muted-foreground tabular-nums">{s.end_ns === "0" ? "not ended" : dur(s.duration_ms)}</span>
           </div>
         );
       })}

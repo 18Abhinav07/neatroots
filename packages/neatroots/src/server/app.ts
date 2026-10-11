@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { serve, type ServerType } from "@hono/node-server";
 import type { Roots } from "../core.js";
 import { mountCollector } from "./collector.js";
@@ -75,6 +76,13 @@ function securityMiddleware(roots: Roots) {
 export function createApp(roots: Roots): Hono {
   const app = new Hono();
   app.use("*", securityMiddleware(roots));
+  // Errors answer as JSON like every other API error: a bad request with its message, anything
+  // unexpected as a 500 (logged, never with a stack in the response).
+  app.onError((e, c) => {
+    if (e instanceof HTTPException) return c.json({ error: e.message }, e.status);
+    log.error(`${c.req.method} ${c.req.path} failed: ${e.message}`);
+    return c.json({ error: "internal error" }, 500);
+  });
 
   app.get("/health", (c) => c.json({ ok: true, name: "neatroots", version: VERSION, uptime_ms: Date.now() - roots.startedMs }));
 

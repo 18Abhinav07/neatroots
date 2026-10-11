@@ -102,7 +102,14 @@ export async function seed(url: string) {
   const lookup = { name: "lookup_order", kind: "TOOL", tool_name: "lookup_order", input: { order_id: "4512" }, status: "ERROR", error: "404: order 4512 not found", duration_ms: 30 };
   const loop = await http(url, { name: "refund", project: "e2e-loop", input: "Refund order 4512", output: "I couldn't find order 4512.", children: [lookup, lookup, lookup] });
 
+  // Two spans whose parents point at each other (a buggy exporter): the run must still open.
+  const cycle = hex(16);
+  const ca = span(cycle, "cycle-agent", "agent", []);
+  const cb = span(cycle, "cycle-tool", "tool", [s("neatlogs.tool.name", "cycle-tool")], ca.spanId);
+  ca.body.parentSpanId = cb.spanId;
+  await otlp(url, "e2e-cycle", [ca, cb]);
+
   // Let the collector settle before tests read.
   await new Promise((r) => setTimeout(r, 1500));
-  return { supportRun: a.traceId, secondTurn: b.traceId, researchRun: research, failedRun: failed, loopRun: loop };
+  return { supportRun: a.traceId, secondTurn: b.traceId, researchRun: research, failedRun: failed, loopRun: loop, cycleRun: cycle };
 }

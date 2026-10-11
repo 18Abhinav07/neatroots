@@ -44,22 +44,24 @@ export function buildChat(t: TraceSnapshot, rootSpanId?: string): { root: string
   const root = rootSpanId ? byId.get(rootSpanId) : (spans.find((s) => !s.parentId || !byId.has(s.parentId)) ?? spans[0]);
   if (!root) return { root: null, items: [] };
 
-  // Walk the subtree in time order, stopping at nested agents.
+  // Walk the subtree in time order, stopping at nested agents. Parent links come from outside and
+  // can loop (A's parent is B, B's is A), so each span is visited once.
   const inScope: SpanInfo[] = [];
+  const visited = new Set<string>([root.id]);
   const walk = (s: SpanInfo) => {
     for (const c of children.get(s.id) ?? []) {
-      if (c.kind === "AGENT" && c.id !== root.id) {
-        inScope.push(c);
-        continue;
-      }
+      if (visited.has(c.id)) continue;
+      visited.add(c.id);
       inScope.push(c);
+      if (c.kind === "AGENT" && c.id !== root.id) continue;
       walk(c);
     }
   };
   walk(root);
   inScope.sort((a, b) => a.startMs - b.startMs || a.seq - b.seq);
   const hasTools = inScope.some((s) => s.kind === "TOOL" || s.kind === "MCP_TOOL");
-  const count = (s: SpanInfo, kind: string): number => (children.get(s.id) ?? []).reduce((n, c) => n + (c.kind === kind ? 1 : 0) + count(c, kind), 0);
+  const count = (s: SpanInfo, kind: string, seen = new Set<string>([s.id])): number =>
+    (children.get(s.id) ?? []).reduce((n, c) => (seen.has(c.id) ? n : (seen.add(c.id), n + (c.kind === kind ? 1 : 0) + count(c, kind, seen))), 0);
 
   const items: ChatItem[] = [];
   const seen = new Set<string>();
