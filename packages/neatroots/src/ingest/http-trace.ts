@@ -56,7 +56,16 @@ function validate(node: unknown, path: string, errors: Record<string, string>): 
     if (!Array.isArray(n.children)) errors[`${path}children`] = "must be an array";
     else n.children.forEach((c, i) => validate(c, `${path}children[${i}].`, errors));
   }
-  if (n.tokens !== undefined && (typeof n.tokens !== "object" || n.tokens === null)) errors[`${path}tokens`] = "must be an object";
+  if (n.tokens !== undefined) {
+    if (typeof n.tokens !== "object" || n.tokens === null) errors[`${path}tokens`] = "must be an object";
+    else {
+      const t = n.tokens as Record<string, unknown>;
+      for (const k of ["prompt", "completion", "total"]) {
+        if (t[k] !== undefined && (typeof t[k] !== "number" || !Number.isFinite(t[k] as number))) errors[`${path}tokens.${k}`] = "must be a finite number";
+      }
+    }
+  }
+  if (n.score !== undefined && (typeof n.score !== "number" || !Number.isFinite(n.score))) errors[`${path}score`] = "must be a finite number";
   if (n.status !== undefined && !["OK", "ERROR", "ok", "error"].includes(String(n.status))) errors[`${path}status`] = "must be OK or ERROR";
 }
 
