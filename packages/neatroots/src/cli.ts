@@ -113,6 +113,18 @@ program
   .option("--steering <mode>", "enable steering for the project: advisory, gate or self-check")
   .option("--mcp <agent>", `connect a coding agent over MCP: ${CLIENTS.map((c) => c.id).join(", ")}`)
   .action(async (opts) => {
+    // Validate flags before writing anything, so a bad --steering doesn't leave
+    // .neatroots/ and .env behind (and print a success that was never saved).
+    if (opts.steering) {
+      if (!opts.project) {
+        console.error("--steering needs --project <name> (your SDK workflow_name / service.name)");
+        process.exit(1);
+      }
+      if (!["advisory", "gate", "self-check", "off"].includes(opts.steering)) {
+        console.error("steering mode must be advisory, gate, self-check or off");
+        process.exit(1);
+      }
+    }
     const cwd = process.cwd();
     const cfg = loadConfig();
     const p = cfg.port;
@@ -146,17 +158,9 @@ program
       console.log(`→ point the Neatlogs SDK at neatroots (or rerun with --write-env):\n    ${envLines.join("\n    ")}`);
     }
     if (opts.steering) {
-      if (!opts.project) {
-        console.error("--steering needs --project <name> (your SDK workflow_name / service.name)");
-        process.exit(1);
-      }
-      const mode = opts.steering as SteeringMode;
-      if (!["advisory", "gate", "self-check", "off"].includes(mode)) {
-        console.error("steering mode must be advisory, gate, self-check or off");
-        process.exit(1);
-      }
-      cfg.projects[opts.project] = { ...(cfg.projects[opts.project] ?? {}), steering: mode };
-      console.log(`✓ steering for ${opts.project}: ${mode} (add the neatroots-steer hook to your agent; see docs/steering.md)`);
+      // Already validated at the top of the action.
+      cfg.projects[opts.project] = { ...(cfg.projects[opts.project] ?? {}), steering: opts.steering as SteeringMode };
+      console.log(`✓ steering for ${opts.project}: ${opts.steering} (add the neatroots-steer hook to your agent; see docs/steering.md)`);
     }
     saveConfig(cfg);
     if (await running(p)) {
