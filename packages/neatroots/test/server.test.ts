@@ -136,4 +136,18 @@ describe("server", () => {
     const r = await fetch(`${tb.url}/api/steer/claim`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ trace_id: hex(16) }) });
     expect(await r.json()).toEqual({ mode: "unknown", known: false, note: null });
   });
+
+  it("returns 404 JSON for unknown /api and /v1 routes, not the SPA", async () => {
+    const tb = await served();
+    for (const path of ["/api/anything-unknown", "/api/imports/abc", "/v1/unknown"]) {
+      const r = await fetch(`${tb.url}${path}`);
+      expect(r.status).toBe(404);
+      expect(r.headers.get("content-type")).toMatch(/application\/json/);
+      expect(await r.json()).toEqual({ error: "not found" });
+    }
+    // a known API route still works, and non-API paths still fall back to the SPA
+    expect((await fetch(`${tb.url}/api/status`, { headers: { origin: tb.url.replace("127.0.0.1", "localhost") } })).status).toBe(200);
+    const ui = await fetch(`${tb.url}/runs/some-id`);
+    expect(ui.headers.get("content-type")).toMatch(/text\/html/);
+  });
 });
