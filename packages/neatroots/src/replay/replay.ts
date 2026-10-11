@@ -86,6 +86,12 @@ export function toChat(messages: Plain | undefined): ChatMessage[] {
 export class Replays {
   constructor(private readonly roots: Roots) {
     roots.store.db.exec(SCHEMA);
+    // A replay runs in this process (a child command or an HTTP call); it cannot
+    // survive a restart. Mark any left in "running" as failed so they don't show
+    // "running" forever. (Checks resume after a restart; a replay can't.)
+    roots.store.db
+      .prepare("UPDATE replays SET state = 'failed', error = ?, finished_ms = ? WHERE state = 'running'")
+      .run("interrupted by a restart", Date.now());
   }
 
   private save(r: Replay): void {
