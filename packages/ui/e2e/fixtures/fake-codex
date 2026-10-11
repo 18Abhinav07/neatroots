@@ -1,6 +1,15 @@
 #!/bin/sh
 # Stands in for `codex exec --json` in the UI tests: one short turn per message.
 for a in "$@"; do prompt="$a"; done
+# Like the real CLI: `codex exec resume` has no --sandbox option.
+if [ "$1" = exec ] && [ "$2" = resume ]; then
+  for a in "$@"; do
+    if [ "$a" = --sandbox ]; then
+      echo "error: unexpected argument '--sandbox' found" >&2
+      exit 2
+    fi
+  done
+fi
 echo '{"type":"thread.started","thread_id":"thread_e2e"}'
 case "$prompt" in
   *SIGN_IN_FAIL*)
