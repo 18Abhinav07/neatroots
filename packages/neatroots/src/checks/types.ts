@@ -138,7 +138,20 @@ export const ChoiceQuestion = z
     flag_on: z.array(z.string()).min(1),
     flag_at: z.number().min(0).max(1).default(0.6),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    // Every flag_on entry must be a real option key, otherwise the check can never fire.
+    const keys = new Set(Object.keys(val.options));
+    val.flag_on.forEach((opt, i) => {
+      if (!keys.has(opt)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["flag_on", i],
+          message: `"${opt}" is not one of options (${[...keys].join(", ")})`,
+        });
+      }
+    });
+  });
 
 export const ScoreQuestion = z
   .object({
