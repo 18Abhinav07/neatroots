@@ -97,4 +97,13 @@ describe("OTLP codec", () => {
     expect(b.spans).toHaveLength(1);
     expect(b.spans[0].traceId).toBe(tid.toString("hex"));
   });
+
+  it("rejects a non-array resourceSpans instead of silently dropping it", () => {
+    // A string (or any non-array) would otherwise iterate as characters and
+    // produce an empty, 200-with-nothing-stored result.
+    expect(() => decodeTraceJson({ resourceSpans: "oops" } as any)).toThrow(/resourceSpans must be an array/);
+    expect(() => decodeTraceJson({ resourceSpans: 123 } as any)).toThrow(/resourceSpans must be an array/);
+    // a valid (possibly empty) array is still fine
+    expect(decodeTraceJson({ resourceSpans: [] } as any)).toEqual([]);
+  });
 });

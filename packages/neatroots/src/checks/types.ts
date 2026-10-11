@@ -153,7 +153,10 @@ export const ScoreQuestion = z
 export const QuestionCheck = z.discriminatedUnion("kind", [YesNoQuestion, ChoiceQuestion, ScoreQuestion]);
 export type QuestionCheck = z.infer<typeof QuestionCheck>;
 
-export const AnyCheck = z.union([RuleCheck, YesNoQuestion, ChoiceQuestion, ScoreQuestion]);
+// Discriminate on `kind` so a bad field in a check reports the specific error
+// (e.g. `rule.metric: Invalid enum value`) instead of a single top-level
+// `invalid_union` / "Invalid input". QuestionCheck above does the same.
+export const AnyCheck = z.discriminatedUnion("kind", [RuleCheck, YesNoQuestion, ChoiceQuestion, ScoreQuestion]);
 export type Check = RuleCheck | QuestionCheck;
 
 export type CheckSource = "library" | "user" | "project" | "planner" | "mcp";
