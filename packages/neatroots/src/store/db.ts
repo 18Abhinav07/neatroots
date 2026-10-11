@@ -1148,14 +1148,18 @@ export class Store {
 
   /** Deletes the oldest unpinned runs past the age or size limit. Returns how many runs were removed. */
   sweep(maxAgeDays: number, maxBytes: number): number {
-    const cutoff = Date.now() - maxAgeDays * 86_400_000;
     let removed = 0;
-    const old = this.db
-      .prepare("SELECT trace_id FROM runs WHERE pinned = 0 AND COALESCE(ended_ms, received_ms) < ?")
-      .all(cutoff) as { trace_id: string }[];
-    for (const r of old) {
-      this.deleteRun(r.trace_id);
-      removed++;
+    // Skip the age sweep for a non-positive age: a cutoff of "now" (days = 0)
+    // would delete every unpinned run. maxBytes pruning below still runs.
+    if (Number.isFinite(maxAgeDays) && maxAgeDays >= 1) {
+      const cutoff = Date.now() - maxAgeDays * 86_400_000;
+      const old = this.db
+        .prepare("SELECT trace_id FROM runs WHERE pinned = 0 AND COALESCE(ended_ms, received_ms) < ?")
+        .all(cutoff) as { trace_id: string }[];
+      for (const r of old) {
+        this.deleteRun(r.trace_id);
+        removed++;
+      }
     }
     let size = this.diskBytes();
     while (size > maxBytes) {

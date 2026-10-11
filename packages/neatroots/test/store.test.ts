@@ -89,6 +89,18 @@ describe("store", () => {
     expect(st.searchSpans("OLD_TAIL").map((h) => h.trace_id)).toEqual([t]);
   });
 
+  it("does not delete every run when retention days is 0", () => {
+    const st = store();
+    for (let i = 0; i < 4; i++) st.ingest([batch([span({ traceId: hex(16), spanId: hex(8), name: "r", kind: "workflow", attrs: [s("neatlogs.workflow.input", `"req ${i}"`)] })])]);
+    // Even with ended/received times in the past, days=0 must NOT wipe everything.
+    st.db.prepare("UPDATE runs SET received_ms = 1, ended_ms = 1").run();
+    expect(st.sweep(0, 5 * 1024 ** 3)).toBe(0);
+    expect(st.listRuns({ limit: 500 }).length).toBe(4);
+    // a normal positive retention still prunes old runs
+    expect(st.sweep(14, 5 * 1024 ** 3)).toBe(4);
+    expect(st.listRuns({ limit: 500 }).length).toBe(0);
+  });
+
   it("serves the doctor read-back shape", () => {
     const st = store();
     const t = hex(16);
