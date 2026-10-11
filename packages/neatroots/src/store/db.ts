@@ -690,8 +690,8 @@ export class Store {
     }
     const sql = `SELECT * FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY COALESCE(started_ms, received_ms) DESC LIMIT @limit OFFSET @offset`;
-    p.limit = Math.min(f.limit ?? 50, 500);
-    p.offset = f.offset ?? 0;
+    p.limit = Number.isFinite(f.limit) ? Math.min(Math.max(Math.trunc(f.limit as number), 1), 500) : 50;
+    p.offset = Number.isFinite(f.offset) ? Math.max(Math.trunc(f.offset as number), 0) : 0;
     return this.db.prepare(sql).all(p) as RunRow[];
   }
 
