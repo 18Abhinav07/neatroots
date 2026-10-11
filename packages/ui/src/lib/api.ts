@@ -58,7 +58,7 @@ export interface Explanation {
   created_ms: number;
 }
 
-export type FindingStatus = "raised" | "active" | "resolved" | "dismissed" | "failed";
+export type FindingStatus = "raised" | "active" | "resolved" | "dismissed" | "failed" | "quiet";
 
 export interface Finding {
   id: string;

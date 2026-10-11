@@ -98,7 +98,11 @@ export async function seed(url: string) {
     children: [{ name: "refund", kind: "TOOL", tool_name: "issue_refund", input: { invoice: 77 }, status: "ERROR", error: "payment gateway timeout", duration_ms: 60 }],
   });
 
+  // One retry loop that trips two loop checks (same call repeated, errors in a row): one problem.
+  const lookup = { name: "lookup_order", kind: "TOOL", tool_name: "lookup_order", input: { order_id: "4512" }, status: "ERROR", error: "404: order 4512 not found", duration_ms: 30 };
+  const loop = await http(url, { name: "refund", project: "e2e-loop", input: "Refund order 4512", output: "I couldn't find order 4512.", children: [lookup, lookup, lookup] });
+
   // Let the collector settle before tests read.
   await new Promise((r) => setTimeout(r, 1500));
-  return { supportRun: a.traceId, secondTurn: b.traceId, researchRun: research, failedRun: failed };
+  return { supportRun: a.traceId, secondTurn: b.traceId, researchRun: research, failedRun: failed, loopRun: loop };
 }

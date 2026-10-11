@@ -11,6 +11,7 @@ export interface E2EState {
   secondTurn: string;
   researchRun: string;
   failedRun: string;
+  loopRun: string;
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));

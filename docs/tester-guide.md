@@ -53,7 +53,7 @@ If you have a model: run `neatroots models` (local) or `neatroots llm login anth
 
 ## 2. The samples: does it catch what it should? (10 minutes)
 
-Seven scripted runs of a support agent. Each has a known problem, except `happy`.
+Eight scripted runs of a support agent. Each has a known problem, except `happy` and `long-request`.
 
 ```bash
 neatroots steering gate --project support-agent
@@ -71,6 +71,7 @@ Then check the **Runs** page against this table. On a local model, checks finish
 | contradiction | The reply contradicts what the tools returned (or broke a system-prompt instruction) |
 | secret-leak | Something that looks like a secret key in model output |
 | happy | Nothing |
+| long-request (a long customer message, then lookup and refund) | Nothing. The lookup happened before the refund, so "look up an order before refunding it" was followed |
 
 Rules alone, with no LLM, catch loop-404 and secret-leak. The others need a local or hosted LLM.
 
@@ -172,7 +173,7 @@ on GitHub. It asks for:
 
 - **Machine and setup:** e.g. M3 Pro 36 GB, macOS 26; which LLM; which coding agent.
 - **Install:** worked or not, how long, Laya or Jev cloud (and whether the choice was clear), log lines if it failed.
-- **Samples:** which of the six problems were caught; any false alarm on `happy`.
+- **Samples:** which of the six problems were caught; any false alarm on `happy` or `long-request`.
 - **Your agent:** framework and how it sends runs; real problems found, false alarms, misses.
 - **Before and after:** how you debugged before, and how long it took; how long the same kind of
   problem took with neatroots; whether your coding agent fixed it in one go.
@@ -193,8 +194,10 @@ Please don't paste API keys or customer data from your runs.
 
 - **Laya**, the local decision model, is still learning. On our labeled set it gets 7 of 12 right
   without training, so the LLM answers each question until Laya agrees with it on 90% of 30 answers.
-- **Probabilities** are not yet calibrated against human labels. Treat 87% as "likely", not as a
-  measured rate.
+- **Probabilities** are not yet calibrated against human labels. When an LLM answered, the run page
+  says "Very likely (LLM judgment)" instead of a number; a percentage from Laya or Jev is still a
+  model's estimate, not a measured rate. If a check keeps flagging healthy runs, dismiss its findings:
+  after 3 dismissals in a project it goes quiet there. Then tell us which check it was.
 - **Planning:** the first run of a new agent waits for the LLM to pick its questions, which can take
   up to a minute on a local model.
 - **Steering and replay hooks** install from `~/.neatroots/app/steer` until they are published to

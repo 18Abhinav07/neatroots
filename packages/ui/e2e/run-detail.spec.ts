@@ -9,6 +9,16 @@ test.describe("run page", () => {
     await expect(problems.getByText(/secret key/i).first()).toBeVisible();
   });
 
+  test("one retry loop that trips several checks shows as one problem", async ({ page }) => {
+    await open(page, `runs/${state().loopRun}`);
+    const problems = page.getByTestId("problems");
+    await expect(problems.getByText("1 problem", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(problems.getByText("Also matched")).toBeVisible();
+    await expect(problems.getByText(/Same tool called repeatedly|Several tool calls failed in a row/).first()).toBeVisible();
+    // The run's side panel counts problems the same way.
+    await expect(page.locator("body")).toContainText(/Open problems\s*1(?!\d)/);
+  });
+
   test("says how much of the run was checked, next to the result", async ({ page }) => {
     await open(page, `runs/${state().researchRun}`);
     // Rules always run; the question count comes from the run's plan and the baseline questions.

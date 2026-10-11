@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.10"
 # ///
-"""Scores what neatroots found on the seven samples against expected.json.
+"""Scores what neatroots found on the samples against expected.json.
 
     uv run score.py            # after run_samples.py; waits until every sample is fully checked
 

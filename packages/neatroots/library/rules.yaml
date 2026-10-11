@@ -4,6 +4,7 @@
 
 - id: repeated-tool-call
   kind: rule
+  group: loop
   title: Same tool called repeatedly with identical arguments
   rule:
     type: repeat
@@ -17,6 +18,7 @@
 
 - id: tool-error-streak
   kind: rule
+  group: loop
   title: Several tool calls failed in a row
   rule:
     type: errors
@@ -36,6 +38,7 @@
 
 - id: runaway-loop
   kind: rule
+  group: loop
   title: Unusually many LLM calls in one run
   rule:
     type: count
@@ -65,6 +68,7 @@
 
 - id: run-failed
   kind: rule
+  group: ending
   title: Run ended with an error
   rule:
     type: run_end
@@ -72,6 +76,7 @@
 
 - id: empty-final-answer
   kind: rule
+  group: ending
   title: Run ended without an answer
   rule:
     type: run_end

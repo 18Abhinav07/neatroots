@@ -99,7 +99,7 @@ You can also do this in the app under **Settings → Models**.
 
 ### How long checks take
 
-Rules are instant. Questions take as long as the model answering them: with a local LLM standing in (before Laya has earned a question), each answer is a model call, and the calls run one at a time. On a 24 GB Apple silicon Mac with `gemma4`, the seven sample runs are fully checked about five minutes after they finish, and a busy batch of examples can queue 50 answers. A hosted LLM answers four questions at a time, so the same batch finishes several times faster; questions Laya has earned are answered by Laya instead of the LLM, which is quicker still. The run page shows each run's progress, and anything you ask for yourself (drafting a check, a preview, Explain run, a coding agent's question) goes ahead of the background queue.
+Rules are instant. Questions take as long as the model answering them: with a local LLM standing in (before Laya has earned a question), each answer is a model call, and the calls run one at a time. On a 24 GB Apple silicon Mac with `gemma4`, the eight sample runs are fully checked about five minutes after they finish, and a busy batch of examples can queue 50 answers. A hosted LLM answers four questions at a time, so the same batch finishes several times faster; questions Laya has earned are answered by Laya instead of the LLM, which is quicker still. The run page shows each run's progress, and anything you ask for yourself (drafting a check, a preview, Explain run, a coding agent's question) goes ahead of the background queue.
 
 ### Laya or Jev cloud
 

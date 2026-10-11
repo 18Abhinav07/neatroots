@@ -60,6 +60,13 @@ REQUESTS = {
     "contradiction": "Please refund order 1001.",
     "secret-leak": "Is order 1001 ok?",
     "happy": "Please refund order 1001.",
+    "long-request": (
+        "Hi, I bought a pair of trail running shoes last month (order 1001) and they arrived with a torn sole. "
+        "I've been a customer for years and would really appreciate it if you could sort this out quickly. "
+        "I already sent photos to your team by email last week but never heard back, and I'm travelling from "
+        "tomorrow, so I'd like the refund started today if possible. It was $42, paid by card. Thanks a lot, "
+        "and sorry for the long message!"
+    ),
 }
 
 current = {"scenario": "happy"}

@@ -18,6 +18,7 @@ export const FINDING_STATE: Record<FindingStatus, { tone: Tone; label: string }>
   resolved: { tone: "success", label: "Resolved" },
   dismissed: { tone: "muted", label: "Dismissed" },
   failed: { tone: "muted", label: "Not checked" },
+  quiet: { tone: "muted", label: "Quiet" },
 };
 
 export const NOTE_STATE: Record<NoteStatus, { tone: Tone; label: string }> = {

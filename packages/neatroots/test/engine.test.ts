@@ -75,7 +75,9 @@ describe("engine", () => {
     expect(plan.created_by).toBe("planner");
     expect(plan.check_ids).toContain("ignored-tool-error");
     const f = tb.roots.store.findingsForTrace(t).find((x) => x.check_id === "ignored-tool-error");
-    expect(f?.probability).toBeGreaterThan(0.9);
+    // An LLM judgment is confident here but capped: its own probability isn't calibrated.
+    expect(f?.probability).toBeGreaterThan(0.8);
+    expect(f?.probability).toBeLessThanOrEqual(0.9);
     expect(f?.triage_score).not.toBeNull();
     const decisions = tb.roots.store.decisionsForTrace(t);
     expect(decisions.some((d) => d.check_id === "unfinished-task" && d.probability < 0.5)).toBe(true);

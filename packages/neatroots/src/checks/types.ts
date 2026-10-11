@@ -46,6 +46,11 @@ const Base = {
   /** Template for the note sent to the agent; {placeholders} come from the finding. */
   guidance: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * Checks that describe the same kind of incident (a retry loop trips three of them). Their
+   * findings in one run show and count as one problem.
+   */
+  group: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/).optional(),
 };
 
 export const RuleSpec = z.discriminatedUnion("type", [

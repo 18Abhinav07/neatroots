@@ -131,7 +131,9 @@ export function markerSpan(traceId: string, root: string): OtlpSpan {
  * A scripted OpenAI-compatible chat server for neatroots' own LLM. Answers typed questions
  * "yes" when the question contains one of `yesWhen`, else "no", with logprobs.
  */
-export async function mockLlm(opts: { yesWhen?: string[]; delayMs?: number } = {}): Promise<{ url: string; requests: any[]; close: () => Promise<void> }> {
+export async function mockLlm(
+  opts: { yesWhen?: string[]; delayMs?: number; rejectWhen?: string[]; plan?: { id: string; params?: Record<string, string> }[] } = {},
+): Promise<{ url: string; requests: any[]; close: () => Promise<void> }> {
   const requests: any[] = [];
   const server = http.createServer((req, res) => {
     let body = "";
@@ -170,8 +172,16 @@ export async function mockLlm(opts: { yesWhen?: string[]; delayMs?: number } = {
             { token: '"}', logprob: -0.01, top_logprobs: [{ token: '"}', logprob: -0.01 }] },
           ],
         };
+      } else if (schema === "verification") {
+        // The second look: turned down when asked about a problem in rejectWhen, otherwise
+        // confirmed with a quote that really is in the evidence.
+        const problem = (user.match(/Possible problem: (.*)/)?.[1] ?? "").toLowerCase();
+        const rejected = (opts.rejectWhen ?? []).some((w) => problem.includes(w.toLowerCase()));
+        const ev = user.split("<run>\n")[1] ?? "";
+        content = JSON.stringify({ quote: rejected ? "" : ev.slice(0, 40), shows_problem: !rejected });
       } else if (schema === "plan") {
-        content = JSON.stringify({ rationale: "mock plan", checks: [{ id: "ignored-tool-error" }, { id: "unfinished-task" }, { id: "repeat-without-progress" }], new_questions: [] });
+        const checks = opts.plan ?? [{ id: "ignored-tool-error" }, { id: "unfinished-task" }, { id: "repeat-without-progress" }];
+        content = JSON.stringify({ rationale: "mock plan", checks, new_questions: [] });
       } else if (schema === "note") {
         content = JSON.stringify({ note: "Stop retrying lookup_order with the same id and tell the user the order was not found." });
       } else if (schema === "summary") {
