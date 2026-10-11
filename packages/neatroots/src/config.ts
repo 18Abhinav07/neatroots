@@ -194,6 +194,12 @@ export function loadConfig(): RootsConfig {
   if (process.env.NEATROOTS_CLASSIFIER_BACKEND) {
     cfg.classifier.backend = process.env.NEATROOTS_CLASSIFIER_BACKEND as RootsConfig["classifier"]["backend"];
   }
+  // Clamp retention to the same range the settings API enforces, so a stray
+  // value in config.yaml (e.g. days: 0) can't delete every unpinned run.
+  if (!Number.isFinite(cfg.retention.days) || cfg.retention.days < 1) cfg.retention.days = 14;
+  cfg.retention.days = Math.min(Math.round(cfg.retention.days), 3650);
+  if (!Number.isFinite(cfg.retention.maxGb) || cfg.retention.maxGb <= 0) cfg.retention.maxGb = 5;
+  cfg.retention.maxGb = Math.min(cfg.retention.maxGb, 10_000);
   return cfg;
 }
 
