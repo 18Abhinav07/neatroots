@@ -680,8 +680,11 @@ export class Store {
     }
     if (f.text) {
       const ids = this.searchSpans(f.text, 500).map((h) => h.trace_id);
-      const like = `%${f.text}%`;
-      where.push(`(trace_id IN (SELECT value FROM json_each(@ids)) OR root_name LIKE @like OR workflow LIKE @like OR input_preview LIKE @like OR output_preview LIKE @like)`);
+      // Escape LIKE wildcards so a literal % or _ in the query is matched as text,
+      // not as "match anything". The ESCAPE clauses below pair with this.
+      const escaped = f.text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+      const like = `%${escaped}%`;
+      where.push(`(trace_id IN (SELECT value FROM json_each(@ids)) OR root_name LIKE @like ESCAPE '\\' OR workflow LIKE @like ESCAPE '\\' OR input_preview LIKE @like ESCAPE '\\' OR output_preview LIKE @like ESCAPE '\\')`);
       p.ids = JSON.stringify([...new Set(ids)]);
       p.like = like;
     }
