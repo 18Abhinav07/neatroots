@@ -12,8 +12,41 @@ import { FINDING_STATE } from "../_libs/labels";
 import { EvidenceChips } from "./evidence-chips";
 import { ExplanationBlock } from "./insight-panels";
 
-const ORDER = { raised: 0, active: 1, resolved: 2, dismissed: 3, failed: 4 } as const;
+const ORDER = { raised: 0, active: 1, resolved: 2, quiet: 3, dismissed: 4, failed: 5 } as const;
 const isOpen = (f: Finding) => f.status === "raised" || f.status === "active";
+
+/**
+ * One row per problem: open findings of checks in the same group (a retry loop trips three
+ * checks) share a row, headed by the most specific one (a rule, then the most important).
+ */
+function problems(live: Finding[]): Finding[][] {
+  const rows: Finding[][] = [];
+  const byGroup = new Map<string, Finding[]>();
+  for (const f of live) {
+    const g = typeof f.detail.group === "string" && isOpen(f) ? f.detail.group : undefined;
+    if (!g) {
+      rows.push([f]);
+      continue;
+    }
+    const row = byGroup.get(g);
+    if (row) row.push(f);
+    else {
+      const fresh = [f];
+      byGroup.set(g, fresh);
+      rows.push(fresh);
+    }
+  }
+  const rank = (f: Finding) => (f.check_kind === "rule" ? 0 : 1);
+  for (const row of rows) row.sort((a, b) => rank(a) - rank(b) || (b.triage_score ?? 0) - (a.triage_score ?? 0) || (b.probability ?? 0) - (a.probability ?? 0));
+  return rows;
+}
+
+/** How likely, honestly: an LLM's own probability isn't calibrated, so it gets words, not a number. */
+function likelihood(f: Finding): string | null {
+  if (f.probability === null) return null;
+  if (f.detail.backend !== "llm") return `${pct(f.probability)} likely`;
+  return `${f.probability >= 0.85 ? "Very likely" : f.probability >= 0.7 ? "Likely" : "Possibly"} (LLM judgment)`;
+}
 
 /**
  * What broke in this run, most important first. Rows share one height; a row opens for the
@@ -46,8 +79,9 @@ export function ProblemsPanel({
 }) {
   const live = findings.filter((f) => f.status !== "failed").sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.triage_score ?? 0) - (a.triage_score ?? 0));
   const failed = findings.filter((f) => f.status === "failed");
-  const open = live.filter(isOpen);
-  const [expanded, setExpanded] = useState<string | undefined>(open[0]?.id);
+  const rows = problems(live);
+  const open = rows.filter((r) => isOpen(r[0]));
+  const [expanded, setExpanded] = useState<string | undefined>(open[0]?.[0].id);
   return (
     <Panel data-testid="problems">
       <PanelHeader
@@ -68,10 +102,11 @@ export function ProblemsPanel({
           <CleanResult c={coverage} running={running} onRecheck={onRecheck} />
         ) : (
           <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto rounded-lg border border-border">
-            {live.map((f) => (
+            {rows.map(([f, ...related]) => (
               <ProblemRow
                 key={f.id}
                 f={f}
+                related={related}
                 names={names}
                 expanded={expanded === f.id}
                 onToggle={() => setExpanded(expanded === f.id ? undefined : f.id)}
@@ -104,6 +139,7 @@ export function ProblemsPanel({
 
 function ProblemRow({
   f,
+  related,
   names,
   expanded,
   onToggle,
@@ -113,6 +149,7 @@ function ProblemRow({
   investigating,
 }: {
   f: Finding;
+  related: Finding[];
   names: Map<string, string>;
   expanded: boolean;
   onToggle: () => void;
@@ -124,12 +161,17 @@ function ProblemRow({
   const state = FINDING_STATE[f.status];
   const open = isOpen(f);
   const where = [...new Set(f.evidence_span_ids.map((id) => names.get(id)).filter(Boolean))];
-  const preview = f.explanation?.cause ?? (where.length ? `Seen in ${where.slice(0, 3).join(", ")}` : "");
+  const preview =
+    f.explanation?.cause ?? (related.length ? `Also: ${related.map((r) => r.title).join(" · ")}` : where.length ? `Seen in ${where.slice(0, 3).join(", ")}` : "");
+  const calls = Array.isArray(f.detail.occurrences) ? f.detail.occurrences.length + 1 : 0;
+  const quote = typeof f.detail.quote === "string" ? f.detail.quote : null;
   const facts = [
     f.check_kind === "rule" ? "Rule" : "Question",
-    f.probability !== null ? `${pct(f.probability)} likely` : null,
+    likelihood(f),
+    calls > 1 ? `in ${calls} calls` : null,
     f.precision.precision !== null && f.precision.hits >= 3 ? `${pct(f.precision.precision)} of past findings kept` : null,
   ].filter(Boolean);
+  const group = [f, ...related];
   const params = Object.entries((f.detail.params ?? {}) as Record<string, string>).filter(([, v]) => v).slice(0, 2);
   return (
     <li>
@@ -145,7 +187,22 @@ function ProblemRow({
       </button>
       {expanded && (
         <div className="flex flex-col gap-3 border-t border-border bg-surface-subtle/40 px-4 py-3">
+          {f.status === "quiet" && (
+            <p className="text-xs text-muted-foreground">Quiet: this check was dismissed 3 times in this project, so it no longer counts here. Reopen it to count it.</p>
+          )}
           {f.explanation ? <ExplanationBlock exp={f.explanation} names={names} onPick={onPick} /> : <EvidenceChips ids={f.evidence_span_ids} names={names} onPick={onPick} />}
+          {quote && (
+            <p className="text-xs">
+              <span className="text-muted-foreground">Shown by </span>
+              <span className="text-foreground">“{quote}”</span>
+            </p>
+          )}
+          {related.length > 0 && (
+            <p className="text-xs">
+              <span className="text-muted-foreground">Also matched </span>
+              <span className="text-foreground">{related.map((r) => r.title).join(" · ")}</span>
+            </p>
+          )}
           {params.map(([k, v]) => (
             <p key={k} className="text-xs">
               <span className="text-muted-foreground">{k} </span>
@@ -164,11 +221,11 @@ function ProblemRow({
                 </Button>
               )}
               {open ? (
-                <Button size="sm" variant="muted" title="Not a problem. Counts against this check's precision." onClick={() => onSetStatus(f.id, "dismissed")}>
+                <Button size="sm" variant="muted" title="Not a problem. Counts against this check's precision." onClick={() => group.forEach((g) => onSetStatus(g.id, "dismissed"))}>
                   Dismiss finding
                 </Button>
               ) : (
-                f.status === "dismissed" && (
+                (f.status === "dismissed" || f.status === "quiet") && (
                   <Button size="sm" variant="muted" onClick={() => onSetStatus(f.id, "raised")}>
                     Reopen finding
                   </Button>

@@ -53,6 +53,7 @@ when: live                # live (as spans arrive, and at run end) | end
 flag_at: 0.8
 guidance: Confirm the customer owns the order before issuing a refund.
 applies_to: { workflow: refund-agent }
+group: refunds            # optional: checks in one group show as one problem per run
 ```
 
 `choice` questions take `options` (label → description) and `flag_on`; `score` questions take
@@ -61,6 +62,9 @@ applies_to: { workflow: refund-agent }
 ### Make sure a question can see what it asks about
 
 - `scope: span` judges one call at a time: right for "Did this tool call pass a negative amount?".
+  It also sees the tool calls made earlier in the run, so a rule such as "plan before you search" is
+  judged against what already happened, and it raises at most one finding per run (later calls that
+  show the same problem join it).
 - `scope: trace` sees the run's spans in order: right whenever a question relates two things, such
   as a tool's result and what the agent said next.
 - A question about the agent's answer ("claims", "says", "reports", "the final response") needs
@@ -89,6 +93,20 @@ A finding is raised when a rule fires or a probability crosses the line. It beco
 note reaches the agent, **resolved** when a later check of the same question falls below the line, and
 **dismissed** when you disagree. A model error or timeout records the check as **not checked**; it never
 counts as a pass. Dismissals feed each check's precision; noisy checks are flagged for retirement.
+
+Before a question raises a finding, the LLM takes a second look: it must quote the words in the run
+that show the problem, the quote must really be there, and it must still hold given what the run did
+earlier. The run page shows that quote. When an LLM answered, the run page says "Very likely (LLM
+judgment)" rather than a percentage, and its probability is capped at 90%, because an LLM's confidence
+in its own answer isn't calibrated.
+
+Checks that describe one incident share a `group` (the library groups `loop`: repeated calls, error
+streaks, repeating without progress, runaway loops; `ending`: failed runs, no answer, unfinished tasks;
+`tool-result`: ignored tool errors and answers that contradict the tools). Their findings in a run show
+as one problem, headed by the most specific one, and count once.
+
+A check you dismiss 3 times in a project goes **quiet** there: its findings are still recorded on the
+run page, but no longer count, send notes or appear on Home. Reopen one to count it again.
 
 ## Which model answers
 

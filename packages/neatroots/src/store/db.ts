@@ -667,7 +667,7 @@ export class Store {
     }
     if (f.hasFinding) where.push("finding_count > 0");
     if (f.checkId) {
-      where.push("trace_id IN (SELECT trace_id FROM findings WHERE check_id = @check AND status NOT IN ('dismissed', 'failed'))");
+      where.push("trace_id IN (SELECT trace_id FROM findings WHERE check_id = @check AND status NOT IN ('dismissed', 'failed', 'quiet'))");
       p.check = f.checkId;
     }
     if (f.sinceMs) {
@@ -690,8 +690,8 @@ export class Store {
     }
     const sql = `SELECT * FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY COALESCE(started_ms, received_ms) DESC LIMIT @limit OFFSET @offset`;
-    p.limit = Math.min(f.limit ?? 50, 500);
-    p.offset = f.offset ?? 0;
+    p.limit = Number.isFinite(f.limit) ? Math.min(Math.max(Math.trunc(f.limit as number), 1), 500) : 50;
+    p.offset = Number.isFinite(f.offset) ? Math.max(Math.trunc(f.offset as number), 0) : 0;
     return this.db.prepare(sql).all(p) as RunRow[];
   }
 
@@ -892,7 +892,7 @@ export class Store {
 
   openFindingFor(traceId: string, checkId: string): Finding | undefined {
     const r = this.db
-      .prepare("SELECT * FROM findings WHERE trace_id = ? AND check_id = ? AND status IN ('raised', 'active') ORDER BY created_ms DESC LIMIT 1")
+      .prepare("SELECT * FROM findings WHERE trace_id = ? AND check_id = ? AND status IN ('raised', 'active', 'quiet') ORDER BY created_ms DESC LIMIT 1")
       .get(traceId, checkId) as Record<string, unknown> | undefined;
     return r ? this.findingFromRow(r) : undefined;
   }
@@ -904,15 +904,28 @@ export class Store {
     return r ? this.findingFromRow(r) : undefined;
   }
 
+  /**
+   * A run's problem counts. Findings of checks in the same group (one retry loop tripping three
+   * checks) count once; quiet ones don't count.
+   */
   private refreshFindingCounts(traceId: string): void {
+    const problem = "COALESCE(json_extract(detail, '$.group'), id)";
     this.db
       .prepare(
         `UPDATE runs SET
-          finding_count = (SELECT COUNT(*) FROM findings WHERE trace_id = @t AND status NOT IN ('failed', 'dismissed')),
-          open_finding_count = (SELECT COUNT(*) FROM findings WHERE trace_id = @t AND status IN ('raised', 'active'))
+          finding_count = (SELECT COUNT(DISTINCT ${problem}) FROM findings WHERE trace_id = @t AND status NOT IN ('failed', 'dismissed', 'quiet')),
+          open_finding_count = (SELECT COUNT(DISTINCT ${problem}) FROM findings WHERE trace_id = @t AND status IN ('raised', 'active'))
          WHERE trace_id = @t`,
       )
       .run({ t: traceId });
+  }
+
+  /** How often the person dismissed a check's findings in one project. */
+  dismissalsIn(checkId: string, project: string): number {
+    const r = this.db
+      .prepare("SELECT COUNT(*) AS n FROM findings f JOIN runs r ON r.trace_id = f.trace_id WHERE f.check_id = ? AND r.project = ? AND f.status = 'dismissed'")
+      .get(checkId, project) as { n: number };
+    return r.n;
   }
 
   setFindingStatus(id: string, status: FindingStatus): Finding | undefined {
@@ -1214,7 +1227,7 @@ export class Store {
     return {
       runs: n("SELECT COUNT(*) AS n FROM runs WHERE doctor = 0"),
       spans: n("SELECT COUNT(*) AS n FROM spans"),
-      findings: n("SELECT COUNT(*) AS n FROM findings WHERE status NOT IN ('failed', 'dismissed')"),
+      findings: n("SELECT COUNT(*) AS n FROM findings WHERE status NOT IN ('failed', 'dismissed', 'quiet')"),
       bytes: this.diskBytes(),
     };
   }

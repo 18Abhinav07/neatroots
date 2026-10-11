@@ -182,7 +182,7 @@ describe("Anthropic provider", () => {
       secret: async () => "sk-ant-test-key-0000000000000000",
     });
     const r = await new LlmDecisionBackend(llm).decide("evidence", [{ name: "q", type: "yes_no", ask: "Did it fail?" }]);
-    expect(r.answers.q.probability).toBeCloseTo(0.95, 2);
+    expect(r.answers.q.probability).toBeCloseTo(0.86, 2); // its stated 0.95, pulled toward even odds (uncalibrated)
     expect(srv.seen[0].body.output_config.format.schema.required).toEqual(["answer", "confidence"]);
   });
 });

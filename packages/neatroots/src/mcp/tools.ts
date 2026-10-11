@@ -88,7 +88,7 @@ function outline(roots: Roots, traceId: string, maxSpans: number) {
   const d = runDetail(roots, traceId)!;
   const findingsBySpan = new Map<string, string[]>();
   for (const f of d.findings) {
-    if (f.status === "dismissed") continue;
+    if (f.status === "dismissed" || f.status === "quiet") continue;
     for (const sid of f.evidence_span_ids) {
       const list = findingsBySpan.get(sid) ?? [];
       list.push(`${f.check_id}${f.probability !== null ? ` p=${f.probability.toFixed(2)}` : ""} [${f.status}]`);
@@ -138,8 +138,8 @@ function outline(roots: Roots, traceId: string, maxSpans: number) {
     },
     outline: lines.join("\n") + (count > maxSpans ? `\n… ${d.spans.length - maxSpans} more spans (raise max_spans)` : ""),
     findings: d.findings
-      .filter((f) => f.status !== "dismissed")
-      .map((f) => ({ id: f.id, check: f.check_id, title: f.title, status: f.status, probability: f.probability, evidence_span_ids: f.evidence_span_ids.map((x) => x.slice(0, 8)) })),
+      .filter((f) => f.status !== "dismissed" && f.status !== "quiet")
+      .map((f) => ({ id: f.id, check: f.check_id, title: f.title, status: f.status, probability: f.probability, group: f.detail.group ?? null, evidence_span_ids: f.evidence_span_ids.map((x) => x.slice(0, 8)) })),
     notes_sent: d.notes.filter((n) => n.status === "delivered").map((n) => ({ text: n.text, kind: n.kind })),
   };
 }
@@ -242,7 +242,7 @@ export const TOOLS = [
     description: "Problems neatroots found, with probabilities, evidence span ids and explanations when the local LLM investigated.",
     input: {
       trace_id: z.string().optional().describe("One run; omit for recent findings across runs"),
-      status: z.enum(["raised", "active", "resolved", "dismissed", "failed"]).optional(),
+      status: z.enum(["raised", "active", "resolved", "dismissed", "failed", "quiet"]).optional(),
       limit: z.number().int().min(1).max(200).optional(),
     },
     readOnly: true,

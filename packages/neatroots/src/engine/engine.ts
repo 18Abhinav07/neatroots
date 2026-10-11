@@ -36,6 +36,8 @@ import type { Plain } from "../otlp/types.js";
 import { preview } from "../semantics/view.js";
 import { log } from "../util/log.js";
 import { CheckProgress } from "./progress.js";
+import { addOccurrence, dropOccurrence, findingSpans, isOpenFinding, newFindingStatus } from "./findings.js";
+import { verifyFlag } from "./verify.js";
 
 /** Default library questions when no LLM is available to plan. */
 export const DEFAULT_PLAN = ["ignored-tool-error", "repeat-without-progress", "unfinished-task", "contradicts-tool-output"];
@@ -67,6 +69,8 @@ interface LiveRun {
   spanQueue: Map<string, string[]>;
   spanBusy: Set<string>;
   spanAsked: Map<string, number>;
+  /** Per question: flags the second look turned down; after a few, the question stops raising. */
+  rejected: Map<string, number>;
   traceEvidence: Map<string, string>;
   dirty: Set<string>;
   debounce?: NodeJS.Timeout;
@@ -100,10 +104,12 @@ function toQuestion(c: QuestionCheck, params: Record<string, string>): DecisionQ
 export function flagged(c: QuestionCheck, r: DecisionResult): { flagged: boolean; probability: number } {
   const a = r.answers[c.id];
   if (!a) return { flagged: false, probability: 0 };
-  if (c.kind === "yes_no") return { flagged: a.probability >= c.flag_at, probability: a.probability };
+  // LLM answers top out at 90% (see shrinkDistribution), so a stricter line could never be met.
+  const line = (at: number) => (r.backend === "llm" ? Math.min(at, 0.88) : at);
+  if (c.kind === "yes_no") return { flagged: a.probability >= line(c.flag_at), probability: a.probability };
   if (c.kind === "choice") {
     const p = c.flag_on.reduce((acc, o) => acc + (a.distribution[o] ?? 0), 0);
-    return { flagged: p >= c.flag_at, probability: p };
+    return { flagged: p >= line(c.flag_at), probability: p };
   }
   return { flagged: (a.score ?? 0) >= c.flag_at_level, probability: a.probability };
 }
@@ -202,6 +208,7 @@ export class Engine {
       spanQueue: new Map(),
       spanBusy: new Set(),
       spanAsked: new Map(),
+      rejected: new Map(),
       traceEvidence: new Map(),
       dirty: new Set(),
       ended: false,
@@ -356,21 +363,22 @@ export class Engine {
             if (f) this.roots.bus.emit("finding", f);
           }
         } else {
+          const status = newFindingStatus(this.roots.store, rule.id, run.project);
           const f = this.roots.store.insertFinding({
             trace_id: run.traceId,
             check_id: rule.id,
             check_kind: "rule",
             title: checkTitle(rule),
             probability: null,
-            status: "raised",
+            status,
             evidence_span_ids: hit.evidenceSpanIds,
-            detail: { params: hit.params, source: lc.source },
+            detail: { params: hit.params, source: lc.source, ...(rule.group ? { group: rule.group } : {}) },
             model: null,
             triage_score: null,
             explanation_id: null,
           });
           this.roots.bus.emit("finding", f);
-          this.onFindingRaised(run, f, lc, hit.params, snap);
+          if (status === "raised") this.onFindingRaised(run, f, lc, hit.params, snap);
         }
       } else if (open && hit && !hit.firing) {
         this.resolve(open);
@@ -457,8 +465,24 @@ export class Engine {
     const open = this.findOpen(run.traceId, check.id, spanId);
     if (verdict.flagged) {
       if (open) {
-        const f = this.roots.store.updateFinding(open.id, { probability: verdict.probability, evidence_span_ids: spanIds });
+        const spans = spanId && findingSpans(open).length > 1 ? [...new Set([...open.evidence_span_ids, ...spanIds])] : spanIds;
+        const f = this.roots.store.updateFinding(open.id, { probability: Math.max(verdict.probability, open.probability ?? 0), evidence_span_ids: spans });
         if (f) this.roots.bus.emit("finding", f);
+        return;
+      }
+      // A question about single spans raises one finding per run; later spans join it.
+      const sibling = spanId ? this.roots.store.openFindingFor(run.traceId, check.id) : undefined;
+      if (sibling) {
+        const f = addOccurrence(this.roots.store, sibling, spanId!, spanIds);
+        if (f) this.roots.bus.emit("finding", f);
+        return;
+      }
+      // A second look, with a quote that must be in the run, before anything is raised.
+      if ((run.rejected.get(check.id) ?? 0) >= 3) return;
+      const check2 = check.kind === "yes_no" ? await verifyFlag(this.llm, fillTemplate(check.ask, params) || check.ask, evidence) : undefined;
+      if (check2 && !check2.verified) {
+        run.rejected.set(check.id, (run.rejected.get(check.id) ?? 0) + 1);
+        log.debug(`${check.id}: flag not confirmed on a second look${check2.quote ? ` (quote: ${clip(check2.quote, 80)})` : ""}`);
         return;
       }
       const evidenceSpans = snap.spans.filter((s) => spanIds.includes(s.id));
@@ -469,30 +493,41 @@ export class Engine {
         ...(focus?.toolName ? { tool: focus.toolName } : {}),
         ...(errSpan ? { error: clip(errSpan.error ?? "error", 160), tool: params.tool ?? errSpan.toolName ?? errSpan.name } : {}),
       };
+      const status = newFindingStatus(this.roots.store, check.id, run.project);
       const f = this.roots.store.insertFinding({
         trace_id: run.traceId,
         check_id: check.id,
         check_kind: "question",
         title: checkTitle(check),
         probability: verdict.probability,
-        status: "raised",
+        status,
         evidence_span_ids: spanIds,
-        detail: { params: findingParams, span_id: spanId, backend: result.backend, choice: answer?.choice ?? null },
+        detail: {
+          params: findingParams,
+          span_id: spanId,
+          backend: result.backend,
+          choice: answer?.choice ?? null,
+          ...(check.group ? { group: check.group } : {}),
+          ...(check2?.quote ? { quote: check2.quote } : {}),
+        },
         model: result.model,
         triage_score: null,
         explanation_id: null,
       });
       this.roots.bus.emit("finding", f);
       const lc = this.registry.get(check.id);
-      if (lc) this.onFindingRaised(run, f, lc, findingParams, snap);
+      if (lc && status === "raised") this.onFindingRaised(run, f, lc, findingParams, snap);
     } else if (open) {
-      this.resolve(open);
+      // This span reads clean now: it leaves the finding, which resolves once no span shows it.
+      const rest = spanId ? dropOccurrence(this.roots.store, open, spanId) : undefined;
+      if (rest) this.roots.bus.emit("finding", rest);
+      else this.resolve(open);
     }
   }
 
   private findOpen(traceId: string, checkId: string, spanId: string | null): Finding | undefined {
-    const all = this.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === checkId && (f.status === "raised" || f.status === "active"));
-    return all.find((f) => (f.detail.span_id ?? null) === spanId);
+    const all = this.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === checkId && isOpenFinding(f));
+    return spanId ? all.find((f) => findingSpans(f).includes(spanId)) : all.find((f) => (f.detail.span_id ?? null) === null);
   }
 
   // ------------------------------------------------------- tool result labels

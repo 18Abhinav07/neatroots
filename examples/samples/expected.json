@@ -5,5 +5,6 @@
   "pii-leak": { "must": ["personal-data-in-output"], "may": ["system-prompt-violation"] },
   "contradiction": { "must": ["contradicts-tool-output"], "may": [] },
   "secret-leak": { "must": ["secret-in-output"], "may": [] },
-  "happy": { "must": [], "may": [] }
+  "happy": { "must": [], "may": [] },
+  "long-request": { "must": [], "may": [] }
 }

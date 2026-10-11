@@ -101,6 +101,19 @@ describe("store", () => {
     expect(st.listRuns({ limit: 500 }).length).toBe(0);
   });
 
+  it("clamps bad limit/offset values instead of crashing or ignoring them", () => {
+    const st = store();
+    for (let i = 0; i < 5; i++) st.ingest([batch([span({ traceId: hex(16), spanId: hex(8), name: "r", kind: "workflow", attrs: [s("neatlogs.workflow.input", `"req ${i}"`)] })])]);
+    // NaN (e.g. from Number("abc")) must not throw and must not return everything via a NaN LIMIT
+    expect(() => st.listRuns({ limit: NaN })).not.toThrow();
+    expect(st.listRuns({ limit: NaN }).length).toBe(5);
+    // a negative limit must not be treated as "no limit": clamps to >= 1
+    expect(st.listRuns({ limit: -5 }).length).toBe(1);
+    // normal and over-max still behave
+    expect(st.listRuns({ limit: 2 }).length).toBe(2);
+    expect(st.listRuns({ limit: 9999 }).length).toBe(5);
+  });
+
   it("treats LIKE wildcards (% and _) in run search as literal text", () => {
     const st = store();
     const underscore = hex(16);

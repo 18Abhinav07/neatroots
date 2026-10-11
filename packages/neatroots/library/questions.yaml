@@ -5,6 +5,7 @@
 
 - id: ignored-tool-error
   kind: yes_no
+  group: tool-result
   title: Carried on after a failed tool call
   baseline: true
   scope: trace
@@ -20,6 +21,7 @@
 
 - id: repeat-without-progress
   kind: yes_no
+  group: loop
   title: Repeating actions without new information
   scope: trace
   ask: Did the agent repeat the same action several times without getting any new information from it?
@@ -34,6 +36,7 @@
 
 - id: contradicts-tool-output
   kind: yes_no
+  group: tool-result
   title: Answer contradicts what the tools returned
   baseline: true
   scope: trace
@@ -62,6 +65,7 @@
 
 - id: unfinished-task
   kind: yes_no
+  group: ending
   title: Ended without finishing the task
   scope: trace
   when: end

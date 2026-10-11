@@ -46,6 +46,11 @@ const Base = {
   /** Template for the note sent to the agent; {placeholders} come from the finding. */
   guidance: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * Checks that describe the same kind of incident (a retry loop trips three of them). Their
+   * findings in one run show and count as one problem.
+   */
+  group: z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/).optional(),
 };
 
 export const RuleSpec = z.discriminatedUnion("type", [
@@ -138,7 +143,20 @@ export const ChoiceQuestion = z
     flag_on: z.array(z.string()).min(1),
     flag_at: z.number().min(0).max(1).default(0.6),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    // Every flag_on entry must be a real option key, otherwise the check can never fire.
+    const keys = new Set(Object.keys(val.options));
+    val.flag_on.forEach((opt, i) => {
+      if (!keys.has(opt)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["flag_on", i],
+          message: `"${opt}" is not one of options (${[...keys].join(", ")})`,
+        });
+      }
+    });
+  });
 
 export const ScoreQuestion = z
   .object({

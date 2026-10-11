@@ -66,7 +66,8 @@ export interface SpanRow {
   seq: number;
 }
 
-export type FindingStatus = "raised" | "active" | "resolved" | "dismissed" | "failed";
+/** quiet: open, but not counted, because the person kept dismissing this check in this project. */
+export type FindingStatus = "raised" | "active" | "resolved" | "dismissed" | "failed" | "quiet";
 
 export interface Finding {
   id: string;

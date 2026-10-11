@@ -181,6 +181,25 @@ function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+/**
+ * An LLM call's input as its latest messages, newest last. The system prompt is left out (the
+ * evidence states it once, up front); keeping the head instead would hide what just happened.
+ */
+export function latestMessages(input: Plain | undefined, max: number): string | undefined {
+  if (!Array.isArray(input) || !input.every((m) => m && typeof m === "object" && "role" in (m as object))) return undefined;
+  const msgs = (input as Record<string, Plain>[]).filter((m) => m.role !== "system");
+  const lines: string[] = [];
+  let size = 0;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const line = clip(preview([msgs[i]] as Plain, 600).replace(/\s+/g, " "), 600);
+    if (size + line.length > max && lines.length > 0) break;
+    lines.unshift(line);
+    size += line.length + 1;
+  }
+  const hidden = msgs.length - lines.length;
+  return (hidden > 0 ? `(${hidden} earlier message${hidden > 1 ? "s" : ""} not shown) ` : "") + lines.join(" | ");
+}
+
 export function describeSpan(s: SpanInfo, fields: EvidenceField[], perField = 700): string {
   const head = `[${s.ref}] ${s.kind}${s.toolName ? ` ${s.toolName}` : ` ${s.name}`}`;
   const parts: string[] = [head];
@@ -189,7 +208,10 @@ export function describeSpan(s: SpanInfo, fields: EvidenceField[], perField = 70
   if (fields.includes("tokens") && s.tokens) parts.push(`tokens=${s.tokens}`);
   if (fields.includes("duration")) parts.push(`${Math.round(s.durationMs)}ms`);
   let line = parts.join(" ");
-  if (fields.includes("input") && s.input !== undefined) line += `\n  input: ${clip(preview(s.input, perField * 2), perField)}`;
+  if (fields.includes("input") && s.input !== undefined) {
+    const latest = s.kind === "LLM" ? latestMessages(s.input, perField) : undefined;
+    line += `\n  input: ${latest ?? clip(preview(s.input, perField * 2), perField)}`;
+  }
   if (fields.includes("output") && s.output !== undefined) line += `\n  output: ${clip(preview(s.output, perField * 2), perField)}`;
   if ((fields.includes("error") || fields.includes("status")) && s.error) line += `\n  error: ${clip(s.error, 300)}`;
   return line;
@@ -216,6 +238,9 @@ export function buildEvidence(t: TraceSnapshot, ev: Evidence | undefined, opts: 
     else if (g.rootInput) goalLines.push(`Run input: ${clip(g.rootInput, 600)}`);
     if (goalLines.length) sections.push(goalLines.join("\n"));
   }
+  // A question about one span still needs what the run did before it: an instruction such as
+  // "plan before you search" is only broken if the plan never happened.
+  if (opts.focus) sections.push(runSoFar(t, opts.focus));
   let spans = opts.focus ? [opts.focus] : selectSpans(t.spans, ev?.spans);
   if (!opts.focus && ev?.last) spans = spans.slice(-ev.last);
   const used: string[] = [];
@@ -223,7 +248,7 @@ export function buildEvidence(t: TraceSnapshot, ev: Evidence | undefined, opts: 
   let size = sections.join("\n").length;
   // Newest spans matter most; fill from the end, then restore order.
   for (let i = spans.length - 1; i >= 0; i--) {
-    const d = describeSpan(spans[i], fields);
+    const d = describeSpan(spans[i], fields, opts.focus ? 1600 : 700);
     if (size + d.length > budget && spanTexts.length > 0) break;
     spanTexts.unshift(d);
     used.unshift(spans[i].id);
@@ -235,6 +260,16 @@ export function buildEvidence(t: TraceSnapshot, ev: Evidence | undefined, opts: 
     if (out) sections.push(`Final answer: ${clip(out, 1500)}`);
   }
   return { text: sections.join("\n\n"), spanIds: used };
+}
+
+/** The tool calls that started before a span, oldest first, as one line each. */
+export function runSoFar(t: TraceSnapshot, focus: SpanInfo, max = 25): string {
+  const earlier = t.spans.filter((s) => (s.kind === "TOOL" || s.kind === "MCP_TOOL") && s.id !== focus.id && s.startMs <= focus.startMs && s.endMs <= focus.startMs);
+  if (!earlier.length) return "Tool calls earlier in this run: none.";
+  const shown = earlier.slice(-max);
+  const lines = shown.map((s) => `- [${s.ref}] ${s.toolName ?? s.name} ${s.status === "error" ? `failed${s.error ? `: ${clip(s.error, 80)}` : ""}` : "ok"}${s.input !== undefined ? ` · ${clip(preview(s.input, 200).replace(/\s+/g, " "), 100)}` : ""}`);
+  const more = earlier.length - shown.length;
+  return `Tool calls earlier in this run (oldest first${more > 0 ? `; ${more} earlier not shown` : ""}):\n${lines.join("\n")}`;
 }
 
 /** Maps short refs or full ids the LLM mentions back to span ids in this trace. */

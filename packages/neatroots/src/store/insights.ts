@@ -119,8 +119,8 @@ function percentile(values: number[], p: number): number | null {
 
 const RUNS_IN = `SELECT trace_id FROM runs WHERE doctor = 0 AND COALESCE(started_ms, received_ms) >= @from AND COALESCE(started_ms, received_ms) < @to`;
 
-/** A problem counts unless the user dismissed it or the check could not run. */
-const IS_PROBLEM = (f: { status: string }) => f.status !== "dismissed" && f.status !== "failed";
+/** A problem counts unless the user dismissed it, the check could not run, or it went quiet. */
+const IS_PROBLEM = (f: { status: string }) => f.status !== "dismissed" && f.status !== "failed" && f.status !== "quiet";
 
 function slice(db: Database.Database, from: number, to: number) {
   const p = { from, to };

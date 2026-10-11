@@ -185,7 +185,7 @@ export function RunDetail({ traceId, query }: { traceId: string; query?: URLSear
         {d.import_source && <PropertyRow label="Imported from" value={SOURCE_LABEL[d.import_source] ?? d.import_source} />}
       </DetailRailGroup>
       <DetailRailGroup label="Checks">
-        <PropertyRow label="Open problems" value={openFindings.length} />
+        <PropertyRow label="Open problems" value={r.open_finding_count} tooltip="Findings of checks in the same group, such as one retry loop, count as one problem." />
         {d.coverage ? (
           <PropertyRow label="Questions" value={`${d.coverage.answered} of ${d.coverage.questions}`} tooltip="Questions answered for this run: the ones picked for this agent, the ones every tool-using agent gets, and your own. Rules run on every span as well." />
         ) : (
