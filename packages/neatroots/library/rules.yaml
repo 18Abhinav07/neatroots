@@ -66,6 +66,18 @@
     pattern: '(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
   guidance: Do not repeat credentials or keys in your replies. Refer to them by name instead.
 
+- id: tool-cycle
+  kind: rule
+  title: Two or more tools are going around in a circle
+  rule:
+    type: cycle
+    span: { type: tool }
+    max_period: 3
+    min_cycles: 4
+  guidance: >-
+    The last calls repeat {pattern} {count} times and keep returning the same results, even if the
+    inputs differ. This is not making progress. Stop, change the approach or ask the user.
+
 - id: run-failed
   kind: rule
   group: ending
