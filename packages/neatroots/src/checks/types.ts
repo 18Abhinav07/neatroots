@@ -96,6 +96,13 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("unrecovered_error"),
+      /** Spans to watch. Defaults to tool and MCP tool calls. */
+      span: SpanSelector.optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("run_end"),
       /** Fire when the run ends with this condition. */
       when: z.enum(["error", "no_output", "interrupted"]),
@@ -197,4 +204,4 @@ export function checkTitle(c: Check): string {
   if (c.title) return c.title;
   if (isQuestion(c)) return c.ask;
   return c.id;
-}
+    }
