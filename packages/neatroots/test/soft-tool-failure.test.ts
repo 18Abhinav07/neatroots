@@ -94,7 +94,7 @@ describe("soft-tool-failure", () => {
     homes.push(h);
     const st = new Store(path.join(h, "data"));
     const t = hex(16);
-    st.ingest([batch([toolSpan(t, hex(8), "lookup", "{}", undefined, "boom")])]);
+    st.ingest([batch([toolSpan(t, hex(8), "lookup", "{}", '{"error":"boom"}', "boom")])]);
     expect(evaluateRule(rule, loadTrace(st, t), false)).toBeNull();
   });
 });
