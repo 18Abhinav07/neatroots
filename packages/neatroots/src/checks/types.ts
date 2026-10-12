@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { regexProblem } from "../util/regex.js";
 
 /** Which spans a check looks at. Every field is optional; all given fields must match. */
 export const SpanSelector = z
@@ -93,7 +94,11 @@ export const RuleSpec = z.discriminatedUnion("type", [
       pattern: z.string(),
       flags: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((r, ctx) => {
+      const problem = regexProblem(r.pattern, r.flags ?? "i");
+      if (problem) ctx.addIssue({ code: "custom", path: ["pattern"], message: problem });
+    }),
   z
     .object({
       type: z.literal("run_end"),

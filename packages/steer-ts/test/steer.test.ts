@@ -7,6 +7,7 @@ import { applyAnthropic, applyMessages, NeatrootsHalt, rootsMiddleware, checkMyW
 
 const notes: (Note | null)[] = [];
 const claims: any[] = [];
+let mode = "advisory";
 let server: http.Server;
 let url = "";
 
@@ -19,7 +20,7 @@ beforeAll(async () => {
       let out: unknown = {};
       if (req.url === "/api/steer/claim") {
         claims.push(b);
-        out = { mode: "advisory", note: notes.shift() ?? null };
+        out = { mode, note: notes.shift() ?? null };
       } else if (req.url === "/api/steer/check") out = { probability: 0.2, answer: "no", evidence_span_ids: ["s1"] };
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify(out));
@@ -33,6 +34,7 @@ beforeEach(() => {
   configure({ url, traceId: () => "a".repeat(32) });
   notes.length = 0;
   claims.length = 0;
+  mode = "advisory";
 });
 
 const note = (text = "Stop retrying.", kind: Note["kind"] = "template"): Note => ({ id: "n1", kind, text, finding_id: "f1" });
@@ -84,6 +86,13 @@ describe("neatroots-steer (ts)", () => {
     notes.push(note("Your rule says stop.", "halt"));
     const client = wrapOpenAI({ chat: { completions: { create: async (_p: unknown) => "should not run" } } });
     await expect(client.chat.completions.create({ messages: [{ role: "user", content: "q" }] })).rejects.toBeInstanceOf(NeatrootsHalt);
+  });
+
+  it("ignores a note, a halt included, that arrives with steering off", async () => {
+    mode = "off";
+    notes.push(note("Your rule says stop.", "halt"));
+    const client = wrapOpenAI({ chat: { completions: { create: async (_p: unknown) => "ran" } } });
+    await expect(client.chat.completions.create({ messages: [{ role: "user", content: "q" }] })).resolves.toBe("ran");
   });
 
   it("works as AI SDK 7 middleware", async () => {

@@ -225,7 +225,8 @@ export async function guidance(traceId?: string): Promise<Note | undefined> {
   if (!res) return undefined;
   state.mode = res.mode || "unknown";
   state.modeCheckedAt = Date.now();
-  if (!res.note) return undefined;
+  // A note that arrives with steering off (an older neatroots) is not used.
+  if (!res.note || state.mode === "off") return undefined;
   await record(res.note);
   if (res.note.kind === "halt") throw new NeatrootsHalt(res.note.text);
   return res.note;

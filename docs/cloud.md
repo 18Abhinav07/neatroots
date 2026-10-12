@@ -7,6 +7,11 @@ public API (`https://app.neatlogs.com/api/v1/public`), which takes a different c
 service-account token (`nlsa_…`) sent as `Authorization: Bearer`, with `x-project-id` naming the
 project.
 
+neatroots sends your Neatlogs key (and, for imports, your service-account token) only to an https
+`*.neatlogs.com` address, or to localhost for testing. To use another https address, such as a
+self-hosted Neatlogs, set `cloud.endpoint` and `cloud.trustEndpoint: true` in `config.yaml`; plain
+http to another machine is always refused.
+
 ## Compatibility
 
 - **Ingest.** neatroots accepts exactly what the SDKs send to the cloud: `POST /v1/traces` (protobuf or

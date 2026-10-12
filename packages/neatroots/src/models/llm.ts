@@ -70,6 +70,14 @@ export function hardwareTier(totalBytes = os.totalmem()): { tier: "large" | "med
   return { tier: "small", memoryGb: gb, description: "rules and classifier on device; LLM work needs Ollama elsewhere or a cloud key" };
 }
 
+/** An LLM task's error for people: when no LLM is reachable, says so and how to set one up. */
+export function llmErrorMessage(e: unknown): string {
+  if (e instanceof LlmUnavailableError) {
+    return "No LLM is reachable. Set one up in Settings → Models, run `neatroots llm use <provider>`, or start a local LLM (Ollama/LM Studio).";
+  }
+  return (e as Error).message;
+}
+
 /** One place chat calls can go: the local server or a hosted provider. */
 interface Transport {
   readonly where: string;

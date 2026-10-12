@@ -2,6 +2,9 @@ import type { RuleCheck } from "./types.js";
 import { finalOutput, selectSpans, type SpanInfo, type TraceSnapshot } from "../engine/trace.js";
 import { preview } from "../semantics/view.js";
 
+/** How much of a field a `match` rule reads. */
+const MATCH_CHARS = 200_000;
+
 export interface RuleHit {
   /** Whether the condition holds now, looking at the latest spans. */
   firing: boolean;
@@ -111,7 +114,8 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       const hits = selectSpans(t.spans, r.span).filter((s) => {
         const v = r.field === "input" ? s.input : r.field === "output" ? s.output : r.field === "error" ? s.error : s.name;
         if (v === undefined || v === null) return false;
-        return re.test(typeof v === "string" ? v : JSON.stringify(v));
+        // Bounded, so even a slow (but accepted) pattern can't hold the server for long on a huge output.
+        return re.test((typeof v === "string" ? v : JSON.stringify(v)).slice(0, MATCH_CHARS));
       });
       if (!hits.length) return null;
       return { firing: true, evidenceSpanIds: hits.map((s) => s.id), params: { count: String(hits.length), span: hits[0].ref } };

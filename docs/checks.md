@@ -31,7 +31,7 @@ action: flag              # or halt (your own rules only)
 | `errors` | `consecutive` matching spans failed in a row |
 | `count` | the run has `at_least` matching spans |
 | `threshold` | a run metric (`total_tokens`, `llm_calls`, `duration_ms`, …) reaches `at_least` |
-| `match` | a regex matches a span's `input`, `output`, `error` or `name` |
+| `match` | a regex matches a span's `input`, `output`, `error` or `name` (the first 200,000 characters). A pattern that doesn't compile, or that nests repeats like `(a+)+` and could freeze neatroots, is rejected when the check is saved |
 | `run_end` | the run ended with `error`, `no_output` or `interrupted` |
 
 ## Questions

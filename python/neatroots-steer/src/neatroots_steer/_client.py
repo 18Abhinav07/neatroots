@@ -162,7 +162,8 @@ class RootsClient:
             self._mode = res.get("mode") or "unknown"
             self._mode_checked = time.monotonic()
             note = res.get("note")
-            if not note:
+            # A note that arrives with steering off (an older neatroots) is not used.
+            if not note or self._mode == "off":
                 self._pending.discard(trace_id)
                 return None
         return Note(note.get("id", ""), note.get("kind", "template"), note.get("text", ""), note.get("finding_id"))
