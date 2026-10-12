@@ -101,6 +101,32 @@ describe("store", () => {
     expect(st.listRuns({ limit: 500 }).length).toBe(0);
   });
 
+  it("trims to the size cap by removing the oldest runs, not every run", () => {
+    const st = store();
+    const pad = "lorem ipsum ".repeat(400);
+    const ids: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      const t = hex(16);
+      ids.push(t);
+      st.ingest([batch([span({ traceId: t, spanId: hex(8), name: `r${i}`, kind: "workflow", attrs: [s("input.value", pad)] })])]);
+      st.db.prepare("UPDATE runs SET received_ms = ?, ended_ms = ? WHERE trace_id = ?").run(1_000 + i, 1_000 + i, t);
+    }
+    st.setPinned(ids[0], true); // the oldest run, but pinned
+    // bytes of data the database holds (pages in use), measured independently of the code under test
+    const used = () => ((st.db.pragma("page_count", { simple: true }) as number) - (st.db.pragma("freelist_count", { simple: true }) as number)) * (st.db.pragma("page_size", { simple: true }) as number);
+    const cap = Math.floor(used() * 0.6);
+    const removed = st.sweep(999_999, cap);
+    // was: every unpinned run deleted, because the file size never drops during the loop
+    expect(removed).toBeGreaterThan(0);
+    expect(removed).toBeLessThan(59);
+    expect(used()).toBeLessThanOrEqual(cap);
+    expect(st.getRun(ids[0])).toBeDefined(); // pinned survives
+    expect(st.getRun(ids[59])).toBeDefined(); // newest survives
+    expect(st.getRun(ids[1])).toBeUndefined(); // oldest unpinned went first
+    // already under the cap: nothing more to remove
+    expect(st.sweep(999_999, cap)).toBe(0);
+  });
+
   it("clamps bad limit/offset values instead of crashing or ignoring them", () => {
     const st = store();
     for (let i = 0; i < 5; i++) st.ingest([batch([span({ traceId: hex(16), spanId: hex(8), name: "r", kind: "workflow", attrs: [s("neatlogs.workflow.input", `"req ${i}"`)] })])]);

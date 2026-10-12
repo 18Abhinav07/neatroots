@@ -1176,7 +1176,10 @@ export class Store {
         removed++;
       }
     }
-    let size = this.diskBytes();
+    // Measure what the database holds, not the file size: SQLite keeps the file (and WAL) at its
+    // high-water mark after a delete and reuses the freed pages, so the file size never drops
+    // during this loop and measuring it would delete every unpinned run.
+    let size = this.storedBytes();
     while (size > maxBytes) {
       const oldest = this.db
         .prepare("SELECT trace_id FROM runs WHERE pinned = 0 ORDER BY COALESCE(ended_ms, received_ms) ASC LIMIT 20")
@@ -1186,10 +1189,18 @@ export class Store {
         this.deleteRun(r.trace_id);
         removed++;
       }
-      size = this.diskBytes();
+      size = this.storedBytes();
     }
     if (removed) this.db.pragma("wal_checkpoint(TRUNCATE)");
     return removed;
+  }
+
+  /** Bytes of data actually stored: database pages in use (not free pages) plus payload blobs. */
+  storedBytes(): number {
+    const pages = this.db.pragma("page_count", { simple: true }) as number;
+    const free = this.db.pragma("freelist_count", { simple: true }) as number;
+    const pageSize = this.db.pragma("page_size", { simple: true }) as number;
+    return (pages - free) * pageSize + this.blobs.size();
   }
 
   diskBytes(): number {
