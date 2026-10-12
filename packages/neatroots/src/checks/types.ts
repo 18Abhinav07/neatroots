@@ -96,6 +96,17 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("cycle"),
+      /** Spans whose order is checked, usually tool calls. */
+      span: SpanSelector.optional(),
+      /** Longest repeating pattern, in calls. 2 catches a, b, a, b. */
+      max_period: z.number().int().min(2).max(5).default(3),
+      /** How many times the pattern repeats in a row before it fires. */
+      min_cycles: z.number().int().min(3).default(4),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("run_end"),
       /** Fire when the run ends with this condition. */
       when: z.enum(["error", "no_output", "interrupted"]),
