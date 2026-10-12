@@ -307,9 +307,11 @@ export class AgentChats {
   }
 
   private codexArgs(s: ChatSession, prompt: string): { cmd: string; args: string[] } {
+    const mode = s.allow_edits || s.allow_commands ? "workspace-write" : "read-only";
     const args = ["exec"];
-    if (s.agent_session_id) args.push("resume", s.agent_session_id);
-    args.push("--json", "--skip-git-repo-check", "--sandbox", s.allow_edits || s.allow_commands ? "workspace-write" : "read-only");
+    // `codex exec resume` rejects --sandbox; every codex takes the same setting as a -c override.
+    if (s.agent_session_id) args.push("resume", s.agent_session_id, "--json", "--skip-git-repo-check", "-c", `sandbox_mode="${mode}"`);
+    else args.push("--json", "--skip-git-repo-check", "--sandbox", mode);
     const client = findClient("codex");
     if (!client || !clientStatus(client).connected) args.push("-c", `mcp_servers.neatroots.url="${this.mcpUrl()}"`);
     args.push(prompt);
@@ -328,7 +330,11 @@ export class AgentChats {
     const msg = e.message as { content?: Record<string, unknown>[] } | undefined;
     if (e.type === "assistant" && msg?.content) {
       for (const c of msg.content) {
-        if (c.type === "text" && str(c.text).trim()) this.emit(id, { kind: e.error ? "error" : "text", text: str(c.text) });
+        if (c.type === "text" && str(c.text).trim()) {
+          // A sign-in error comes again as the result, explained there; show it once.
+          if (e.error && signInHelp("claude", str(c.text))) continue;
+          this.emit(id, { kind: e.error ? "error" : "text", text: str(c.text) });
+        }
         else if (c.type === "tool_use") this.emit(id, { kind: "tool", tool: { id: str(c.id), name: str(c.name), input: c.input } });
       }
       return;
