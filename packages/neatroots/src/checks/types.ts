@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+function compiles(pattern: string, flags: string): boolean {
+  try {
+    new RegExp(pattern, flags);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Which spans a check looks at. Every field is optional; all given fields must match. */
 export const SpanSelector = z
   .object({
@@ -93,7 +102,8 @@ export const RuleSpec = z.discriminatedUnion("type", [
       pattern: z.string(),
       flags: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .refine((r) => compiles(r.pattern, r.flags ?? "i"), { message: "pattern is not a valid regular expression", path: ["pattern"] }),
   z
     .object({
       type: z.literal("run_end"),
