@@ -85,6 +85,21 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     }
   });
 
+  it("rejects a non-finite score or token count instead of silently coercing it to null", () => {
+    try {
+      httpTraceToBatches({ name: "a", passed: true, score: NaN });
+    } catch (e) {
+      expect((e as HttpTraceError).details).toMatchObject({ score: "must be a finite number" });
+    }
+    try {
+      httpTraceToBatches({ name: "a", model: "m", tokens: { prompt: NaN, total: Infinity } });
+    } catch (e) {
+      expect((e as HttpTraceError).details).toMatchObject({ "tokens.prompt": "must be a finite number", "tokens.total": "must be a finite number" });
+    }
+    // valid numbers are unaffected
+    expect(httpTraceToBatches({ name: "a", passed: true, score: 0.9, model: "m", tokens: { prompt: 10, total: 15 } }).spans).toBe(1);
+  });
+
   it("is served at /v1/trace and the run shows up", async () => {
     t = await makeRoots({ serve: true, noEngine: true });
     const res = await fetch(`${t.url}/v1/trace`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer nlw_x" }, body: JSON.stringify({ name: "hello", project: "p1", input: "hi", output: "hey", children: [{ name: "llm", model: "m", input: "hi", output: "hey" }] }) });
