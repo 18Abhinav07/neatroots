@@ -68,7 +68,7 @@
 
 - id: context-growth
   kind: rule
-  title: The prompt keeps getting bigger on every model call
+  title: The model calls keep getting bigger
   rule:
     type: growth
     span: { type: llm }
