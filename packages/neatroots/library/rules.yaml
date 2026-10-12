@@ -66,6 +66,18 @@
     pattern: '(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
   guidance: Do not repeat credentials or keys in your replies. Refer to them by name instead.
 
+- id: soft-tool-failure
+  kind: rule
+  title: A tool reported success but its output looks like a failure
+  rule:
+    type: match
+    span: { type: tool }
+    field: output
+    pattern: '"(error|errors|exception)"\s*:\s*("[^"\s]|\{|\[\s*[^\]\s])|"(status|status_code|http_status)"\s*:\s*"?[45]\d\d\b|rate limit(ed)? exceeded|too many requests|internal server error|service unavailable|traceback \(most recent call last\)|(^|\n)\s*error:|\bHTTP [45]\d\d\b'
+  guidance: >-
+    The output of {span} looks like an error even though the call did not fail. Do not treat it as a
+    result. Check it, retry or tell the user.
+
 - id: run-failed
   kind: rule
   group: ending
