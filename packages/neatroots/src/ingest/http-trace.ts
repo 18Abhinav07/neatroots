@@ -45,16 +45,25 @@ export class HttpTraceError extends Error {
   }
 }
 
-function validate(node: unknown, path: string, errors: Record<string, string>): void {
+// Deeply-nested children would overflow the recursive validate()/walk() stack.
+// Real traces are shallow; cap well above any genuine depth so a pathological
+// payload becomes a clean validation error instead of a crash.
+const MAX_DEPTH = 256;
+
+function validate(node: unknown, path: string, errors: Record<string, string>, depth = 0): void {
   if (!node || typeof node !== "object" || Array.isArray(node)) {
     errors[path || "body"] = "must be an object";
+    return;
+  }
+  if (depth > MAX_DEPTH) {
+    errors[`${path}children`] = `nested too deep (max ${MAX_DEPTH})`;
     return;
   }
   const n = node as Record<string, unknown>;
   if (typeof n.name !== "string" || !n.name.trim()) errors[`${path}name`] = "required";
   if (n.children !== undefined) {
     if (!Array.isArray(n.children)) errors[`${path}children`] = "must be an array";
-    else n.children.forEach((c, i) => validate(c, `${path}children[${i}].`, errors));
+    else n.children.forEach((c, i) => validate(c, `${path}children[${i}].`, errors, depth + 1));
   }
   if (n.tokens !== undefined && (typeof n.tokens !== "object" || n.tokens === null)) errors[`${path}tokens`] = "must be an object";
   if (n.duration_ms !== undefined && (typeof n.duration_ms !== "number" || !Number.isFinite(n.duration_ms))) errors[`${path}duration_ms`] = "must be a finite number";

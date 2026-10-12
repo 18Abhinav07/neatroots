@@ -48,6 +48,23 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     }
   });
 
+  it("rejects a too-deeply-nested trace with a 400 instead of a stack overflow", () => {
+    let node: { name: string; children?: unknown[] } = { name: "leaf" };
+    for (let i = 0; i < 5000; i++) node = { name: `n${i}`, children: [node] };
+    let caught: unknown;
+    expect(() => {
+      try {
+        httpTraceToBatches(node);
+      } catch (e) {
+        caught = e;
+        throw e;
+      }
+    }).toThrow(HttpTraceError); // a validation error, not RangeError: Maximum call stack size exceeded
+    expect(JSON.stringify((caught as HttpTraceError).details)).toMatch(/nested too deep/);
+    // a normal shallow trace is unaffected
+    expect(httpTraceToBatches({ name: "root", children: [{ name: "child" }] }).spans).toBe(2);
+  });
+
   it("rejects a non-finite duration_ms with a 400 instead of crashing (RangeError -> 500)", () => {
     for (const bad of [NaN, Infinity, -Infinity, "fast"]) {
       try {
