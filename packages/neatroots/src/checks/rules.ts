@@ -116,6 +116,27 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       if (!hits.length) return null;
       return { firing: true, evidenceSpanIds: hits.map((s) => s.id), params: { count: String(hits.length), span: hits[0].ref } };
     }
+    case "cycle": {
+      const spans = selectSpans(t.spans, r.span).sort((a, b) => a.endMs - b.endMs);
+      const names = spans.map((s) => s.toolName ?? s.name);
+      const outs = spans.map((s) => JSON.stringify(s.output ?? null));
+      // Longest tail of the call list that is one short pattern repeated with no new results.
+      for (let p = 2; p <= r.max_period; p++) {
+        let n = spans.length;
+        while (n - p >= 0 && names[n - 1] === names[n - 1 - p] && outs[n - 1] === outs[n - 1 - p]) n--;
+        const start = n - p;
+        const len = spans.length - start;
+        if (start < 0 || len < p * r.min_cycles) continue;
+        const pattern = names.slice(start, start + p);
+        if (new Set(pattern).size < 2) continue;
+        return {
+          firing: true,
+          evidenceSpanIds: spans.slice(start).map((s) => s.id),
+          params: { pattern: pattern.join(" -> "), count: String(Math.floor(len / p)) },
+        };
+      }
+      return null;
+    }
     case "run_end": {
       if (!atEnd || !t.run) return null;
       const root = t.spans.find((s) => !s.parentId);
