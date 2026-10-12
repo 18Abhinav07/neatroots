@@ -1180,19 +1180,73 @@ export class Store {
     // high-water mark after a delete and reuses the freed pages, so the file size never drops
     // during this loop and measuring it would delete every unpinned run.
     let size = this.storedBytes();
-    while (size > maxBytes) {
-      const oldest = this.db
-        .prepare("SELECT trace_id FROM runs WHERE pinned = 0 ORDER BY COALESCE(ended_ms, received_ms) ASC LIMIT 20")
-        .all() as { trace_id: string }[];
+    // Deleting from the full-text index leaves "deleted" markers until it is compacted, so the
+    // index can even grow after a delete. Compact before trusting the size.
+    if (size > maxBytes && removed) {
+      this.compactSearchIndex();
+      size = this.storedBytes();
+    }
+    // Each pass removes the oldest unpinned runs whose data covers the excess, compacts once,
+    // and measures again. Bounded, so one sweep can't run for long; a store still over the cap
+    // is trimmed further on the next sweep.
+    for (let pass = 0; size > maxBytes && pass < 8; pass++) {
+      const oldest = this.oldestRunsCovering(size - maxBytes, size);
       if (!oldest.length) break;
-      for (const r of oldest) {
-        this.deleteRun(r.trace_id);
+      for (const t of oldest) {
+        this.deleteRun(t);
         removed++;
       }
+      this.compactSearchIndex();
       size = this.storedBytes();
     }
     if (removed) this.db.pragma("wal_checkpoint(TRUNCATE)");
     return removed;
+  }
+
+  /**
+   * The oldest unpinned runs whose share of storedBytes() adds up to `excess`. A run's span rows
+   * are scaled to the database's share of `stored` (which also holds the search index and table
+   * overhead). Blobs are shared between runs, so a blob counts only toward the run whose deletion
+   * actually frees it: the newest run that references it, and never one a pinned run still uses.
+   * Returns at least one run while any unpinned run exists.
+   */
+  private oldestRunsCovering(excess: number, stored: number): string[] {
+    const rowBytes = `octet_length(s.attributes) + octet_length(s.events) + octet_length(s.links) + IFNULL(octet_length(s.extra), 0) + IFNULL(octet_length(s.input_preview), 0) + IFNULL(octet_length(s.output_preview), 0) + octet_length(s.name)`;
+    // A big value lives in a blob file but its text is also in the search index, so the
+    // indexed text counts toward the run too.
+    const indexed = new Map(
+      (this.db.prepare("SELECT trace_id AS t, SUM(octet_length(name) + octet_length(tool_name) + octet_length(body)) AS f FROM span_fts GROUP BY trace_id").all() as { t: string; f: number }[]).map((r) => [r.t, r.f]),
+    );
+    const rows = (
+      this.db
+        .prepare(
+          `SELECT r.trace_id AS t, r.pinned AS pinned, COALESCE(SUM(${rowBytes}), 0) AS w, group_concat(s.blobs, '') AS b
+           FROM runs r LEFT JOIN spans s ON s.trace_id = r.trace_id
+           GROUP BY r.trace_id ORDER BY COALESCE(r.ended_ms, r.received_ms) ASC`,
+        )
+        .all() as { t: string; pinned: number; w: number; b: string | null }[]
+    ).map((r) => ({ ...r, w: r.w + (indexed.get(r.t) ?? 0) }));
+    const shas = rows.map((r) => (r.b ? [...new Set(r.b.match(/[0-9a-f]{64}/g) ?? [])] : []));
+    const lastRef = new Map<string, number>();
+    shas.forEach((list, i) => list.forEach((sha) => lastRef.set(sha, rows[i].pinned ? Infinity : Math.max(lastRef.get(sha) ?? -1, i))));
+    const blobTotal = this.blobs.size();
+    const rowTotal = rows.reduce((n, r) => n + r.w, 0);
+    const rowScale = rowTotal > 0 ? Math.max(0, stored - blobTotal) / rowTotal : 0;
+    const pick: string[] = [];
+    let freed = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].pinned) continue;
+      pick.push(rows[i].t);
+      freed += rows[i].w * rowScale;
+      for (const sha of shas[i]) if (lastRef.get(sha) === i) freed += this.blobs.sizeOf(sha);
+      if (freed >= excess) break;
+    }
+    return pick;
+  }
+
+  /** Merges the full-text index so space held by deleted spans is actually released. */
+  private compactSearchIndex(): void {
+    this.db.prepare("INSERT INTO span_fts(span_fts) VALUES('optimize')").run();
   }
 
   /** Bytes of data actually stored: database pages in use (not free pages) plus payload blobs. */
