@@ -16,7 +16,7 @@ id: repeated-tool-call
 kind: rule
 title: Same tool called repeatedly with identical arguments
 rule:
-  type: repeat            # repeat | errors | count | threshold | match | run_end
+  type: repeat            # repeat | errors | count | threshold | match | unrecovered_error | run_end
   span: { type: [tool, mcp_tool] }
   same: [tool, input]
   at_least: 3
@@ -32,6 +32,7 @@ action: flag              # or halt (your own rules only)
 | `count` | the run has `at_least` matching spans |
 | `threshold` | a run metric (`total_tokens`, `llm_calls`, `duration_ms`, …) reaches `at_least` |
 | `match` | a regex matches a span's `input`, `output`, `error` or `name` |
+| `unrecovered_error` | at run end, the last call of a tool failed (no later success of that tool) and the run still produced a final answer that does not say anything failed (a words check, so it is a hint, not proof) |
 | `run_end` | the run ended with `error`, `no_output` or `interrupted` |
 
 ## Questions
