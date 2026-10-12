@@ -150,4 +150,14 @@ describe("server", () => {
     const ui = await fetch(`${tb.url}/runs/some-id`);
     expect(ui.headers.get("content-type")).toMatch(/text\/html/);
   });
+
+  it("gives a helpful error (not a raw fetch failure) when no LLM is reachable", async () => {
+    const tb = await served(false); // engine on, but no LLM configured (dead base url)
+    const r = await fetch(`${tb.url}/api/ask`, { method: "POST", headers: { "content-type": "application/json", origin: tb.url.replace("127.0.0.1", "localhost") }, body: JSON.stringify({ question: "what happened?" }) });
+    expect(r.status).toBe(503);
+    const msg = (await r.json()).error as string;
+    expect(msg).toMatch(/No LLM is reachable/);
+    expect(msg).toMatch(/Settings → Models|neatroots llm use/);
+    expect(msg).not.toMatch(/fetch failed/);
+  });
 });
