@@ -68,10 +68,11 @@
 
 - id: soft-tool-failure
   kind: rule
+  group: tool-result
   title: A tool reported success but its output looks like a failure
   rule:
     type: match
-    span: { type: tool }
+    span: { type: [tool, mcp_tool], status: ok }
     field: output
     pattern: '"(error|errors|exception)"\s*:\s*("[^"\s]|\{|\[\s*[^\]\s])|"(status|status_code|http_status)"\s*:\s*"?[45]\d\d\b|rate limit(ed)? exceeded|too many requests|internal server error|service unavailable|traceback \(most recent call last\)|(^|\n)\s*error:|\bHTTP [45]\d\d\b'
   guidance: >-
