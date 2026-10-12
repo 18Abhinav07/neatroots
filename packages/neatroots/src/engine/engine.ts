@@ -593,6 +593,18 @@ export class Engine {
         run.used.notes++;
         void this.track(run.traceId, this.writeNote(run, f, template));
       }
+    } else if (run.ended && this.steering.mode(run.project) !== "off" && !this.overlapsNotedFinding(run.traceId, f)) {
+      // Steering is on and this finding would have been steered, but the run ended
+      // before checks finished (common on very fast runs). Record the guidance as a
+      // missed note so the lost opportunity is visible instead of silently dropped.
+      this.roots.store.insertNote({
+        trace_id: run.traceId,
+        finding_id: f.id,
+        kind: "template",
+        text: this.renderGuidance(c, params, f.title),
+        status: "missed",
+        checks: null,
+      });
     }
     void this.track(run.traceId, this.triage(run, f));
     void snap;

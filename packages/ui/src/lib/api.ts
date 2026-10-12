@@ -79,7 +79,7 @@ export interface Finding {
   created_ms: number;
 }
 
-export type NoteStatus = "pending" | "delivered" | "superseded" | "blocked" | "expired";
+export type NoteStatus = "pending" | "delivered" | "superseded" | "blocked" | "expired" | "missed";
 
 export interface Note {
   id: string;

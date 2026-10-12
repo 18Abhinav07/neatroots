@@ -26,6 +26,7 @@ export const NOTE_STATE: Record<NoteStatus, { tone: Tone; label: string }> = {
   delivered: { tone: "success", label: "Delivered" },
   superseded: { tone: "muted", label: "Replaced" },
   expired: { tone: "muted", label: "Not sent" },
+  missed: { tone: "warning", label: "Not sent — run ended" },
   blocked: { tone: "danger", label: "Blocked" },
 };
 

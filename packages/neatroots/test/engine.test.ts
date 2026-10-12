@@ -107,6 +107,34 @@ describe("engine", () => {
     expect(exp?.cause).toContain("order id");
     expect(exp?.grounding).not.toBeNull();
   });
+
+  it("records a missed steering opportunity as an expired note when the run ended first", async () => {
+    const { tb } = await setup();
+    tb.roots.steering.setMode("test-agent", "advisory");
+    const { t, root } = startRun(tb);
+    // End the run FIRST (fast run), then the repeated-tool-call finding fires late.
+    tb.roots.ingest([batch([span({ traceId: t, spanId: root, name: "refund", kind: "workflow" }), markerSpan(t, root)])]);
+    for (let i = 0; i < 3; i++) tb.roots.ingest([batch([toolSpan(t, root, "lookup_order", '{"order_id":"4512"}', undefined, "404")])]);
+    const f = await until(() => tb.roots.store.findingsForTrace(t).find((x) => x.check_id === "repeated-tool-call"));
+    expect(f.status).toBe("raised");
+    // The guidance is not silently lost: it's recorded as a missed note (visible in history).
+    const note = await until(() => tb.roots.store.notesForTrace(t).find((n) => n.finding_id === f.id));
+    expect(note.status).toBe("missed");
+    expect(note.kind).toBe("template");
+    // Nothing was delivered (the run was already over).
+    expect(tb.roots.store.notesForTrace(t).some((n) => n.status === "delivered")).toBe(false);
+  });
+
+  it("stays silent when steering is off and the run ended (no missed-note record)", async () => {
+    const { tb } = await setup();
+    // steering NOT enabled for this project
+    const { t, root } = startRun(tb);
+    tb.roots.ingest([batch([span({ traceId: t, spanId: root, name: "refund", kind: "workflow" }), markerSpan(t, root)])]);
+    for (let i = 0; i < 3; i++) tb.roots.ingest([batch([toolSpan(t, root, "lookup_order", '{"order_id":"4512"}', undefined, "404")])]);
+    await until(() => tb.roots.store.findingsForTrace(t).find((x) => x.check_id === "repeated-tool-call"));
+    await tb.roots.engine!.waitIdle(t, 5000);
+    expect(tb.roots.store.notesForTrace(t)).toEqual([]);
+  });
 });
 
 describe("planning", () => {
