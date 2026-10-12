@@ -68,10 +68,11 @@
 
 - id: tool-cycle
   kind: rule
+  group: loop
   title: Two or more tools are going around in a circle
   rule:
     type: cycle
-    span: { type: tool }
+    span: { type: [tool, mcp_tool] }
     max_period: 3
     min_cycles: 4
   guidance: >-
