@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import type { Roots } from "../core.js";
 import { kvToPlain } from "../otlp/types.js";
 import { buildView } from "../semantics/view.js";
-import { hardwareTier } from "../models/llm.js";
+import { hardwareTier, LlmUnavailableError } from "../models/llm.js";
 import { projectSettings, type SteeringMode } from "../config.js";
 import { getCloudKey, setCloudKey, deleteCloudKey, getCloudToken, getSecret } from "../relay/keychain.js";
 import { mountModelsApi } from "./api-models.js";
@@ -121,6 +121,14 @@ function clampInt(raw: string | undefined, dflt: number, min: number, max: numbe
   return Math.min(Math.max(Math.trunc(n), min), max);
 }
 
+/** When an LLM task fails because no LLM is reachable, say so and how to fix it. */
+function llmErrorMessage(e: unknown): string {
+  if (e instanceof LlmUnavailableError) {
+    return "No LLM is reachable. Set one up in Settings → Models, run `neatroots llm use <provider>`, or start a local LLM (Ollama/LM Studio).";
+  }
+  return (e as Error).message;
+}
+
 export function mountApi(app: Hono, roots: Roots): void {
   const engine = roots.engine;
   mountModelsApi(app, roots);
@@ -209,7 +217,7 @@ export function mountApi(app: Hono, roots: Roots): void {
       const exp = await engine.explainRun(c.req.param("traceId"), { force: true, priority: "interactive" });
       return exp ? c.json(exp) : err(c, 422, "could not explain this run");
     } catch (e) {
-      return err(c, 503, (e as Error).message);
+      return err(c, 503, llmErrorMessage(e));
     }
   });
 
@@ -244,7 +252,7 @@ export function mountApi(app: Hono, roots: Roots): void {
       const exp = await engine.investigate(f.trace_id, f.id);
       return exp ? c.json(exp) : err(c, 422, "could not investigate this finding");
     } catch (e) {
-      return err(c, 503, (e as Error).message);
+      return err(c, 503, llmErrorMessage(e));
     }
   });
 
@@ -367,7 +375,7 @@ export function mountApi(app: Hono, roots: Roots): void {
     try {
       return c.json(await askRuns(roots, b.question, { traceId: b.trace_id }));
     } catch (e) {
-      return err(c, 503, (e as Error).message);
+      return err(c, 503, llmErrorMessage(e));
     }
   });
 
@@ -465,7 +473,7 @@ export function mountApi(app: Hono, roots: Roots): void {
       roots.bus.emit("activity", { trace_id: b.trace_id, kind: "self-check", message: b.question });
       return c.json({ ...r, answer: r.probability >= 0.5 ? "yes" : "no" });
     } catch (e) {
-      return err(c, 503, (e as Error).message);
+      return err(c, 503, llmErrorMessage(e));
     }
   });
 

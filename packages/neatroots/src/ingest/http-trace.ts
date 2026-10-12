@@ -66,6 +66,7 @@ function validate(node: unknown, path: string, errors: Record<string, string>, d
     else n.children.forEach((c, i) => validate(c, `${path}children[${i}].`, errors, depth + 1));
   }
   if (n.tokens !== undefined && (typeof n.tokens !== "object" || n.tokens === null)) errors[`${path}tokens`] = "must be an object";
+  if (n.duration_ms !== undefined && (typeof n.duration_ms !== "number" || !Number.isFinite(n.duration_ms))) errors[`${path}duration_ms`] = "must be a finite number";
   if (n.status !== undefined && !["OK", "ERROR", "ok", "error"].includes(String(n.status))) errors[`${path}status`] = "must be OK or ERROR";
 }
 
@@ -95,7 +96,11 @@ export function httpTraceToBatches(body: unknown, fallbackProject = "http"): { b
       cursor = end;
     }
     let end = toNs(n.end);
-    if (end === undefined && typeof n.duration_ms === "number") end = start + BigInt(Math.round(n.duration_ms * 1e6));
+    if (end === undefined && typeof n.duration_ms === "number") {
+      const durNs = Math.round(n.duration_ms * 1e6);
+      // Guard: a huge (finite) duration_ms can still overflow to Infinity; only apply a finite result.
+      if (Number.isFinite(durNs)) end = start + BigInt(durNs);
+    }
     if (end === undefined) end = childEnds.length ? childEnds.reduce((a, b) => (b > a ? b : a)) : start;
     const kind = n.kind ?? (n.model ? "llm" : n.tool_name ? "tool" : n.query !== undefined || n.documents !== undefined ? "retriever" : n.passed !== undefined ? "guardrail" : parent ? "chain" : "workflow");
     const attributes: Record<string, unknown> = { ...(n.attributes ?? {}) };
