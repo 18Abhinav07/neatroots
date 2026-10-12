@@ -48,6 +48,26 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     }
   });
 
+  it("rejects a non-finite duration_ms with a 400 instead of crashing (RangeError -> 500)", () => {
+    for (const bad of [NaN, Infinity, -Infinity, "fast"]) {
+      try {
+        httpTraceToBatches({ name: "a", duration_ms: bad as number });
+        throw new Error(`expected HttpTraceError for duration_ms=${String(bad)}`);
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpTraceError);
+        expect((e as HttpTraceError).details).toMatchObject({ duration_ms: "must be a finite number" });
+      }
+    }
+    // A huge but finite duration_ms must not overflow BigInt and crash.
+    expect(() => httpTraceToBatches({ name: "a", duration_ms: 1e308 })).not.toThrow();
+    // The field error is reported with its path for nested nodes.
+    try {
+      httpTraceToBatches({ name: "root", children: [{ name: "child", duration_ms: NaN }] });
+    } catch (e) {
+      expect((e as HttpTraceError).details).toMatchObject({ "children[0].duration_ms": "must be a finite number" });
+    }
+  });
+
   it("rejects a non-finite score or token count instead of silently coercing it to null", () => {
     try {
       httpTraceToBatches({ name: "a", passed: true, score: NaN });
@@ -71,6 +91,9 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     expect(t.roots.store.getRun(body.trace_id)).toMatchObject({ project: "p1", span_count: 2 });
     const bad = await fetch(`${t.url}/v1/trace`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
     expect(bad.status).toBe(400);
+    // A malformed duration_ms is a client error (400), not a server crash (500).
+    const badDur = await fetch(`${t.url}/v1/trace`, { method: "POST", headers: { "content-type": "application/json" }, body: '{"name":"a","duration_ms":null}' });
+    expect(badDur.status).toBe(400);
   });
 });
 
