@@ -17,6 +17,7 @@ import { registerCloudImportCommands, registerDataCommands } from "./cli/data.js
 import { connectClient, findClient, listClients, serverCommand, CLIENTS } from "./mcp/clients.js";
 import { parseChecks } from "./checks/registry.js";
 import { checkWarnings } from "./checks/lint.js";
+import { checkFiles } from "./checks/offline.js";
 import { hardwareTier } from "./models/llm.js";
 import { setCloudKey, deleteCloudKey, getCloudKey, getCloudToken } from "./relay/keychain.js";
 import { LAYA_DOWNLOAD_MB } from "./models/laya.js";
@@ -373,6 +374,36 @@ cloud
   });
 
 // ------------------------------------------------------------------- rerun
+
+// ------------------------------------------------------------------ check
+
+program
+  .command("check")
+  .argument("<files...>", "trace files (.json, .jsonl)")
+  .description("Run the rule checks over saved traces, with no server and no model. Exits 1 if any rule fires, so it can gate CI")
+  .option("--checks <dir...>", "extra checks folders")
+  .option("--only <ids>", "only these rule ids, comma-separated")
+  .option("--json", "print the result as JSON")
+  .action((files: string[], opts: { checks?: string[]; only?: string; json?: boolean }) => {
+    try {
+      const r = checkFiles(files, { dirs: opts.checks, only: opts.only?.split(",").map((s) => s.trim()).filter(Boolean) });
+      const failed = r.runs.filter((x) => x.findings.length);
+      if (opts.json) console.log(JSON.stringify({ runs: r.runs, rules: r.rules, errors: r.errors }, null, 2));
+      else {
+        for (const e of r.errors) console.log(`! ${e}`);
+        for (const x of r.runs) {
+          const label = `${x.file} ${x.trace_id.slice(0, 8)}${x.root_name ? ` ${x.root_name}` : ""}`;
+          if (!x.findings.length) console.log(`✓ ${label}`);
+          for (const f of x.findings) console.log(`✗ ${label}: ${f.check_id}: ${f.title}`);
+        }
+        console.log(`\n${r.runs.length} run${r.runs.length === 1 ? "" : "s"}, ${failed.length} with findings, ${r.rules.length} rules`);
+      }
+      process.exit(failed.length ? 1 : 0);
+    } catch (e) {
+      console.error(`✗ ${(e as Error).message}`);
+      process.exit(2);
+    }
+  });
 
 // ------------------------------------------------------------------ checks
 
