@@ -204,5 +204,5 @@ export function checkTitle(c: Check): string {
   if (c.title) return c.title;
   if (isQuestion(c)) return c.ask;
   return c.id;
+  
 }
-
