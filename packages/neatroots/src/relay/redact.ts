@@ -70,13 +70,23 @@ export function redactBatches(batches: ResourceSpansBatch[], rules: RedactionRul
   const hits: RedactionHit[] = [];
   const out = batches.map((b) => ({
     resource: { ...b.resource, attributes: redactKvs(b.resource.attributes, rules, "resource", hits) },
-    scope: b.scope,
-    spans: b.spans.map((s) => ({
-      ...s,
-      attributes: redactKvs(s.attributes, rules, `${s.name} [${s.spanId.slice(0, 6)}]`, hits),
-      events: s.events.map((e) => ({ ...e, attributes: redactKvs(e.attributes, rules, `${s.name} event ${e.name}`, hits) })),
-      status: s.status.message ? { ...s.status, message: redactString(s.status.message, rules, `${s.name} status`, hits) } : s.status,
-    })),
+    scope: b.scope.attributes ? { ...b.scope, attributes: redactKvs(b.scope.attributes, rules, "scope", hits) } : b.scope,
+    spans: b.spans.map((s) => {
+      // Span and event names often carry a URL or a tool argument, so they are redacted too,
+      // and the hit labels use the redacted name so a preview never echoes the raw value.
+      const name = redactString(s.name, rules, `span name [${s.spanId.slice(0, 6)}]`, hits);
+      return {
+        ...s,
+        name,
+        attributes: redactKvs(s.attributes, rules, `${name} [${s.spanId.slice(0, 6)}]`, hits),
+        events: s.events.map((e) => {
+          const eventName = redactString(e.name, rules, `${name} event name`, hits);
+          return { ...e, name: eventName, attributes: redactKvs(e.attributes, rules, `${name} event ${eventName}`, hits) };
+        }),
+        links: s.links.map((l) => ({ ...l, attributes: redactKvs(l.attributes, rules, `${name} link`, hits) })),
+        status: s.status.message ? { ...s.status, message: redactString(s.status.message, rules, `${name} status`, hits) } : s.status,
+      };
+    }),
   }));
   return { batches: out, hits };
 }

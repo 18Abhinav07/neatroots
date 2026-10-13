@@ -26,6 +26,9 @@ function keyOf(s: SpanInfo, fields: string[]): string {
     .join("\u0000");
 }
 
+/** Words an agent uses when it tells the user something went wrong. */
+const ADMITS_FAILURE = /\b(fail(ed|s|ure|ing)?|errors?|unable|couldn'?t|could not|can'?t|cannot|unfortunately|sorry|apologi[sz]e|didn'?t (go through|work|succeed)|not (able|successful|completed)|try again|retry)\b/i;
+
 function clip(s: string, n = 120): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
@@ -120,6 +123,33 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       if (!hits.length) return null;
       return { firing: true, evidenceSpanIds: hits.map((s) => s.id), params: { count: String(hits.length), span: hits[0].ref } };
     }
+    case "unrecovered_error": {
+      // Only meaningful once the run is over: until then the agent may still retry.
+      if (!atEnd || !t.run) return null;
+      // A run that failed or was cut short is already reported by run-failed.
+      if (t.run.status === "error" || t.run.interrupted) return null;
+      const out = finalOutput(t);
+      if (!out || /^("?\s*"?|null|\{\}|\[\])$/.test(out.trim())) return null;
+      // An answer that says something failed is the agent being honest, not a problem.
+      if (ADMITS_FAILURE.test(out)) return null;
+      const spans = selectSpans(t.spans, r.span ?? { type: ["tool", "mcp_tool"] }).sort((a, b) => a.endMs - b.endMs || a.seq - b.seq);
+      // The last call of each tool decides it: a later success means the agent recovered.
+      const last = new Map<string, SpanInfo>();
+      for (const s of spans) last.set(s.toolName ?? s.name, s);
+      const failed = [...last.values()].filter((s) => s.status === "error");
+      if (!failed.length) return null;
+      const first = failed[0];
+      return {
+        firing: true,
+        evidenceSpanIds: failed.map((s) => s.id),
+        params: {
+          tool: first.toolName ?? first.name,
+          // Only worth showing when more than one tool stayed failed.
+          ...(failed.length > 1 ? { tools: failed.map((s) => s.toolName ?? s.name).join(", "), count: String(failed.length) } : {}),
+          error: clip(first.error ?? "error", 200),
+        },
+      };
+    }
     case "run_end": {
       if (!atEnd || !t.run) return null;
       const root = t.spans.find((s) => !s.parentId);
@@ -141,11 +171,21 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
 
 /** Fills {placeholders} from a finding's params; unknown placeholders are removed. */
 export function fillTemplate(template: string, params: Record<string, string>): string {
+  // Values go in through private-use markers so the empty-"()" cleanup below only touches
+  // the template's own text: "({args})" with no args drops the parens, but an args value
+  // like "print()" keeps its own.
+  const values: string[] = [];
   return template
     // [[optional text with {param}]] stays only when every placeholder in it has a value.
     .replace(/\[\[([^\]]*)\]\]/g, (_, seg: string) => ([...seg.matchAll(/\{(\w+)\}/g)].every((m) => params[m[1]]?.trim()) ? seg : ""))
-    .replace(/\{(\w+)\}/g, (_, k: string) => (params[k] !== undefined ? params[k] : ""))
+    .replace(/\{(\w+)\}/g, (_, k: string) => {
+      const v = params[k] !== undefined ? params[k] : "";
+      if (!v.trim()) return v;
+      values.push(v);
+      return `\uE000${values.length - 1}\uE001`;
+    })
     .replace(/\(\s*\)/g, "")
+    .replace(/\uE000(\d+)\uE001/g, (m, i: string) => values[Number(i)] ?? m)
     .replace(/\s+/g, " ")
     .trim();
 }

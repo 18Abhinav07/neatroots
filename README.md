@@ -133,9 +133,11 @@ export NEATLOGS_API_KEY=neatroots-local      # any value works locally
 
 ```python
 import neatlogs
-neatlogs.init(workflow_name="refund-agent", flush_interval=0.5)
+neatlogs.init(workflow_name="refund-agent", flush_interval=0.5, instrumentations=["openai"])
 ```
 
+`instrumentations` names the libraries to trace (`"openai"`, `"anthropic"`). Without it
+`init` records only the spans you create yourself, and a plain OpenAI agent shows no runs.
 `flush_interval=0.5` lets neatroots check a run while it is still going. In production, unset
 `NEATLOGS_ENDPOINT` and the same code sends to Neatlogs Cloud.
 
@@ -251,6 +253,7 @@ can read) and never in the database.
 | `neatroots llm`, `neatroots models`, `neatroots jev` | Where LLM and decision-model work runs |
 | `neatroots steering <mode> --project <name>` | Steering per project; `neatroots steering stop` turns it off everywhere |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks in force, and YAML validation |
+| `neatroots check <files...>` | Run the rule checks over saved traces with no server or model. Exits 1 if a rule fires, for CI |
 | `neatroots cloud login`, `neatroots cloud forward <trace>` | Neatlogs Cloud: send runs (project API key) |
 | `neatroots cloud token`, `neatroots cloud project` | Neatlogs Cloud: import traces (service-account token) |
 | `neatroots service install`, `neatroots update` | Run at login; update to the latest release |

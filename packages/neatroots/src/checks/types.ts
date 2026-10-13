@@ -101,6 +101,13 @@ export const RuleSpec = z.discriminatedUnion("type", [
     }),
   z
     .object({
+      type: z.literal("unrecovered_error"),
+      /** Spans to watch. Defaults to tool and MCP tool calls. */
+      span: SpanSelector.optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("run_end"),
       /** Fire when the run ends with this condition. */
       when: z.enum(["error", "no_output", "interrupted"]),

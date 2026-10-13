@@ -123,7 +123,7 @@ export function mountExploreApi(app: Hono, roots: Roots): void {
     const b = await body<{ name?: string; content?: string; project?: string }>(c);
     if (!b.content) return err(c, 400, "content is required");
     try {
-      const batches = parseTraceFile(b.content, b.name ?? "upload.json", b.project || "imported");
+      const batches = parseTraceFile(b.content, b.name ?? "upload.json", b.project || undefined);
       const updates = roots.ingest(batches);
       return c.json({ traces: updates.length, spans: batches.reduce((n, x) => n + x.spans.length, 0), trace_ids: updates.map((u) => u.traceId).slice(0, 50) });
     } catch (e) {
