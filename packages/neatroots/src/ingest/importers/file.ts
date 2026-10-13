@@ -46,7 +46,20 @@ function fromNeatlogsExport(exp: Record<string, unknown>, project: string): Reso
 }
 
 /** Parses a file's text into batches. Throws ImportError naming the line that failed. */
-export function parseTraceFile(text: string, name: string, project = "imported"): ResourceSpansBatch[] {
+export function parseTraceFile(text: string, name: string, project?: string): ResourceSpansBatch[] {
+  const batches = readBatches(text, name, project ?? "imported");
+  if (!batches.length) throw new ImportError(`${name} has no traces`);
+  if (project) for (const b of batches) setProject(b, project);
+  return batches;
+}
+
+/** An explicit project wins over the project named in the file. */
+function setProject(b: ResourceSpansBatch, project: string): void {
+  const rest = b.resource.attributes.filter((a) => a.key !== "service.name" && a.key !== "neatlogs.workflow_name");
+  b.resource.attributes = [{ key: "service.name", value: { stringValue: project } }, { key: "neatlogs.workflow_name", value: { stringValue: project } }, ...rest];
+}
+
+function readBatches(text: string, name: string, project: string): ResourceSpansBatch[] {
   const trimmed = text.trim();
   if (!trimmed) throw new ImportError(`${name} is empty`);
   if (/\.(jsonl|ndjson)$/i.test(name) || (!trimmed.startsWith("[") && trimmed.includes("\n{"))) {
