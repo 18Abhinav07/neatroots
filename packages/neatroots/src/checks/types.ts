@@ -113,6 +113,15 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("requires_before"),
+      /** The calls that need something to happen first. */
+      span: SpanSelector,
+      /** What must have started, and succeeded, before each of them. */
+      requires: SpanSelector,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("run_end"),
       /** Fire when the run ends with this condition. */
       when: z.enum(["error", "no_output", "interrupted"]),

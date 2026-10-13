@@ -119,6 +119,24 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       if (!hits.length) return null;
       return { firing: true, evidenceSpanIds: hits.map((s) => s.id), params: { count: String(hits.length), span: hits[0].ref } };
     }
+    case "requires_before": {
+      const guarded = selectSpans(t.spans, r.span).sort((a, b) => a.startMs - b.startMs || a.seq - b.seq);
+      if (!guarded.length) return null;
+      // Instrumented spans that succeed usually report status unset, so only errors are ruled out.
+      const needed = selectSpans(t.spans, { ...r.requires, status: "any" }).filter((s) => s.status !== "error");
+      const missed = guarded.filter((g) => !needed.some((n) => n.id !== g.id && n.startMs <= g.startMs));
+      if (!missed.length) return null;
+      const first = missed[0];
+      return {
+        firing: true,
+        evidenceSpanIds: missed.map((s) => s.id),
+        params: {
+          tool: first.toolName ?? first.name,
+          requires: String(r.requires.tool ?? r.requires.name ?? r.requires.type ?? "the required step"),
+          count: String(missed.length),
+        },
+      };
+    }
     case "unrecovered_error": {
       // Only meaningful once the run is over: until then the agent may still retry.
       if (!atEnd || !t.run) return null;
