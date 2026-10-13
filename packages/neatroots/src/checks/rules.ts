@@ -167,11 +167,21 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
 
 /** Fills {placeholders} from a finding's params; unknown placeholders are removed. */
 export function fillTemplate(template: string, params: Record<string, string>): string {
+  // Values go in through private-use markers so the empty-"()" cleanup below only touches
+  // the template's own text: "({args})" with no args drops the parens, but an args value
+  // like "print()" keeps its own.
+  const values: string[] = [];
   return template
     // [[optional text with {param}]] stays only when every placeholder in it has a value.
     .replace(/\[\[([^\]]*)\]\]/g, (_, seg: string) => ([...seg.matchAll(/\{(\w+)\}/g)].every((m) => params[m[1]]?.trim()) ? seg : ""))
-    .replace(/\{(\w+)\}/g, (_, k: string) => (params[k] !== undefined ? params[k] : ""))
+    .replace(/\{(\w+)\}/g, (_, k: string) => {
+      const v = params[k] !== undefined ? params[k] : "";
+      if (!v.trim()) return v;
+      values.push(v);
+      return `\uE000${values.length - 1}\uE001`;
+    })
     .replace(/\(\s*\)/g, "")
+    .replace(/\uE000(\d+)\uE001/g, (m, i: string) => values[Number(i)] ?? m)
     .replace(/\s+/g, " ")
     .trim();
 }
