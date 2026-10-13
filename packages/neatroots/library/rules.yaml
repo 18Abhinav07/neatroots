@@ -9,7 +9,7 @@
   rule:
     type: repeat
     span: { type: [tool, mcp_tool] }
-    same: [tool, input]
+    same: [tool, input, output]
     at_least: 3
   guidance: >-
     You have called {tool} {count} times with the same arguments ({args}) and the result did
