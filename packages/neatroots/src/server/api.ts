@@ -231,7 +231,7 @@ export function mountApi(app: Hono, roots: Roots): void {
 
   app.get("/api/findings", (c) => {
     const q = c.req.query();
-    return c.json({ findings: roots.store.listFindings({ traceId: q.trace_id, status: q.status, checkId: q.check_id, limit: q.limit ? Number(q.limit) : 100 }) });
+    return c.json({ findings: roots.store.listFindings({ traceId: q.trace_id, status: q.status, checkId: q.check_id, limit: clampInt(q.limit, 100, 1, 500) }) });
   });
 
   app.post("/api/findings/:id", async (c) => {

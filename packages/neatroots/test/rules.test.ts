@@ -75,6 +75,12 @@ describe("rules", () => {
     const ask = 'Does this reply break an instruction[[, namely "{instruction}"]]?';
     expect(fillTemplate(ask, { instruction: "Never share keys" })).toBe('Does this reply break an instruction, namely "Never share keys"?');
     expect(fillTemplate(ask, {})).toBe("Does this reply break an instruction?");
+    // Parens that come from a value are part of what the agent did, so they stay;
+    // only the template's own "()" left by an empty value is removed.
+    const same = "Called {tool} {count} times with the same arguments ({args}).";
+    expect(fillTemplate(same, { tool: "run_code", count: "3", args: "print()" })).toBe("Called run_code 3 times with the same arguments (print()).");
+    expect(fillTemplate("Result: {result}", { result: "count() + now()" })).toBe("Result: count() + now()");
+    expect(fillTemplate(same, { tool: "x", count: "3", args: "" })).toBe("Called x 3 times with the same arguments .");
     const base = { id: "a", ref: "a", parentId: null, name: "t", kind: "TOOL" as const, startMs: 0, endMs: 1, durationMs: 1, seq: 1 };
     expect(heuristicToolLabel({ ...base, status: "error" })).toBe("error");
     expect(heuristicToolLabel({ ...base, status: "ok", output: [] })).toBe("empty");
