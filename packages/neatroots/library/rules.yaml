@@ -78,6 +78,17 @@
     {tool} failed ({error}) and was not called again successfully, but you gave a final answer.
     Do not say the task is done. Retry {tool} or tell the user it failed.
 
+- id: secret-in-tool-output
+  kind: rule
+  title: A tool returned something that looks like a secret key
+  rule:
+    type: match
+    span: { type: [tool, mcp_tool] }
+    field: output
+    pattern: '(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|Bearer [A-Za-z0-9._~+/=-]{24,})'
+    flags: ''
+  guidance: A tool result contains what looks like a credential. Do not repeat it in your reply or pass it to other tools. Refer to it by name instead.
+
 - id: run-failed
   kind: rule
   group: ending
