@@ -166,6 +166,23 @@ describe("imports", () => {
     expect(buildSpan({ traceId: "x", spanId: "y", name: "n", start: 1 }).traceId).toHaveLength(32);
   });
 
+  it("reads an epoch with a fraction the same whether it's a number or a string", () => {
+    // Python's str(time.time()) sends "1700000000.5"; it used to fall back to the arrival time.
+    expect(toNs("1700000000.5")).toBe(toNs(1700000000.5));
+    expect(BigInt(toNs("1700000000.5")!) / 1_000_000n).toBe(1_700_000_000_500n);
+    expect(toNs("1700000000123.5")).toBe(toNs(1700000000123.5));
+    const { batches } = httpTraceToBatches({ name: "run", start: "1700000000.25", end: "1700000001.75" });
+    const sp = batches[0].spans[0];
+    // Same as sending the numbers (which keep ns only to ~1 µs), not the arrival time.
+    expect(sp.startTimeUnixNano).toBe(String(toNs(1700000000.25)));
+    expect(sp.endTimeUnixNano).toBe(String(toNs(1700000001.75)));
+    const off = BigInt(sp.startTimeUnixNano) - 1_700_000_000_250_000_000n;
+    expect(off < 1000n && off > -1000n).toBe(true); // right to within a microsecond
+    // strings that aren't times are still not read as times
+    expect(toNs("abc")).toBeUndefined();
+    expect(toNs(" 1700000000.5 ")).toBeUndefined();
+  });
+
   it("reads OTLP JSON, Neatlogs exports and HTTP traces from files, one per line too", () => {
     const tid = hex(16);
     const otlp = JSON.stringify({ resourceSpans: [{ resource: { attributes: [{ key: "service.name", value: { stringValue: "f" } }] }, scopeSpans: [{ scope: { name: "x" }, spans: [{ traceId: tid, spanId: hex(8), name: "root", kind: 1, startTimeUnixNano: "1", endTimeUnixNano: "2", status: {} }] }] }] });

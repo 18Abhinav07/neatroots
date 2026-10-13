@@ -35,8 +35,13 @@ export function resolveTrace(roots: Roots, id: string | undefined): string {
   if (id) {
     const exact = roots.store.getRun(id);
     if (exact) return exact.trace_id;
-    const row = roots.store.db.prepare("SELECT trace_id FROM runs WHERE trace_id LIKE ? ORDER BY started_ms DESC LIMIT 1").get(`${id.toLowerCase()}%`) as { trace_id: string } | undefined;
-    if (row) return row.trace_id;
+    // Match as a literal prefix: % and _ in the id are not wildcards.
+    const prefix = id.toLowerCase().replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    const rows = roots.store.db
+      .prepare("SELECT trace_id FROM runs WHERE trace_id LIKE ? ESCAPE '\\' ORDER BY started_ms DESC LIMIT 6")
+      .all(`${prefix}%`) as { trace_id: string }[];
+    if (rows.length === 1) return rows[0].trace_id;
+    if (rows.length > 1) throw new Error(`run id ${id} matches more than one run (${shortList(rows.map((r) => r.trace_id))}); use more characters`);
     throw new Error(`no run with id ${id}`);
   }
   if (roots.focus) return roots.focus.trace_id;
@@ -46,10 +51,20 @@ export function resolveTrace(roots: Roots, id: string | undefined): string {
 }
 
 export function resolveSpan(roots: Roots, traceId: string, spanId: string): string {
+  if (!spanId) throw new Error(`a span id is required for run ${traceId}`);
   const spans = roots.store.getSpans(traceId, true);
-  const hit = spans.find((s) => s.span_id === spanId) ?? spans.find((s) => s.span_id.startsWith(spanId.toLowerCase()));
-  if (!hit) throw new Error(`no span ${spanId} in run ${traceId}`);
-  return hit.span_id;
+  const exact = spans.find((s) => s.span_id === spanId);
+  if (exact) return exact.span_id;
+  const hits = spans.filter((s) => s.span_id.startsWith(spanId.toLowerCase()));
+  if (hits.length === 1) return hits[0].span_id;
+  if (hits.length > 1) throw new Error(`span id ${spanId} matches more than one span in run ${traceId} (${shortList(hits.map((s) => s.span_id))}); use more characters`);
+  throw new Error(`no span ${spanId} in run ${traceId}`);
+}
+
+/** Up to five ids, shortened, for an "ambiguous id" message. */
+function shortList(ids: string[]): string {
+  const shown = ids.slice(0, 5).map((x) => x.slice(0, 12));
+  return ids.length > 5 ? `${shown.join(", ")}, …` : shown.join(", ");
 }
 
 /** A small JSONPath subset: $, .key, ['key'], [index], [*]. */
