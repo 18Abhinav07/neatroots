@@ -23,6 +23,9 @@ function keyOf(s: SpanInfo, fields: string[]): string {
     .join("\u0000");
 }
 
+/** Words an agent uses when it tells the user something went wrong. */
+const ADMITS_FAILURE = /\b(fail(ed|s|ure|ing)?|errors?|unable|couldn'?t|could not|can'?t|cannot|unfortunately|sorry|apologi[sz]e|didn'?t (go through|work|succeed)|not (able|successful|completed)|try again|retry)\b/i;
+
 function clip(s: string, n = 120): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
@@ -115,6 +118,51 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       });
       if (!hits.length) return null;
       return { firing: true, evidenceSpanIds: hits.map((s) => s.id), params: { count: String(hits.length), span: hits[0].ref } };
+    }
+    case "requires_before": {
+      const guarded = selectSpans(t.spans, r.span).sort((a, b) => a.startMs - b.startMs || a.seq - b.seq);
+      if (!guarded.length) return null;
+      // Instrumented spans that succeed usually report status unset, so only errors are ruled out.
+      const needed = selectSpans(t.spans, { ...r.requires, status: "any" }).filter((s) => s.status !== "error");
+      const missed = guarded.filter((g) => !needed.some((n) => n.id !== g.id && n.startMs <= g.startMs));
+      if (!missed.length) return null;
+      const first = missed[0];
+      return {
+        firing: true,
+        evidenceSpanIds: missed.map((s) => s.id),
+        params: {
+          tool: first.toolName ?? first.name,
+          requires: String(r.requires.tool ?? r.requires.name ?? r.requires.type ?? "the required step"),
+          count: String(missed.length),
+        },
+      };
+    }
+    case "unrecovered_error": {
+      // Only meaningful once the run is over: until then the agent may still retry.
+      if (!atEnd || !t.run) return null;
+      // A run that failed or was cut short is already reported by run-failed.
+      if (t.run.status === "error" || t.run.interrupted) return null;
+      const out = finalOutput(t);
+      if (!out || /^("?\s*"?|null|\{\}|\[\])$/.test(out.trim())) return null;
+      // An answer that says something failed is the agent being honest, not a problem.
+      if (ADMITS_FAILURE.test(out)) return null;
+      const spans = selectSpans(t.spans, r.span ?? { type: ["tool", "mcp_tool"] }).sort((a, b) => a.endMs - b.endMs || a.seq - b.seq);
+      // The last call of each tool decides it: a later success means the agent recovered.
+      const last = new Map<string, SpanInfo>();
+      for (const s of spans) last.set(s.toolName ?? s.name, s);
+      const failed = [...last.values()].filter((s) => s.status === "error");
+      if (!failed.length) return null;
+      const first = failed[0];
+      return {
+        firing: true,
+        evidenceSpanIds: failed.map((s) => s.id),
+        params: {
+          tool: first.toolName ?? first.name,
+          // Only worth showing when more than one tool stayed failed.
+          ...(failed.length > 1 ? { tools: failed.map((s) => s.toolName ?? s.name).join(", "), count: String(failed.length) } : {}),
+          error: clip(first.error ?? "error", 200),
+        },
+      };
     }
     case "run_end": {
       if (!atEnd || !t.run) return null;

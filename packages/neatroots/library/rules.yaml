@@ -9,7 +9,7 @@
   rule:
     type: repeat
     span: { type: [tool, mcp_tool] }
-    same: [tool, input]
+    same: [tool, input, output]
     at_least: 3
   guidance: >-
     You have called {tool} {count} times with the same arguments ({args}) and the result did
@@ -63,8 +63,31 @@
     type: match
     span: { type: llm }
     field: output
+    flags: ''
     pattern: '(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)'
   guidance: Do not repeat credentials or keys in your replies. Refer to them by name instead.
+
+- id: unrecovered-tool-failure
+  kind: rule
+  group: loop
+  title: A tool call failed and the run still ended with an answer
+  rule:
+    type: unrecovered_error
+    span: { type: [tool, mcp_tool] }
+  guidance: >-
+    {tool} failed ({error}) and was not called again successfully, but you gave a final answer.
+    Do not say the task is done. Retry {tool} or tell the user it failed.
+
+- id: secret-in-tool-output
+  kind: rule
+  title: A tool returned something that looks like a secret key
+  rule:
+    type: match
+    span: { type: [tool, mcp_tool] }
+    field: output
+    pattern: '(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|Bearer [A-Za-z0-9._~+/=-]{24,})'
+    flags: ''
+  guidance: A tool result contains what looks like a credential. Do not repeat it in your reply or pass it to other tools. Refer to it by name instead.
 
 - id: soft-tool-failure
   kind: rule
