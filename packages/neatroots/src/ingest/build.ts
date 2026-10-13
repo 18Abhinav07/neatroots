@@ -49,7 +49,11 @@ export function toNs(t: TimeLike | null | undefined): bigint | undefined {
   }
   if (/^\d+$/.test(t)) return toNs(Number(t)) ?? undefined;
   const ms = Date.parse(t);
-  if (Number.isNaN(ms)) return undefined;
+  if (Number.isNaN(ms)) {
+    // An epoch with a fraction sent as a string ("1700000000.5") reads like the same number,
+    // instead of falling back to the time it arrived.
+    return /^\d+\.\d+$/.test(t) ? toNs(Number(t)) : undefined;
+  }
   // Keep sub-millisecond digits when the string has them (ClickHouse and OTLP style).
   const frac = /\.(\d+)/.exec(t)?.[1] ?? "";
   const extraNs = frac.length > 3 ? BigInt(frac.slice(3, 9).padEnd(6, "0")) : 0n;
