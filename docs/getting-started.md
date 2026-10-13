@@ -143,15 +143,18 @@ If the agent isn't instrumented yet:
 
 ```python
 import neatlogs
-neatlogs.init(workflow_name="refund-agent", flush_interval=0.5)
+neatlogs.init(workflow_name="refund-agent", flush_interval=0.5, instrumentations=["openai"])
 ```
 
 ```ts
 import * as neatlogs from "neatlogs";
+import OpenAI from "openai";
 await neatlogs.init({ workflowName: "refund-agent", flushInterval: 0.5 });
+const client = neatlogs.wrapOpenAI(new OpenAI()); // use this client for your calls
 ```
 
 - `workflow_name` is the project name neatroots shows.
+- `instrumentations` (Python) and `wrapOpenAI` (TypeScript) choose what gets traced. `init` alone records only spans you create yourself, so a plain OpenAI agent shows no runs.
 - `flush_interval=0.5` (`flushInterval` in TypeScript) sends spans every half second, so neatroots can check a run while it is still going.
 - In production, unset `NEATLOGS_ENDPOINT` and the same code sends to Neatlogs Cloud.
 

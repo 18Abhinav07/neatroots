@@ -133,9 +133,11 @@ export NEATLOGS_API_KEY=neatroots-local      # any value works locally
 
 ```python
 import neatlogs
-neatlogs.init(workflow_name="refund-agent", flush_interval=0.5)
+neatlogs.init(workflow_name="refund-agent", flush_interval=0.5, instrumentations=["openai"])
 ```
 
+`instrumentations` names the libraries to trace (`"openai"`, `"anthropic"`). Without it
+`init` records only the spans you create yourself, and a plain OpenAI agent shows no runs.
 `flush_interval=0.5` lets neatroots check a run while it is still going. In production, unset
 `NEATLOGS_ENDPOINT` and the same code sends to Neatlogs Cloud.
 
