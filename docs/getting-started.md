@@ -349,6 +349,7 @@ neatroots listens on 127.0.0.1 only. API keys live in the macOS Keychain (on Lin
 | `neatroots models`, `neatroots laya install / skip / status`, `neatroots jev login / on / off` | Decision models: Laya (local) or Jev cloud |
 | `neatroots steering <mode> --project <name>`, `neatroots steering stop` | Steering |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks |
+| `neatroots check <files...>` | Rule checks over saved traces, exit 1 if any fires (`--only`, `--checks`, `--json`) |
 | `neatroots cloud login / forward / auto` | Neatlogs Cloud: send runs |
 | `neatroots cloud token`, `neatroots cloud project` | Neatlogs Cloud: the service-account token and project imports read from |
 | `neatroots connect` | Give coding agents neatroots' MCP tools |
