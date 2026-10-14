@@ -175,7 +175,7 @@ export function mountApi(app: Hono, roots: Roots): void {
 
   app.get("/api/runs", (c) => {
     const q = c.req.query();
-    const runs = roots.store.listRuns({
+    const filter = {
       project: q.project || undefined,
       workflow: q.workflow || undefined,
       status: q.status || undefined,
@@ -184,10 +184,10 @@ export function mountApi(app: Hono, roots: Roots): void {
       checkId: q.check || undefined,
       text: q.q || undefined,
       sinceMs: q.since ? Number(q.since) : undefined,
-      limit: clampInt(q.limit, 100, 1, 500),
-      offset: clampInt(q.offset, 0, 0, Number.MAX_SAFE_INTEGER),
-    });
-    return c.json({ runs: runs.map((r) => runSummary(roots, r)), total: roots.store.countRuns() });
+    };
+    const runs = roots.store.listRuns({ ...filter, limit: clampInt(q.limit, 100, 1, 500), offset: clampInt(q.offset, 0, 0, Number.MAX_SAFE_INTEGER) });
+    // total: every run (the page says "no runs yet" when it's 0); matching: runs these filters match.
+    return c.json({ runs: runs.map((r) => runSummary(roots, r)), total: roots.store.countRuns(), matching: roots.store.countMatchingRuns(filter) });
   });
 
   app.get("/api/runs/:traceId", async (c) => {
