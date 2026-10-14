@@ -202,8 +202,18 @@ export function neatlogsCloudSource(base: () => string, auth: () => Promise<Clou
         ids = ids.slice(0, o.limit);
       }
       for (const id of ids) {
-        const { nodes, workflow } = await fetchCloudTrace(b, k, id, o.signal);
-        yield { sourceId: id, batches: toBatches(nodes, { project: o.project || workflow, source: "neatlogs-cloud" }) };
+        let read: { nodes: SpanNode[]; workflow: string };
+        try {
+          read = await fetchCloudTrace(b, k, id, o.signal);
+        } catch (err) {
+          // One trace that won't download shouldn't stop the rest. A cancel, or a token or
+          // permission problem (which would fail every trace the same way), still ends the import.
+          const message = (err as Error).message;
+          if (o.signal.aborted || /\((401|403)\)/.test(message)) throw err;
+          yield { sourceId: id, batches: [], error: message };
+          continue;
+        }
+        yield { sourceId: id, batches: toBatches(read.nodes, { project: o.project || read.workflow, source: "neatlogs-cloud" }) };
       }
     },
   };

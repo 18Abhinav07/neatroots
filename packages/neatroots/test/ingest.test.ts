@@ -256,4 +256,53 @@ describe("imports", () => {
       cloud.close();
     }
   });
+
+  it("keeps importing the other Neatlogs Cloud traces when one of them fails", async () => {
+    const ids = [hex(16), hex(16), hex(16)];
+    const cloud = http.createServer((req, res) => {
+      res.setHeader("content-type", "application/json");
+      if (req.headers.authorization !== "Bearer nlsa_test_token") {
+        res.statusCode = 401;
+        res.end("{}");
+        return;
+      }
+      const i = ids.findIndex((id) => req.url?.startsWith(`/api/v1/public/traces/${id}/export`));
+      if (i === 1) {
+        res.statusCode = 500; // one trace the cloud can't export right now
+        res.end('{"error":"boom"}');
+      } else if (i >= 0) {
+        const id = ids[i];
+        res.end(JSON.stringify({ success: true, data: { schemaVersion: 1, trace: { traceId: id, workflowName: "prod-agent", startedAt: "2026-10-09T10:00:00Z" }, spans: [{ traceId: id, spanId: hex(8), parentSpanId: null, spanName: "root", spanType: "workflow", startedAt: "2026-10-09T10:00:00Z", endedAt: "2026-10-09T10:00:01Z", durationMs: 1000, status: "OK" }] } }));
+      } else {
+        res.statusCode = 404;
+        res.end("{}");
+      }
+    });
+    const port = await freePort();
+    await new Promise<void>((r) => cloud.listen(port, "127.0.0.1", r));
+    t = await makeRoots({
+      noEngine: true,
+      config: (c) => {
+        c.cloud.apiBase = `http://127.0.0.1:${port}/api/v1/public`;
+        c.cloud.projectId = "proj_1";
+      },
+    });
+    try {
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_test_token";
+      const job = await t.roots.imports.start("neatlogs-cloud", { traceIds: ids.join(",") }, { limit: 3 }).done;
+      // was: state "failed", traces 1, failed 0, and the third trace never fetched
+      expect(job).toMatchObject({ state: "succeeded", traces: 2, failed: 1 });
+      expect(job.last_error).toContain(ids[1]);
+      expect(t.roots.store.getRun(ids[0])).toBeDefined();
+      expect(t.roots.store.getRun(ids[2])).toBeDefined();
+      // a token problem would fail every trace the same way, so it still stops at once
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_wrong";
+      const refused = await t.roots.imports.start("neatlogs-cloud", { traceIds: ids.join(",") }, { limit: 3 }).done;
+      expect(refused).toMatchObject({ state: "failed", traces: 0 });
+      expect(refused.last_error).toMatch(/\(401\)/);
+    } finally {
+      delete process.env.NEATLOGS_SERVICE_TOKEN;
+      cloud.close();
+    }
+  });
 });
