@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+function compiles(pattern: string, flags: string): boolean {
+  try {
+    new RegExp(pattern, flags);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Which spans a check looks at. Every field is optional; all given fields must match. */
 export const SpanSelector = z
   .object({
@@ -92,6 +101,23 @@ export const RuleSpec = z.discriminatedUnion("type", [
       field: z.enum(["input", "output", "error", "name"]).default("output"),
       pattern: z.string(),
       flags: z.string().optional(),
+    })
+    .strict()
+    .refine((r) => compiles(r.pattern, r.flags ?? "i"), { message: "pattern is not a valid regular expression", path: ["pattern"] }),
+  z
+    .object({
+      type: z.literal("unrecovered_error"),
+      /** Spans to watch. Defaults to tool and MCP tool calls. */
+      span: SpanSelector.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("requires_before"),
+      /** The calls that need something to happen first. */
+      span: SpanSelector,
+      /** What must have started, and succeeded, before each of them. */
+      requires: SpanSelector,
     })
     .strict(),
   z

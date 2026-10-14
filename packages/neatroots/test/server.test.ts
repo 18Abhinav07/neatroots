@@ -157,6 +157,23 @@ describe("server", () => {
     expect(((await ok.json()) as { span_count: number }).span_count).toBe(3);
   });
 
+  it("clamps the findings list limit instead of failing on a bad value", async () => {
+    const tb = await served();
+    const { t, root, batches } = sampleRun();
+    tb.roots.ingest(batches);
+    for (let i = 0; i < 3; i++) tb.roots.store.insertFinding({ trace_id: t, check_id: `c${i}`, check_kind: "rule", title: `F${i}`, probability: null, status: "raised", evidence_span_ids: [root], detail: {}, model: null, triage_score: null, explanation_id: null });
+    const origin = { origin: tb.url.replace("127.0.0.1", "localhost") };
+    const count = async (limit: string) => {
+      const r = await fetch(`${tb.url}/api/findings?limit=${limit}`, { headers: origin });
+      expect(r.status).toBe(200); // was a 500 ("datatype mismatch") for limit=abc
+      return ((await r.json()) as { findings: unknown[] }).findings.length;
+    };
+    expect(await count("abc")).toBe(3); // not a number: default limit
+    expect(await count("-5")).toBe(1); // was every finding (SQLite LIMIT -1)
+    expect(await count("0")).toBe(1); // was none
+    expect(await count("2")).toBe(2);
+  });
+
   it("returns 404 JSON for unknown /api and /v1 routes, not the SPA", async () => {
     const tb = await served();
     for (const path of ["/api/anything-unknown", "/api/imports/abc", "/v1/unknown"]) {
