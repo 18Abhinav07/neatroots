@@ -869,7 +869,7 @@ export class Store {
 
   listFindings(f: { traceId?: string; status?: string; checkId?: string; limit?: number } = {}): Finding[] {
     const where: string[] = [];
-    const p: Record<string, unknown> = { limit: f.limit ?? 100 };
+    const p: Record<string, unknown> = { limit: Number.isFinite(f.limit) ? Math.min(Math.max(Math.trunc(f.limit as number), 1), 500) : 100 };
     if (f.traceId) {
       where.push("trace_id = @trace");
       p.trace = f.traceId;
