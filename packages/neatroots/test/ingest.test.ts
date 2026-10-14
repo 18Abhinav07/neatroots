@@ -259,6 +259,7 @@ describe("imports", () => {
 
   it("keeps importing the other Neatlogs Cloud traces when one of them fails", async () => {
     const ids = [hex(16), hex(16), hex(16)];
+    let exportCalls = 0;
     const cloud = http.createServer((req, res) => {
       res.setHeader("content-type", "application/json");
       if (req.headers.authorization !== "Bearer nlsa_test_token") {
@@ -266,6 +267,7 @@ describe("imports", () => {
         res.end("{}");
         return;
       }
+      if (req.url?.includes("/export")) exportCalls += 1;
       const i = ids.findIndex((id) => req.url?.startsWith(`/api/v1/public/traces/${id}/export`));
       if (i === 1) {
         res.statusCode = 500; // one trace the cloud can't export right now
@@ -300,6 +302,15 @@ describe("imports", () => {
       const refused = await t.roots.imports.start("neatlogs-cloud", { traceIds: ids.join(",") }, { limit: 3 }).done;
       expect(refused).toMatchObject({ state: "failed", traces: 0 });
       expect(refused.last_error).toMatch(/\(401\)/);
+      // a cloud that fails every export is down, not one bad trace: stop after 3 in a row
+      // instead of waiting out each trace's timeout
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_test_token";
+      const unknown = Array.from({ length: 10 }, () => hex(16)); // the fake cloud answers 404 for each
+      exportCalls = 0;
+      const down = await t.roots.imports.start("neatlogs-cloud", { traceIds: unknown.join(",") }, { limit: 10 }).done;
+      expect(down).toMatchObject({ state: "failed", traces: 0, failed: 3 });
+      expect(down.last_error).toMatch(/3 traces in a row failed/);
+      expect(exportCalls).toBe(3); // the other 7 were never requested
     } finally {
       delete process.env.NEATLOGS_SERVICE_TOKEN;
       cloud.close();
