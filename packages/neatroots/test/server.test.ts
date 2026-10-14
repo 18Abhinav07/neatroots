@@ -70,6 +70,46 @@ describe("server", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("counts a run as sent once its spans are accepted, even if the completion marker then fails", async () => {
+    for (const marker of ["rejected", "dropped"] as const) {
+      // A sink that accepts the spans and then rejects, or drops, the marker request.
+      const posts: number[] = [];
+      const sink = http.createServer((req, res) => {
+        req.resume();
+        req.on("end", () => {
+          posts.push(posts.length + 1);
+          if (posts.length === 1) {
+            res.statusCode = 200;
+            res.end();
+          } else if (marker === "rejected") {
+            res.statusCode = 503;
+            res.end();
+          } else req.socket.destroy();
+        });
+      });
+      await new Promise<void>((r) => sink.listen(0, "127.0.0.1", r));
+      const url = `http://127.0.0.1:${(sink.address() as { port: number }).port}`;
+      const tb = await served();
+      tb.roots.config.cloud.endpoint = url;
+      process.env.NEATLOGS_CLOUD_API_KEY = "nl-test-key"; // never the Keychain
+      try {
+        const { t, batches } = sampleRun();
+        tb.roots.ingest(batches);
+        const row = await tb.roots.relay.forward([t], "auto");
+        // was: status "error", so the run looked unsent and was forwarded again
+        expect(row.status, marker).toBe("ok");
+        expect(row.error, marker).toMatch(/completion marker failed/);
+        expect(tb.roots.store.forwardedTraceIds().has(t), marker).toBe(true);
+        // auto-forward (when the run's completion arrives) doesn't send the spans a second time
+        await (tb.roots.relay as unknown as { autoForward(id: string): Promise<void> }).autoForward(t);
+        expect(posts.length, marker).toBe(2);
+      } finally {
+        delete process.env.NEATLOGS_CLOUD_API_KEY;
+        sink.close();
+      }
+    }
+  });
+
   it("forwards runs to an OTLP endpoint losslessly, redacted, with a completion marker and findings", async () => {
     const source = await served();
     const sink = await served();

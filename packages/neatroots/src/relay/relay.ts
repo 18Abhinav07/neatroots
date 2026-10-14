@@ -198,6 +198,11 @@ export class Relay {
       return { res, bytes: gz.length };
     };
     let bytes = 0;
+    // Set once the run's spans are accepted: from then on the run is in the cloud, and a failed
+    // completion marker mustn't make it look unsent (auto-forward would send it all again).
+    let accepted: number | null = null;
+    const sentWithoutMarker = (why: string) =>
+      this.roots.store.insertForward({ ...base, status: "ok", http_status: accepted, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: `sent, but the completion marker failed: ${why}` });
     try {
       const a = await send(enc.main);
       bytes += a.bytes;
@@ -205,15 +210,15 @@ export class Relay {
         const text = (await a.res.text().catch(() => "")).slice(0, 300);
         return this.roots.store.insertForward({ ...base, status: "error", http_status: a.res.status, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: `ingest returned HTTP ${a.res.status}${text ? `: ${text}` : ""}` });
       }
+      accepted = a.res.status;
       if (enc.markers) {
         const b = await send(enc.markers);
         bytes += b.bytes;
-        if (!b.res.ok) {
-          return this.roots.store.insertForward({ ...base, status: "error", http_status: b.res.status, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: `completion marker rejected: HTTP ${b.res.status}` });
-        }
+        if (!b.res.ok) return sentWithoutMarker(`HTTP ${b.res.status}`);
       }
       return this.roots.store.insertForward({ ...base, status: "ok", http_status: a.res.status, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: null });
     } catch (err) {
+      if (accepted !== null) return sentWithoutMarker((err as Error).message);
       return this.roots.store.insertForward({ ...base, status: "error", http_status: null, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: (err as Error).message });
     }
   }
