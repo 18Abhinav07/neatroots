@@ -330,6 +330,8 @@ export function currentRequest(v: Parameters<typeof preview>[0]): string | undef
 /** Search covers this much of each input, output and error: the start and the end of long values. */
 export const SEARCH_LIMIT = { head: 150_000, tail: 50_000 };
 const SEARCH_INDEX_VERSION = 2;
+/** A store over its size cap is trimmed to this share of the cap, so it isn't trimmed every hour. */
+export const RETENTION_LOW_WATER = 0.9;
 
 function searchText(v: Parameters<typeof preview>[0]): string {
   if (v === undefined || v === null) return "";
@@ -1171,33 +1173,25 @@ export class Store {
       const old = this.db
         .prepare("SELECT trace_id FROM runs WHERE pinned = 0 AND COALESCE(ended_ms, received_ms) < ?")
         .all(cutoff) as { trace_id: string }[];
-      for (const r of old) {
-        this.deleteRun(r.trace_id);
-        removed++;
-      }
+      this.deleteRuns(old.map((r) => r.trace_id));
+      removed += old.length;
     }
     // Measure what the database holds, not the file size: SQLite keeps the file (and WAL) at its
     // high-water mark after a delete and reuses the freed pages, so the file size never drops
-    // during this loop and measuring it would delete every unpinned run.
+    // after a delete and measuring it would delete every unpinned run.
     let size = this.storedBytes();
-    // Deleting from the full-text index leaves "deleted" markers until it is compacted, so the
-    // index can even grow after a delete. Compact before trusting the size.
-    if (size > maxBytes && removed) {
+    if (size > maxBytes) {
+      // Deleting from the full-text index leaves "deleted" markers until it is compacted, so the
+      // size can read high. Compact (once per sweep, and only when over the cap) before trusting it.
       this.compactSearchIndex();
       size = this.storedBytes();
     }
-    // Each pass removes the oldest unpinned runs whose data covers the excess, compacts once,
-    // and measures again. Bounded, so one sweep can't run for long; a store still over the cap
-    // is trimmed further on the next sweep.
-    for (let pass = 0; size > maxBytes && pass < 8; pass++) {
-      const oldest = this.oldestRunsCovering(size - maxBytes, size);
-      if (!oldest.length) break;
-      for (const t of oldest) {
-        this.deleteRun(t);
-        removed++;
-      }
-      this.compactSearchIndex();
-      size = this.storedBytes();
+    if (size > maxBytes) {
+      // Trim the oldest unpinned runs down to a low-water mark below the cap, so a store sitting
+      // at its cap isn't trimmed (and compacted) again on every hourly sweep.
+      const oldest = this.oldestRunsCovering(size - maxBytes * RETENTION_LOW_WATER, size);
+      this.deleteRuns(oldest);
+      removed += oldest.length;
     }
     if (removed) this.db.pragma("wal_checkpoint(TRUNCATE)");
     return removed;
@@ -1231,7 +1225,9 @@ export class Store {
     shas.forEach((list, i) => list.forEach((sha) => lastRef.set(sha, rows[i].pinned ? Infinity : Math.max(lastRef.get(sha) ?? -1, i))));
     const blobTotal = this.blobs.size();
     const rowTotal = rows.reduce((n, r) => n + r.w, 0);
-    const rowScale = rowTotal > 0 ? Math.max(0, stored - blobTotal) / rowTotal : 0;
+    // Every table and index keeps at least its root page however many runs are deleted.
+    const fixed = (this.db.prepare("SELECT COUNT(*) AS n FROM sqlite_schema WHERE rootpage > 0").get() as { n: number }).n * (this.db.pragma("page_size", { simple: true }) as number);
+    const rowScale = rowTotal > 0 ? Math.max(0, stored - blobTotal - fixed) / rowTotal : 0;
     const pick: string[] = [];
     let freed = 0;
     for (let i = 0; i < rows.length; i++) {
@@ -1270,20 +1266,32 @@ export class Store {
   }
 
   deleteRun(traceId: string): void {
-    const blobRows = this.db.prepare("SELECT blobs FROM spans WHERE trace_id = ? AND blobs IS NOT NULL").all(traceId) as { blobs: string }[];
+    this.deleteRuns([traceId]);
+  }
+
+  /**
+   * Deletes runs in one go. The search index can't look rows up by run (trace_id is an unindexed
+   * column there), so each delete statement scans the whole index; doing it once for the batch,
+   * not once per run, is what keeps a large retention trim fast.
+   */
+  deleteRuns(traceIds: string[]): void {
+    if (!traceIds.length) return;
+    const ids = JSON.stringify(traceIds);
+    const inIds = "trace_id IN (SELECT value FROM json_each(?))";
+    const shas = (this.db.prepare(`SELECT DISTINCT j.value AS sha FROM spans, json_each(CASE WHEN json_valid(spans.blobs) THEN spans.blobs ELSE '[]' END) AS j WHERE spans.${inIds} AND spans.blobs IS NOT NULL`).all(ids) as { sha: string }[]).map((r) => r.sha);
     const tx = this.db.transaction(() => {
       for (const t of ["spans", "span_fts", "logs", "findings", "decisions", "explanations", "notes", "summaries", "annotations"]) {
-        this.db.prepare(`DELETE FROM ${t} WHERE trace_id = ?`).run(traceId);
+        this.db.prepare(`DELETE FROM ${t} WHERE ${inIds}`).run(ids);
       }
-      this.db.prepare("DELETE FROM runs WHERE trace_id = ?").run(traceId);
+      this.db.prepare(`DELETE FROM runs WHERE ${inIds}`).run(ids);
     });
     tx();
-    for (const r of blobRows) {
-      for (const sha of json<string[]>(r.blobs, [])) {
-        const still = this.db.prepare("SELECT 1 FROM spans WHERE blobs LIKE ? LIMIT 1").get(`%${sha}%`);
-        if (!still) this.blobs.delete(sha);
-      }
-    }
+    if (!shas.length) return;
+    // A blob can be shared by runs; keep the ones a remaining span still uses.
+    const used = new Set(
+      (this.db.prepare("SELECT DISTINCT j.value AS sha FROM spans, json_each(CASE WHEN json_valid(spans.blobs) THEN spans.blobs ELSE '[]' END) AS j WHERE spans.blobs IS NOT NULL AND j.value IN (SELECT value FROM json_each(?))").all(JSON.stringify(shas)) as { sha: string }[]).map((r) => r.sha),
+    );
+    for (const sha of shas) if (!used.has(sha)) this.blobs.delete(sha);
   }
 
   stats(): { runs: number; spans: number; findings: number; bytes: number } {

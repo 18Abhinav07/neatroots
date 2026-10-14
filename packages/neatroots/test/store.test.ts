@@ -102,9 +102,11 @@ describe("store", () => {
   });
 
   it("trims to the size cap by removing the oldest runs, not every run", () => {
-    // Bytes the store holds, measured independently of the code under test: database pages in use
+    // Bytes of data the store holds, measured independently of the code under test: the search
+    // index is compacted first (deleted rows leave markers until then), then database pages in use
     // plus every blob file on disk.
     const held = (st: Store, home: string) => {
+      st.db.prepare("INSERT INTO span_fts(span_fts) VALUES('optimize')").run();
       const pages = (st.db.pragma("page_count", { simple: true }) as number) - (st.db.pragma("freelist_count", { simple: true }) as number);
       const blobDir = path.join(home, "data", "blobs");
       const files = fs.existsSync(blobDir) ? fs.readdirSync(blobDir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()) : [];
@@ -133,18 +135,42 @@ describe("store", () => {
       }
       st.setPinned(ids[0], true); // the oldest run, but pinned
       const cap = Math.floor(held(st, h) * 0.6);
+      let compactions = 0;
+      const orig = st.db.prepare.bind(st.db);
+      st.db.prepare = ((sql: string) => {
+        if (sql.includes("'optimize'")) compactions++;
+        return orig(sql);
+      }) as typeof st.db.prepare;
       const removed = st.sweep(999_999, cap);
+      st.db.prepare = orig;
       // was: every unpinned run deleted (59 of 59), because the measured size never dropped
       expect(removed, label).toBeGreaterThan(0);
       expect(removed, label).toBeLessThan(50);
-      expect(held(st, h), label).toBeLessThanOrEqual(cap);
+      expect(compactions, label).toBeLessThanOrEqual(1); // the search index is rewritten at most once a sweep
+      const after = held(st, h);
+      expect(after, label).toBeLessThanOrEqual(cap);
+      expect(after, label).toBeLessThan(cap * 0.97); // trimmed toward the low-water mark, not just under the cap
       expect(st.getRun(ids[0]), label).toBeDefined(); // pinned survives
       expect(st.getRun(ids[59]), label).toBeDefined(); // newest survives
       for (const t of ids.slice(1, 1 + removed)) expect(st.getRun(t), label).toBeUndefined(); // exactly the oldest went
       for (const t of ids.slice(1 + removed)) expect(st.getRun(t), label).toBeDefined();
-      expect(st.sweep(999_999, cap), label).toBe(0); // already under the cap
+      expect(st.sweep(999_999, cap), label).toBe(0); // the next sweep has nothing to do
       st.close();
     }
+  });
+
+  it("doesn't compact or trim a store that is under its cap", () => {
+    const st = store();
+    for (let i = 0; i < 10; i++) st.ingest([batch([span({ traceId: hex(16), spanId: hex(8), name: `r${i}`, kind: "workflow", attrs: [s("input.value", "hello ".repeat(200))] })])]);
+    let compactions = 0;
+    const orig = st.db.prepare.bind(st.db);
+    st.db.prepare = ((sql: string) => {
+      if (sql.includes("'optimize'")) compactions++;
+      return orig(sql);
+    }) as typeof st.db.prepare;
+    expect(st.sweep(14, 5 * 1024 ** 3)).toBe(0);
+    st.db.prepare = orig;
+    expect(compactions).toBe(0);
   });
 
   it("clamps bad limit/offset values instead of crashing or ignoring them", () => {
