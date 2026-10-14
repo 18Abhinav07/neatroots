@@ -99,7 +99,7 @@ export interface Explanation {
   created_ms: number;
 }
 
-export type NoteStatus = "pending" | "delivered" | "superseded" | "blocked" | "expired" | "missed";
+export type NoteStatus = "pending" | "delivered" | "superseded" | "blocked" | "expired";
 
 export interface Note {
   id: string;
