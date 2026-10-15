@@ -81,6 +81,14 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("slow"),
+      span: SpanSelector.optional(),
+      /** Fire when a matching span took at least this many milliseconds. */
+      at_least_ms: z.number().positive(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("threshold"),
       metric: z.enum(["total_tokens", "prompt_tokens", "completion_tokens", "llm_calls", "tool_calls", "duration_ms", "span_count"]),
       at_least: z.number(),
@@ -113,6 +121,21 @@ export const RuleSpec = z.discriminatedUnion("type", [
       span: SpanSelector,
       /** What must have started, and succeeded, before each of them. */
       requires: SpanSelector,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("growth"),
+      /** Spans whose token count is tracked, usually llm calls. */
+      span: SpanSelector.optional(),
+      /** Fire once this many matching calls exist. */
+      min_calls: z.number().int().min(3).default(5),
+      /** Share of consecutive calls that must be bigger than the one before. */
+      rising: z.number().min(0.5).max(1).default(0.8),
+      /** The latest call must be at least this many times the first. */
+      factor: z.number().min(1.5).default(3),
+      /** The latest call must also be at least this many tokens. */
+      min_tokens: z.number().int().min(1).default(4000),
     })
     .strict(),
   z

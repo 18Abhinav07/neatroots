@@ -62,21 +62,32 @@ function setProject(b: ResourceSpansBatch, project: string): void {
 function readBatches(text: string, name: string, project: string): ResourceSpansBatch[] {
   const trimmed = text.trim();
   if (!trimmed) throw new ImportError(`${name} is empty`);
-  if (/\.(jsonl|ndjson)$/i.test(name) || (!trimmed.startsWith("[") && trimmed.includes("\n{"))) {
-    const out: ResourceSpansBatch[] = [];
-    trimmed.split(/\r?\n/).forEach((line, i) => {
-      if (!line.trim()) return;
+  const explicitLines = /\.(jsonl|ndjson)$/i.test(name);
+  if (!explicitLines) {
+    let doc: unknown;
+    let parsed = false;
+    try {
+      doc = JSON.parse(trimmed);
+      parsed = true;
+    } catch (err) {
+      if (trimmed.startsWith("[") || !trimmed.includes("\n{")) throw new ImportError(`${name}: ${(err as Error).message}`);
+    }
+    if (parsed) {
       try {
-        out.push(...fromDoc(JSON.parse(line), project));
+        return fromDoc(doc, project);
       } catch (err) {
-        throw new ImportError(`${name} line ${i + 1}: ${(err as Error).message}`);
+        throw new ImportError(`${name}: ${(err as Error).message}`);
       }
-    });
-    return out;
+    }
   }
-  try {
-    return fromDoc(JSON.parse(trimmed), project);
-  } catch (err) {
-    throw new ImportError(`${name}: ${(err as Error).message}`);
-  }
+  const out: ResourceSpansBatch[] = [];
+  trimmed.split(/\r?\n/).forEach((line, i) => {
+    if (!line.trim()) return;
+    try {
+      out.push(...fromDoc(JSON.parse(line), project));
+    } catch (err) {
+      throw new ImportError(`${name} line ${i + 1}: ${(err as Error).message}`);
+    }
+  });
+  return out;
 }

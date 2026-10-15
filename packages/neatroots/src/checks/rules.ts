@@ -108,6 +108,23 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
       if (spans.length < r.at_least) return null;
       return { firing: true, evidenceSpanIds: spans.slice(-5).map((s) => s.id), params: { count: String(spans.length) } };
     }
+    case "slow": {
+      const slow = selectSpans(t.spans, r.span)
+        .filter((s) => s.durationMs >= r.at_least_ms)
+        .sort((a, b) => b.durationMs - a.durationMs);
+      if (!slow.length) return null;
+      const top = slow[0];
+      return {
+        firing: true,
+        evidenceSpanIds: slow.slice(0, 5).map((s) => s.id),
+        params: {
+          tool: top.toolName ?? top.name,
+          ms: String(Math.round(top.durationMs)),
+          limit_ms: String(r.at_least_ms),
+          count: String(slow.length),
+        },
+      };
+    }
     case "threshold": {
       const run = t.run;
       if (!run) return null;
@@ -131,6 +148,7 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
         const v = r.field === "input" ? s.input : r.field === "output" ? s.output : r.field === "error" ? s.error : s.name;
         if (v === undefined || v === null) return false;
         // Bounded, so even a slow (but accepted) pattern can't hold the server for long on a huge output.
+        re.lastIndex = 0;
         return re.test((typeof v === "string" ? v : JSON.stringify(v)).slice(0, MATCH_CHARS));
       });
       if (!hits.length) return null;
@@ -179,6 +197,22 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
           ...(failed.length > 1 ? { tools: failed.map((s) => s.toolName ?? s.name).join(", "), count: String(failed.length) } : {}),
           error: clip(first.error ?? "error", 200),
         },
+      };
+    }
+    case "growth": {
+      const spans = selectSpans(t.spans, r.span)
+        .filter((s) => (s.tokens ?? 0) > 0)
+        .sort((a, b) => a.endMs - b.endMs);
+      if (spans.length < r.min_calls) return null;
+      const first = spans[0].tokens!;
+      const last = spans[spans.length - 1].tokens!;
+      let up = 0;
+      for (let i = 1; i < spans.length; i++) if (spans[i].tokens! > spans[i - 1].tokens!) up++;
+      if (up / (spans.length - 1) < r.rising || last < first * r.factor || last < r.min_tokens) return null;
+      return {
+        firing: true,
+        evidenceSpanIds: [spans[0].id, spans[spans.length - 1].id],
+        params: { count: String(spans.length), first: String(first), last: String(last) },
       };
     }
     case "run_end": {

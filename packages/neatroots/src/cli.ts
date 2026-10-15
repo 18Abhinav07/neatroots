@@ -400,7 +400,7 @@ program
         }
         console.log(`\n${r.runs.length} run${r.runs.length === 1 ? "" : "s"}, ${failed.length} with findings, ${r.rules.length} rules`);
       }
-      process.exit(failed.length ? 1 : 0);
+      process.exit(r.errors.length ? 2 : failed.length ? 1 : 0);
     } catch (e) {
       console.error(`✗ ${(e as Error).message}`);
       process.exit(2);

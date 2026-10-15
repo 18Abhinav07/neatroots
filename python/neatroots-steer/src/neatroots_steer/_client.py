@@ -57,6 +57,8 @@ class RootsClient:
         self.disabled = os.environ.get("NEATROOTS_STEER", "").lower() in {"0", "off", "false", "no"}
         self._mode = "unknown"
         self._mode_checked = 0.0
+        self._mode_trace_id: Optional[str] = None
+        self._globally_off = False
         self._pending: Set[str] = set()
         self._sse_connected = False
         self._down_until = 0.0
@@ -137,9 +139,13 @@ class RootsClient:
                 self._pending.add(payload["trace_id"])
             elif event == "mode":
                 self._mode_checked = 0.0
+                self._mode_trace_id = None
+                self._globally_off = False
             elif event == "hello" and payload.get("enabled") is False:
                 self._mode = "off"
                 self._mode_checked = time.monotonic()
+                self._mode_trace_id = None
+                self._globally_off = True
 
     # ---------------------------------------------------------------- notes
 
@@ -147,15 +153,23 @@ class RootsClient:
     def mode(self) -> str:
         return self._mode
 
+    def mode_for(self, trace_id: str) -> str:
+        """The last mode belongs only to its trace; a new run must flush and ask."""
+        with self._lock:
+            if self._globally_off and time.monotonic() - self._mode_checked < 10.0:
+                return "off"
+            return self._mode if self._mode_trace_id == trace_id else "unknown"
+
     def _should_claim(self, trace_id: str) -> bool:
         if self.disabled:
             return False
         now = time.monotonic()
         with self._lock:
+            mode = self._mode if self._mode_trace_id == trace_id or self._globally_off else "unknown"
             # A project with steering off is re-checked every 10 s rather than on every call.
-            if self._mode == "off" and now - self._mode_checked < 10.0 and trace_id not in self._pending:
+            if mode == "off" and now - self._mode_checked < 10.0 and trace_id not in self._pending:
                 return False
-            if self._mode in {"advisory", "self-check"} and self._sse_connected and trace_id not in self._pending:
+            if mode in {"advisory", "self-check"} and self._sse_connected and trace_id not in self._pending:
                 # Nothing pending for this run; skip the round trip.
                 return now - self._mode_checked > 10.0
         return True
@@ -176,6 +190,8 @@ class RootsClient:
         with self._lock:
             self._mode = res.get("mode") or "unknown"
             self._mode_checked = time.monotonic()
+            self._mode_trace_id = trace_id
+            self._globally_off = False
             note = res.get("note")
             # A note that arrives with steering off (an older neatroots) is not used.
             if not note or self._mode == "off":
