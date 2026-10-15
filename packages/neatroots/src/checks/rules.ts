@@ -105,6 +105,23 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
       if (spans.length < r.at_least) return null;
       return { firing: true, evidenceSpanIds: spans.slice(-5).map((s) => s.id), params: { count: String(spans.length) } };
     }
+    case "slow": {
+      const slow = selectSpans(t.spans, r.span)
+        .filter((s) => s.durationMs >= r.at_least_ms)
+        .sort((a, b) => b.durationMs - a.durationMs);
+      if (!slow.length) return null;
+      const top = slow[0];
+      return {
+        firing: true,
+        evidenceSpanIds: slow.slice(0, 5).map((s) => s.id),
+        params: {
+          tool: top.toolName ?? top.name,
+          ms: String(Math.round(top.durationMs)),
+          limit_ms: String(r.at_least_ms),
+          count: String(slow.length),
+        },
+      };
+    }
     case "threshold": {
       const run = t.run;
       if (!run) return null;

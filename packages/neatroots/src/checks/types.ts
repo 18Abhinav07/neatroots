@@ -89,6 +89,14 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("slow"),
+      span: SpanSelector.optional(),
+      /** Fire when a matching span took at least this many milliseconds. */
+      at_least_ms: z.number().positive(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("threshold"),
       metric: z.enum(["total_tokens", "prompt_tokens", "completion_tokens", "llm_calls", "tool_calls", "duration_ms", "span_count"]),
       at_least: z.number(),

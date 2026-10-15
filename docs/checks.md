@@ -16,7 +16,7 @@ id: repeated-tool-call
 kind: rule
 title: Same tool called repeatedly with identical arguments
 rule:
-  type: repeat            # repeat | errors | count | threshold | match | requires_before | unrecovered_error | run_end
+  type: repeat            # repeat | errors | count | slow | threshold | match | requires_before | unrecovered_error | run_end
   span: { type: [tool, mcp_tool] }
   same: [tool, input]
   at_least: 3
@@ -30,6 +30,7 @@ action: flag              # or halt (your own rules only)
 | `repeat` | `at_least` matching spans share the `same` fields; resolves when the next call differs |
 | `errors` | `consecutive` matching spans failed in a row |
 | `count` | the run has `at_least` matching spans |
+| `slow` | a matching span took at least `at_least_ms` milliseconds (one slow tool call, not the whole run; use `threshold` with `duration_ms` for the run) |
 | `threshold` | a run metric (`total_tokens`, `llm_calls`, `duration_ms`, …) reaches `at_least` |
 | `match` | a regex matches a span's `input`, `output`, `error` or `name` |
 | `requires_before` | a `span` call has no earlier successful `requires` call in the same run, for example a refund with no order lookup |
