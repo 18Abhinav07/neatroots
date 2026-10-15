@@ -31,7 +31,13 @@ export function parseChecks(text: string): { checks: Check[]; errors: { id?: str
       errors.push({ message: doc.errors.map((e) => e.message).join("; ") });
       continue;
     }
-    const value = doc.toJS() as unknown;
+    let value: unknown;
+    try {
+      value = doc.toJS();
+    } catch (e) {
+      errors.push({ message: e instanceof Error ? e.message : String(e) });
+      continue;
+    }
     if (value === null || value === undefined) continue;
     const items = Array.isArray(value)
       ? value
