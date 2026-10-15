@@ -60,7 +60,9 @@ group: refunds            # optional: checks in one group show as one problem pe
 ```
 
 `choice` questions take `options` (label → description) and `flag_on`; `score` questions take
-`levels` and `flag_at_level`.
+`levels` and `flag_at_level`. Score levels are numbered from zero, so `flag_at_level` must be
+between `0` and `levels.length - 1`. Fractional thresholds in that range are allowed: the score
+is the expected level, not necessarily a whole number.
 
 ### Make sure a question can see what it asks about
 

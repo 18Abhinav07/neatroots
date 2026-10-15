@@ -226,7 +226,17 @@ export const ScoreQuestion = z
     /** Flag when the expected level reaches this (0-based). */
     flag_at_level: z.number().min(0),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    const highest = val.levels.length - 1;
+    if (val.flag_at_level > highest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["flag_at_level"],
+        message: `must be at most ${highest} for ${val.levels.length} levels (0-based)`,
+      });
+    }
+  });
 
 export const QuestionCheck = z.discriminatedUnion("kind", [YesNoQuestion, ChoiceQuestion, ScoreQuestion]);
 export type QuestionCheck = z.infer<typeof QuestionCheck>;
