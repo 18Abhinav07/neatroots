@@ -137,6 +137,25 @@ describe("server", () => {
     expect(await r.json()).toEqual({ mode: "unknown", known: false, note: null });
   });
 
+  it("refuses retention values it can't use instead of answering ok and ignoring them", async () => {
+    const tb = await served();
+    const headers = { "content-type": "application/json", origin: tb.url.replace("127.0.0.1", "localhost") };
+    const save = (b: unknown) => fetch(`${tb.url}/api/settings`, { method: "POST", headers, body: JSON.stringify(b) });
+    const before = { ...tb.roots.config.retention };
+    // 0 is what the Settings page sends for an empty box (Number("") === 0)
+    for (const bad of [{ retention_days: 0 }, { retention_days: 5000 }, { retention_days: "30" }, { retention_days: null }, { retention_max_gb: 0 }, { retention_max_gb: -1 }, { retention_max_gb: 20_000 }, { retention_max_gb: "2" }]) {
+      const r = await save(bad);
+      expect(r.status, JSON.stringify(bad)).toBe(400); // was 200 {"ok":true} with nothing saved
+      expect(((await r.json()) as { error: string }).error).toMatch(/^(Keep runs for|Size cap) must be/);
+    }
+    // nothing in a refused request is applied, not even the valid parts
+    expect((await save({ retention_days: 30, retention_max_gb: 0 })).status).toBe(400);
+    expect(tb.roots.config.retention).toEqual(before);
+    // valid values still save
+    expect((await save({ retention_days: 30, retention_max_gb: 2.5 })).status).toBe(200);
+    expect(tb.roots.config.retention).toEqual({ days: 30, maxGb: 2.5 });
+  });
+
   it("clamps the findings list limit instead of failing on a bad value", async () => {
     const tb = await served();
     const { t, root, batches } = sampleRun();
