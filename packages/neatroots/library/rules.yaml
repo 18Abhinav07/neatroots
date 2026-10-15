@@ -102,6 +102,20 @@
     The output of {span} looks like an error even though the call did not fail. Do not treat it as a
     result. Check it, retry or tell the user.
 
+- id: context-growth
+  kind: rule
+  title: The model calls keep getting bigger
+  rule:
+    type: growth
+    span: { type: llm }
+    min_calls: 5
+    rising: 0.8
+    factor: 3
+    min_tokens: 4000
+  guidance: >-
+    The model calls in this run grew from {first} to {last} tokens over {count} calls. Context is piling
+    up. Summarize or drop old messages before it hits the limit.
+
 - id: run-failed
   kind: rule
   group: ending

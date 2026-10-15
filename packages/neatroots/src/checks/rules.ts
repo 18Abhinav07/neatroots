@@ -177,6 +177,22 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
         },
       };
     }
+    case "growth": {
+      const spans = selectSpans(t.spans, r.span)
+        .filter((s) => (s.tokens ?? 0) > 0)
+        .sort((a, b) => a.endMs - b.endMs);
+      if (spans.length < r.min_calls) return null;
+      const first = spans[0].tokens!;
+      const last = spans[spans.length - 1].tokens!;
+      let up = 0;
+      for (let i = 1; i < spans.length; i++) if (spans[i].tokens! > spans[i - 1].tokens!) up++;
+      if (up / (spans.length - 1) < r.rising || last < first * r.factor || last < r.min_tokens) return null;
+      return {
+        firing: true,
+        evidenceSpanIds: [spans[0].id, spans[spans.length - 1].id],
+        params: { count: String(spans.length), first: String(first), last: String(last) },
+      };
+    }
     case "run_end": {
       if (!atEnd || !t.run) return null;
       const root = t.spans.find((s) => !s.parentId);

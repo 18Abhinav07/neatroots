@@ -122,6 +122,21 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("growth"),
+      /** Spans whose token count is tracked, usually llm calls. */
+      span: SpanSelector.optional(),
+      /** Fire once this many matching calls exist. */
+      min_calls: z.number().int().min(3).default(5),
+      /** Share of consecutive calls that must be bigger than the one before. */
+      rising: z.number().min(0.5).max(1).default(0.8),
+      /** The latest call must be at least this many times the first. */
+      factor: z.number().min(1.5).default(3),
+      /** The latest call must also be at least this many tokens. */
+      min_tokens: z.number().int().min(1).default(4000),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("run_end"),
       /** Fire when the run ends with this condition. */
       when: z.enum(["error", "no_output", "interrupted"]),
