@@ -26,6 +26,9 @@ function keyOf(s: SpanInfo, fields: string[]): string {
 /** Words an agent uses when it tells the user something went wrong. */
 const ADMITS_FAILURE = /\b(fail(ed|s|ure|ing)?|errors?|unable|couldn'?t|could not|can'?t|cannot|unfortunately|sorry|apologi[sz]e|didn'?t (go through|work|succeed)|not (able|successful|completed)|try again|retry)\b/i;
 
+/** "No errors", "without any failures", "no need to try again": the answer says nothing failed. */
+const DENIES_FAILURE = /\b(?:no|zero|without(?: any)?|free of)\s+(?:\w+\s+)?(?:errors?|fail(?:ures?|ed)?|issues?|problems?)\b|\bno need to (?:try again|retry)\b/gi;
+
 function clip(s: string, n = 120): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
@@ -33,9 +36,10 @@ function clip(s: string, n = 120): string {
 /**
  * Evaluates one rule against a trace. Returns null when the rule has never held in this
  * trace; otherwise `firing` says whether it still holds for the newest spans, which is how
- * a finding later resolves.
+ * a finding later resolves. `fresh` names the spans that just arrived: a streak they complete
+ * fires even if a later span in the same batch already ended it.
  */
-export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean): RuleHit | null {
+export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean, fresh?: ReadonlySet<string>): RuleHit | null {
   const r = check.rule;
   switch (r.type) {
     case "repeat": {
@@ -53,8 +57,15 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       if (!worst) return null;
       const last = spans[spans.length - 1];
       const lastGroup = groups.get(keyOf(last, r.same))!;
-      const firing = lastGroup.length >= r.at_least;
-      const g = firing ? lastGroup : worst;
+      let now = lastGroup.length >= r.at_least ? lastGroup : undefined;
+      if (!now && fresh) {
+        for (const g of groups.values()) {
+          const reached = g.length >= r.at_least && g.slice(r.at_least - 1).some((s) => fresh.has(s.id));
+          if (reached && (!now || g.length > now.length)) now = g;
+        }
+      }
+      const firing = !!now;
+      const g = now ?? worst;
       const s0 = g[0];
       return {
         firing,
@@ -71,15 +82,17 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       const spans = selectSpans(t.spans, r.span).sort((a, b) => a.endMs - b.endMs);
       let best: SpanInfo[] = [];
       let cur: SpanInfo[] = [];
+      let reached: SpanInfo[] | undefined;
       for (const s of spans) {
         if (s.status === "error") {
           cur.push(s);
           if (cur.length > best.length) best = [...cur];
+          if (cur.length >= r.consecutive && fresh?.has(s.id)) reached = [...cur];
         } else cur = [];
       }
       if (best.length < r.consecutive) return null;
-      const firing = cur.length >= r.consecutive;
-      const g = firing ? cur : best;
+      const firing = cur.length >= r.consecutive || !!reached;
+      const g = cur.length >= r.consecutive ? cur : (reached ?? best);
       const last = g[g.length - 1];
       return {
         firing,
@@ -145,7 +158,7 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean)
       const out = finalOutput(t);
       if (!out || /^("?\s*"?|null|\{\}|\[\])$/.test(out.trim())) return null;
       // An answer that says something failed is the agent being honest, not a problem.
-      if (ADMITS_FAILURE.test(out)) return null;
+      if (ADMITS_FAILURE.test(out.replace(DENIES_FAILURE, " "))) return null;
       const spans = selectSpans(t.spans, r.span ?? { type: ["tool", "mcp_tool"] }).sort((a, b) => a.endMs - b.endMs || a.seq - b.seq);
       // The last call of each tool decides it: a later success means the agent recovered.
       const last = new Map<string, SpanInfo>();

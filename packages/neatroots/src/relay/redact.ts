@@ -8,7 +8,7 @@ export interface RedactionRule {
 export const BUILTIN_RULES: RedactionRule[] = [
   { kind: "private_key", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g },
   { kind: "api_key", re: /\b(sk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35})\b/g },
-  { kind: "bearer_token", re: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{20,}=*/g },
+  { kind: "bearer_token", re: /\b(Bearer\s+)[A-Za-z0-9._~+/-]{20,}=*/gi },
   { kind: "email", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g },
   { kind: "phone", re: /(?<![\w.])\+?(?:\d{1,3}[\s.-])?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}(?![\w.])/g },
 ];
@@ -52,6 +52,15 @@ export function redactString(s: string, rules: RedactionRule[], where: string, h
 
 function redactValue(v: AnyValue, rules: RedactionRule[], where: string, hits: RedactionHit[]): AnyValue {
   if ("stringValue" in v) return { stringValue: redactString(v.stringValue, rules, where, hits) };
+  if ("bytesValue" in v) {
+    const bytes = Buffer.from(v.bytesValue, "base64");
+    const text = bytes.toString("utf8");
+    // OTLP bytes may contain arbitrary binary data. Only inspect canonical UTF-8 so decoding can
+    // never replace invalid sequences or otherwise change bytes that are not actually text.
+    if (!Buffer.from(text, "utf8").equals(bytes)) return v;
+    const redacted = redactString(text, rules, where, hits);
+    return redacted === text ? v : { bytesValue: Buffer.from(redacted, "utf8").toString("base64") };
+  }
   if ("arrayValue" in v) return { arrayValue: { values: v.arrayValue.values.map((x) => redactValue(x, rules, where, hits)) } };
   if ("kvlistValue" in v) return { kvlistValue: { values: redactKvs(v.kvlistValue.values, rules, where, hits) } };
   return v;

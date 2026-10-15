@@ -39,6 +39,22 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     expect(buildView(root, batches[0].resource.attributes)).toMatchObject({ kind: "WORKFLOW", sessionId: "s1", workflow: "web-app" });
   });
 
+  it("infers a node's kind in the documented order when it doesn't say", () => {
+    const { batches } = httpTraceToBatches({
+      name: "agent",
+      children: [
+        { name: "update_address", input: { order: "1001" }, status: "ERROR", error: "500" }, // a bare leaf is a tool
+        { name: "plan", children: [{ name: "search" }] }, // a node with children is a chain
+        { name: "summarize", tokens: { prompt: 10, completion: 2 } }, // tokens alone mean an LLM call
+        { name: "toxicity", score: 0.1 }, // score alone means a guardrail
+        { name: "call_api", tool_name: "weather", model: "gpt-4o" }, // tool_name wins over model
+        { name: "step", kind: "AGENT" }, // an explicit kind always wins
+      ],
+    });
+    const kinds = Object.fromEntries(batches[0].spans.map((sp) => [sp.name, buildView(sp, []).kind]));
+    expect(kinds).toEqual({ agent: "WORKFLOW", update_address: "TOOL", plan: "CHAIN", search: "TOOL", summarize: "LLM", toxicity: "GUARDRAIL", call_api: "TOOL", step: "AGENT" });
+  });
+
   it("rejects a malformed trace with field details", () => {
     expect(() => httpTraceToBatches({ children: [{ name: 3 }] })).toThrow(HttpTraceError);
     try {
@@ -98,6 +114,19 @@ describe("Neatlogs HTTP trace API (POST /v1/trace)", () => {
     }
     // valid numbers are unaffected
     expect(httpTraceToBatches({ name: "a", passed: true, score: 0.9, model: "m", tokens: { prompt: 10, total: 15 } }).spans).toBe(1);
+  });
+
+  it("marks a guardrail that didn't pass as an error span", () => {
+    const { batches } = httpTraceToBatches({
+      name: "agent",
+      children: [
+        { name: "blocked", kind: "GUARDRAIL", passed: false, score: 0.97 },
+        { name: "allowed", kind: "GUARDRAIL", passed: true, score: 0.02 },
+        { name: "overridden", kind: "GUARDRAIL", passed: false, status: "OK" }, // an explicit status still wins
+      ],
+    });
+    const status = Object.fromEntries(batches[0].spans.map((sp) => [sp.name, sp.status.code]));
+    expect(status).toEqual({ agent: 1, blocked: 2, allowed: 1, overridden: 1 });
   });
 
   it("is served at /v1/trace and the run shows up", async () => {
@@ -252,6 +281,66 @@ describe("imports", () => {
       expect(refused.last_error).toMatch(/didn't accept the service-account token \(401\)/);
     } finally {
       delete process.env.NEATLOGS_CLOUD_API_KEY;
+      delete process.env.NEATLOGS_SERVICE_TOKEN;
+      cloud.close();
+    }
+  });
+
+  it("keeps importing the other Neatlogs Cloud traces when one of them fails", async () => {
+    const ids = [hex(16), hex(16), hex(16)];
+    let exportCalls = 0;
+    const cloud = http.createServer((req, res) => {
+      res.setHeader("content-type", "application/json");
+      if (req.headers.authorization !== "Bearer nlsa_test_token") {
+        res.statusCode = 401;
+        res.end("{}");
+        return;
+      }
+      if (req.url?.includes("/export")) exportCalls += 1;
+      const i = ids.findIndex((id) => req.url?.startsWith(`/api/v1/public/traces/${id}/export`));
+      if (i === 1) {
+        res.statusCode = 500; // one trace the cloud can't export right now
+        res.end('{"error":"boom"}');
+      } else if (i >= 0) {
+        const id = ids[i];
+        res.end(JSON.stringify({ success: true, data: { schemaVersion: 1, trace: { traceId: id, workflowName: "prod-agent", startedAt: "2026-10-09T10:00:00Z" }, spans: [{ traceId: id, spanId: hex(8), parentSpanId: null, spanName: "root", spanType: "workflow", startedAt: "2026-10-09T10:00:00Z", endedAt: "2026-10-09T10:00:01Z", durationMs: 1000, status: "OK" }] } }));
+      } else {
+        res.statusCode = 404;
+        res.end("{}");
+      }
+    });
+    const port = await freePort();
+    await new Promise<void>((r) => cloud.listen(port, "127.0.0.1", r));
+    t = await makeRoots({
+      noEngine: true,
+      config: (c) => {
+        c.cloud.apiBase = `http://127.0.0.1:${port}/api/v1/public`;
+        c.cloud.projectId = "proj_1";
+      },
+    });
+    try {
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_test_token";
+      const job = await t.roots.imports.start("neatlogs-cloud", { traceIds: ids.join(",") }, { limit: 3 }).done;
+      // was: state "failed", traces 1, failed 0, and the third trace never fetched
+      expect(job).toMatchObject({ state: "succeeded", traces: 2, failed: 1 });
+      expect(job.last_error).toContain(ids[1]);
+      expect(t.roots.store.getRun(ids[0])).toBeDefined();
+      expect(t.roots.store.getRun(ids[2])).toBeDefined();
+      // a token problem would fail every trace the same way, so it still stops at once
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_wrong";
+      const refused = await t.roots.imports.start("neatlogs-cloud", { traceIds: ids.join(",") }, { limit: 3 }).done;
+      expect(refused).toMatchObject({ state: "failed", traces: 0 });
+      expect(refused.last_error).toMatch(/\(401\)/);
+      // a cloud that fails every export is down, not one bad trace: stop after 3 in a row
+      // instead of waiting out each trace's timeout
+      process.env.NEATLOGS_SERVICE_TOKEN = "nlsa_test_token";
+      const unknown = Array.from({ length: 10 }, () => hex(16)); // the fake cloud answers 404 for each
+      exportCalls = 0;
+      const down = await t.roots.imports.start("neatlogs-cloud", { traceIds: unknown.join(",") }, { limit: 10 }).done;
+      expect(down).toMatchObject({ state: "failed", traces: 0, failed: 3 });
+      expect(down.last_error).toMatch(/3 traces in a row failed/);
+      expect(exportCalls).toBe(3); // the other 7 were never requested
+    } finally {
       delete process.env.NEATLOGS_SERVICE_TOKEN;
       cloud.close();
     }

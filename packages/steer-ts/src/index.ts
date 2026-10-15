@@ -55,6 +55,8 @@ interface State {
   mode: string;
   modeCheckedAt: number;
   downUntil: number;
+  /** Requests in a row that timed out: neatroots is busy, not stopped, until there are a few. */
+  timeouts: number;
 }
 
 const state: State = {
@@ -63,6 +65,7 @@ const state: State = {
   mode: "unknown",
   modeCheckedAt: 0,
   downUntil: 0,
+  timeouts: 0,
 };
 
 /**
@@ -79,6 +82,7 @@ export function configure(opts: { url?: string; disabled?: boolean; traceId?: ()
   state.mode = "unknown";
   state.modeCheckedAt = 0;
   state.downUntil = 0;
+  state.timeouts = 0;
 }
 
 const DEBUG = typeof process !== "undefined" && !!process.env.NEATROOTS_STEER_DEBUG;
@@ -86,6 +90,9 @@ const DEBUG = typeof process !== "undefined" && !!process.env.NEATROOTS_STEER_DE
 function debug(...args: unknown[]): void {
   if (DEBUG) console.error("[neatroots-steer]", ...args);
 }
+
+/** Timed-out requests in a row before the hook backs off as if neatroots were stopped. */
+const SLOW_REPLIES_BEFORE_BACKOFF = 3;
 
 async function post<T>(path: string, body: unknown, timeoutMs: number): Promise<T | undefined> {
   if (state.disabled || Date.now() < state.downUntil) {
@@ -104,11 +111,16 @@ async function post<T>(path: string, body: unknown, timeoutMs: number): Promise<
       return undefined;
     }
     const out = (await res.json()) as T;
+    state.timeouts = 0;
     debug(path, JSON.stringify(body), "->", JSON.stringify(out));
     return out;
   } catch (err) {
     debug(path, "failed:", (err as Error).message);
-    // A stopped neatroots costs nothing per call for a while.
+    // A slow answer means neatroots is busy, not stopped: ask again on the next call, so a halt
+    // isn't held back. Only a few timeouts in a row, or a neatroots that can't be reached, back
+    // off, so a stopped (or stuck) neatroots costs nothing per call for a while.
+    if ((err as Error).name === "TimeoutError" && ++state.timeouts < SLOW_REPLIES_BEFORE_BACKOFF) return undefined;
+    state.timeouts = 0;
     state.downUntil = Date.now() + 5000;
     return undefined;
   }

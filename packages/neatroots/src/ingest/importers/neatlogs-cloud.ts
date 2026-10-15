@@ -178,6 +178,9 @@ export async function fetchCloudTrace(base: string, auth: CloudAuth, traceId: st
   return { nodes, workflow: trace.workflowName || trace.traceName || "neatlogs-cloud" };
 }
 
+/** An import stops when this many traces in a row fail to download: the cloud is down, not one trace. */
+const CLOUD_FAILURES_IN_A_ROW = 3;
+
 export const NO_CLOUD_TOKEN = "importing from Neatlogs Cloud needs a service-account token (nlsa_…): add it in Settings → Neatlogs Cloud, or run neatroots cloud token";
 
 /** Built by the import runner with the stored service-account token, project and API base. */
@@ -201,9 +204,24 @@ export function neatlogsCloudSource(base: () => string, auth: () => Promise<Clou
         } while (cursor && ids.length < o.limit);
         ids = ids.slice(0, o.limit);
       }
+      let failedInARow = 0;
       for (const id of ids) {
-        const { nodes, workflow } = await fetchCloudTrace(b, k, id, o.signal);
-        yield { sourceId: id, batches: toBatches(nodes, { project: o.project || workflow, source: "neatlogs-cloud" }) };
+        let read: { nodes: SpanNode[]; workflow: string };
+        try {
+          read = await fetchCloudTrace(b, k, id, o.signal);
+          failedInARow = 0;
+        } catch (err) {
+          // One trace that won't download shouldn't stop the rest. A cancel, or a token or
+          // permission problem (which would fail every trace the same way), still ends the import,
+          // and so do a few failures in a row: then the cloud itself is down, and waiting out each
+          // trace's timeout would keep the import running for hours.
+          const message = (err as Error).message;
+          if (o.signal.aborted || /\((401|403)\)/.test(message)) throw err;
+          yield { sourceId: id, batches: [], error: message };
+          if (++failedInARow >= CLOUD_FAILURES_IN_A_ROW) throw new ImportError(`stopped after ${failedInARow} traces in a row failed to download; the last: ${message}`);
+          continue;
+        }
+        yield { sourceId: id, batches: toBatches(read.nodes, { project: o.project || read.workflow, source: "neatlogs-cloud" }) };
       }
     },
   };
