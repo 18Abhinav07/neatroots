@@ -116,6 +116,19 @@
     The model calls in this run grew from {first} to {last} tokens over {count} calls. Context is piling
     up. Summarize or drop old messages before it hits the limit.
 
+- id: tool-cycle
+  kind: rule
+  group: loop
+  title: Two or more tools are going around in a circle
+  rule:
+    type: cycle
+    span: { type: [tool, mcp_tool] }
+    max_period: 3
+    min_cycles: 4
+  guidance: >-
+    The last calls repeat {pattern} {count} times and keep returning the same results, even if the
+    inputs differ. This is not making progress. Stop, change the approach or ask the user.
+
 - id: run-failed
   kind: rule
   group: ending
