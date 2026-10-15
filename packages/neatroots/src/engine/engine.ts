@@ -53,6 +53,12 @@ const TRIAGE_LEVELS = [
 /** With the LLM standing in for a classifier, a span-scope question is asked about at most this many spans per run. */
 const SLOW_SPAN_CHECKS_PER_RUN = 4;
 
+/**
+ * How long a live requires_before rule waits for a late prerequisite span (another exporter's
+ * batch) before it raises. Shorter than the 300 ms gate wait, so a halt still reaches the next call.
+ */
+const RULE_GRACE_MS = 250;
+
 /** Triage at or above this expected level gets an LLM investigation. */
 const INVESTIGATE_AT = 2.5;
 
@@ -75,6 +81,8 @@ interface LiveRun {
   dirty: Set<string>;
   debounce?: NodeJS.Timeout;
   endTimer?: NodeJS.Timeout;
+  /** Rules waiting out RULE_GRACE_MS before raising: false while waiting, true once it is up. */
+  ruleGrace: Map<string, boolean>;
   ended: boolean;
   endHandled: boolean;
   doctor: boolean;
@@ -213,6 +221,7 @@ export class Engine {
       rejected: new Map(),
       traceEvidence: new Map(),
       dirty: new Set(),
+      ruleGrace: new Map(),
       ended: false,
       endHandled: false,
       doctor: row.doctor === 1,
@@ -357,6 +366,8 @@ export class Engine {
         continue;
       }
       const open = this.roots.store.openFindingFor(run.traceId, rule.id);
+      if (!hit?.firing) run.ruleGrace.delete(rule.id);
+      else if (!open && !atEnd && rule.rule.type === "requires_before" && this.waitForLateSpans(run, rule.id)) continue;
       if (hit?.firing) {
         if (open) {
           const changed = JSON.stringify(open.evidence_span_ids) !== JSON.stringify(hit.evidenceSpanIds);
@@ -386,6 +397,29 @@ export class Engine {
         this.resolve(open);
       }
     }
+  }
+
+  /**
+   * True while a rule should hold off raising. The first time it would raise, starts a short
+   * wait (tracked, so gate-mode claims wait for it) and checks the rules again afterwards.
+   */
+  private waitForLateSpans(run: LiveRun, ruleId: string): boolean {
+    const due = run.ruleGrace.get(ruleId);
+    if (due) {
+      run.ruleGrace.delete(ruleId);
+      return false;
+    }
+    if (due === undefined) {
+      run.ruleGrace.set(ruleId, false);
+      const recheck = new Promise((r) => setTimeout(r, RULE_GRACE_MS)).then(() => {
+        if (!run.ruleGrace.has(ruleId)) return;
+        run.ruleGrace.set(ruleId, true);
+        // At run end the rules are applied without waiting, so there is nothing left to do.
+        if (!run.endHandled) this.applyRules(run, loadTrace(this.roots.store, run.traceId), false);
+      });
+      void this.track(run.traceId, recheck);
+    }
+    return true;
   }
 
   private resolve(f: Finding): void {
