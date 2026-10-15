@@ -127,6 +127,7 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
       const hits = selectSpans(t.spans, r.span).filter((s) => {
         const v = r.field === "input" ? s.input : r.field === "output" ? s.output : r.field === "error" ? s.error : s.name;
         if (v === undefined || v === null) return false;
+        re.lastIndex = 0;
         return re.test(typeof v === "string" ? v : JSON.stringify(v));
       });
       if (!hits.length) return null;
