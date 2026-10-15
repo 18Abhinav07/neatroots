@@ -12,7 +12,7 @@ export function useRuns(p: RunListParams) {
       if (p.hasFinding) q.set("has_finding", "1");
       if (p.project) q.set("project", p.project);
       if (p.check) q.set("check", p.check);
-      return api<{ runs: Run[]; total: number }>(`/api/runs?${q}`);
+      return api<{ runs: Run[]; total: number; matching?: number }>(`/api/runs?${q}`);
     },
     placeholderData: keepPreviousData,
   });

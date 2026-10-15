@@ -655,7 +655,8 @@ export class Store {
     return this.db.prepare("SELECT * FROM runs WHERE trace_id = ?").get(traceId) as RunRow | undefined;
   }
 
-  listRuns(f: RunFilter = {}): RunRow[] {
+  /** The WHERE clauses and parameters for a run filter, shared by listing and counting. */
+  private runFilter(f: RunFilter): { where: string[]; p: Record<string, unknown> } {
     const where: string[] = [];
     const p: Record<string, unknown> = {};
     if (!f.includeDoctor) where.push("doctor = 0");
@@ -702,11 +703,22 @@ export class Store {
       if (indexed) p.match = match;
       p.like = like;
     }
+    return { where, p };
+  }
+
+  listRuns(f: RunFilter = {}): RunRow[] {
+    const { where, p } = this.runFilter(f);
     const sql = `SELECT * FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY COALESCE(started_ms, received_ms) DESC LIMIT @limit OFFSET @offset`;
     p.limit = Number.isFinite(f.limit) ? Math.min(Math.max(Math.trunc(f.limit as number), 1), 500) : 50;
     p.offset = Number.isFinite(f.offset) ? Math.max(Math.trunc(f.offset as number), 0) : 0;
     return this.db.prepare(sql).all(p) as RunRow[];
+  }
+
+  /** How many runs a filter matches, whatever the page size. */
+  countMatchingRuns(f: RunFilter = {}): number {
+    const { where, p } = this.runFilter(f);
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""}`).get(p) as { n: number }).n;
   }
 
   countRuns(): number {
