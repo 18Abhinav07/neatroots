@@ -10,13 +10,22 @@ export interface RuleHit {
   title?: string;
 }
 
+/** Object member order is not a change in arguments or results; array order still is. */
+function jsonKey(value: unknown): string {
+  return JSON.stringify(value ?? null, (_key, entry: unknown) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+    const object = entry as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(object).sort().map((key) => [key, object[key]]));
+  });
+}
+
 function keyOf(s: SpanInfo, fields: string[]): string {
   return fields
     .map((f) => {
       if (f === "tool") return s.toolName ?? s.name;
       if (f === "name") return s.name;
-      if (f === "input") return JSON.stringify(s.input ?? null);
-      if (f === "output") return JSON.stringify(s.output ?? null);
+      if (f === "input") return jsonKey(s.input);
+      if (f === "output") return jsonKey(s.output);
       if (f === "status") return s.status;
       return "";
     })
