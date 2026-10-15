@@ -12,6 +12,8 @@
  *   const model = wrapLanguageModel({ model: openai("gpt-4o"), middleware: rootsMiddleware() });
  */
 
+import { SteeredRequest } from "./request.js";
+
 export const GUIDANCE_OPEN = "<neatroots-guidance>";
 export const GUIDANCE_CLOSE = "</neatroots-guidance>";
 
@@ -330,17 +332,21 @@ function wrapMethod(
   if (!owner) return;
   const original = owner[name] as ((...a: unknown[]) => unknown) & { __neatroots?: boolean };
   if (typeof original !== "function" || original.__neatroots) return;
-  const wrapped = async function (this: unknown, ...args: unknown[]) {
-    const o = replayOverrides();
-    const params = o.model || o.system ? override((args[0] ?? {}) as Record<string, unknown>, o) : ((args[0] ?? {}) as Record<string, unknown>);
-    let next = params;
-    try {
-      const note = await guidance();
-      if (note) next = transform({ ...params }, note);
-    } catch (err) {
-      if (err instanceof NeatrootsHalt) throw err;
-    }
-    return original.apply(owner, [next, ...args.slice(1)]);
+  const wrapped = function (this: unknown, ...args: unknown[]) {
+    const request = (async () => {
+      const o = replayOverrides();
+      const params = o.model || o.system ? override((args[0] ?? {}) as Record<string, unknown>, o) : ((args[0] ?? {}) as Record<string, unknown>);
+      let next = params;
+      try {
+        const note = await guidance();
+        if (note) next = transform({ ...params }, note);
+      } catch (err) {
+        if (err instanceof NeatrootsHalt) throw err;
+      }
+      // Box the SDK promise so awaiting guidance does not parse the provider response.
+      return { value: original.apply(owner, [next, ...args.slice(1)]) };
+    })();
+    return new SteeredRequest(request);
   } as typeof original;
   wrapped.__neatroots = true;
   owner[name] = wrapped;
