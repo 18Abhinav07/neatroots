@@ -70,6 +70,52 @@ describe("server", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("retries only the completion marker, never re-sending a run whose spans were accepted", async () => {
+    // How the sink answers each marker request: a status code, or "drop" to cut the connection.
+    const cases: { name: string; marker: (number | "drop")[]; sent: boolean; markerTries: number }[] = [
+      { name: "a 503 that clears", marker: [503, 200], sent: true, markerTries: 2 },
+      { name: "a 503 that stays", marker: [503, 503, 503], sent: false, markerTries: 3 },
+      { name: "a dropped connection", marker: ["drop", "drop", "drop"], sent: false, markerTries: 3 },
+      { name: "a 400 (not retried)", marker: [400], sent: false, markerTries: 1 },
+    ];
+    for (const c of cases) {
+      const requests: ("spans" | "marker")[] = [];
+      const sink = http.createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (b) => chunks.push(b));
+        req.on("end", () => {
+          const names = decodeTraceProtobuf(zlib.gunzipSync(Buffer.concat(chunks))).flatMap((b) => b.spans.map((x) => x.name));
+          const kind = names.every((n) => n === "neatlogs.trace.complete") ? "marker" : "spans";
+          requests.push(kind);
+          const answer = kind === "spans" ? 200 : (c.marker[requests.filter((r) => r === "marker").length - 1] ?? 200);
+          if (answer === "drop") req.socket.destroy();
+          else {
+            res.statusCode = answer;
+            res.end();
+          }
+        });
+      });
+      await new Promise<void>((r) => sink.listen(0, "127.0.0.1", r));
+      const tb = await served();
+      tb.roots.config.cloud.endpoint = `http://127.0.0.1:${(sink.address() as { port: number }).port}`;
+      process.env.NEATLOGS_CLOUD_API_KEY = "nl-test-key"; // never the Keychain
+      try {
+        const { t, batches } = sampleRun();
+        tb.roots.ingest(batches);
+        const row = await tb.roots.relay.forward([t], "auto");
+        expect(row.status, c.name).toBe("ok"); // was "error" whenever the marker failed
+        expect(row.error, c.name).toEqual(c.sent ? null : expect.stringMatching(/completion marker failed/));
+        expect(requests.filter((r) => r === "marker"), c.name).toHaveLength(c.markerTries);
+        // auto-forward (when the run's completion arrives) doesn't send the spans again
+        await (tb.roots.relay as unknown as { autoForward(id: string): Promise<void> }).autoForward(t);
+        expect(requests.filter((r) => r === "spans"), c.name).toHaveLength(1); // was 2: the whole run again
+      } finally {
+        delete process.env.NEATLOGS_CLOUD_API_KEY;
+        sink.close();
+      }
+    }
+  }, 30_000);
+
   it("forwards runs to an OTLP endpoint losslessly, redacted, with a completion marker and findings", async () => {
     const source = await served();
     const sink = await served();
