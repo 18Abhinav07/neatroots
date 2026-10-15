@@ -25,6 +25,10 @@ export interface ForwardPreview {
  * without loss, redacted first, closed with the public neatlogs.trace.complete marker, and
  * carry neatroots findings as neatroots.* attributes.
  */
+/** How many times a completion marker is tried, and the first backoff (doubling) between tries. */
+const MARKER_ATTEMPTS = 3;
+const MARKER_BACKOFF_MS = 500;
+
 export class Relay {
   constructor(private readonly roots: Roots) {
     roots.bus.on("trace", (u) => {
@@ -178,6 +182,10 @@ export class Relay {
     const endpoint = (opts.endpoint ?? this.endpoint()).replace(/\/+$/, "");
     const key = opts.apiKey ?? (await getCloudKey());
     const base = { trace_ids: traceIds, endpoint, initiated_by: initiatedBy };
+    const unknown = traceIds.filter((id) => !this.roots.store.getRun(id));
+    if (unknown.length) {
+      return this.roots.store.insertForward({ ...base, status: "error", http_status: null, span_count: 0, bytes: 0, redactions: 0, error: `no run with id ${unknown.join(", ")}` });
+    }
     if (!key) {
       return this.roots.store.insertForward({ ...base, status: "error", http_status: null, span_count: 0, bytes: 0, redactions: 0, error: "No Neatlogs Cloud API key. Add one with `neatroots cloud login` or in the app." });
     }
@@ -198,6 +206,11 @@ export class Relay {
       return { res, bytes: gz.length };
     };
     let bytes = 0;
+    // Set once the run's spans are accepted: from then on the run is in the cloud, and a failed
+    // completion marker mustn't make it look unsent (auto-forward would send it all again).
+    let accepted: number | null = null;
+    const sentWithoutMarker = (why: string) =>
+      this.roots.store.insertForward({ ...base, status: "ok", http_status: accepted, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: `sent, but the completion marker failed: ${why}` });
     try {
       const a = await send(enc.main);
       bytes += a.bytes;
@@ -205,15 +218,33 @@ export class Relay {
         const text = (await a.res.text().catch(() => "")).slice(0, 300);
         return this.roots.store.insertForward({ ...base, status: "error", http_status: a.res.status, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: `ingest returned HTTP ${a.res.status}${text ? `: ${text}` : ""}` });
       }
+      accepted = a.res.status;
       if (enc.markers) {
-        const b = await send(enc.markers);
-        bytes += b.bytes;
-        if (!b.res.ok) {
-          return this.roots.store.insertForward({ ...base, status: "error", http_status: b.res.status, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: `completion marker rejected: HTTP ${b.res.status}` });
+        // Like the SDK's OTLP exporter: a 408, a 5xx or a connection error is retried with backoff,
+        // a few times, then given up on. A timeout isn't retried (the request may have landed), and
+        // the spans are never sent again.
+        let why = "";
+        for (let attempt = 0; attempt < MARKER_ATTEMPTS; attempt++) {
+          if (attempt) await new Promise((r) => setTimeout(r, MARKER_BACKOFF_MS * 2 ** (attempt - 1)));
+          try {
+            const b = await send(enc.markers);
+            bytes += b.bytes;
+            if (b.res.ok) {
+              why = "";
+              break;
+            }
+            why = `HTTP ${b.res.status}`;
+            if (b.res.status !== 408 && b.res.status < 500) break;
+          } catch (err) {
+            why = (err as Error).message;
+            if ((err as Error).name === "TimeoutError") break;
+          }
         }
+        if (why) return sentWithoutMarker(why);
       }
       return this.roots.store.insertForward({ ...base, status: "ok", http_status: a.res.status, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: null });
     } catch (err) {
+      if (accepted !== null) return sentWithoutMarker((err as Error).message);
       return this.roots.store.insertForward({ ...base, status: "error", http_status: null, span_count: enc.spanCount, bytes, redactions: enc.redactions, error: (err as Error).message });
     }
   }
