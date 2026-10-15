@@ -70,6 +70,52 @@ describe("server", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("retries only the completion marker, never re-sending a run whose spans were accepted", async () => {
+    // How the sink answers each marker request: a status code, or "drop" to cut the connection.
+    const cases: { name: string; marker: (number | "drop")[]; sent: boolean; markerTries: number }[] = [
+      { name: "a 503 that clears", marker: [503, 200], sent: true, markerTries: 2 },
+      { name: "a 503 that stays", marker: [503, 503, 503], sent: false, markerTries: 3 },
+      { name: "a dropped connection", marker: ["drop", "drop", "drop"], sent: false, markerTries: 3 },
+      { name: "a 400 (not retried)", marker: [400], sent: false, markerTries: 1 },
+    ];
+    for (const c of cases) {
+      const requests: ("spans" | "marker")[] = [];
+      const sink = http.createServer((req, res) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (b) => chunks.push(b));
+        req.on("end", () => {
+          const names = decodeTraceProtobuf(zlib.gunzipSync(Buffer.concat(chunks))).flatMap((b) => b.spans.map((x) => x.name));
+          const kind = names.every((n) => n === "neatlogs.trace.complete") ? "marker" : "spans";
+          requests.push(kind);
+          const answer = kind === "spans" ? 200 : (c.marker[requests.filter((r) => r === "marker").length - 1] ?? 200);
+          if (answer === "drop") req.socket.destroy();
+          else {
+            res.statusCode = answer;
+            res.end();
+          }
+        });
+      });
+      await new Promise<void>((r) => sink.listen(0, "127.0.0.1", r));
+      const tb = await served();
+      tb.roots.config.cloud.endpoint = `http://127.0.0.1:${(sink.address() as { port: number }).port}`;
+      process.env.NEATLOGS_CLOUD_API_KEY = "nl-test-key"; // never the Keychain
+      try {
+        const { t, batches } = sampleRun();
+        tb.roots.ingest(batches);
+        const row = await tb.roots.relay.forward([t], "auto");
+        expect(row.status, c.name).toBe("ok"); // was "error" whenever the marker failed
+        expect(row.error, c.name).toEqual(c.sent ? null : expect.stringMatching(/completion marker failed/));
+        expect(requests.filter((r) => r === "marker"), c.name).toHaveLength(c.markerTries);
+        // auto-forward (when the run's completion arrives) doesn't send the spans again
+        await (tb.roots.relay as unknown as { autoForward(id: string): Promise<void> }).autoForward(t);
+        expect(requests.filter((r) => r === "spans"), c.name).toHaveLength(1); // was 2: the whole run again
+      } finally {
+        delete process.env.NEATLOGS_CLOUD_API_KEY;
+        sink.close();
+      }
+    }
+  }, 30_000);
+
   it("forwards runs to an OTLP endpoint losslessly, redacted, with a completion marker and findings", async () => {
     const source = await served();
     const sink = await served();
@@ -131,10 +177,46 @@ describe("server", () => {
     await client.close();
   });
 
+  it("says how many runs match the filters, next to the total", async () => {
+    const tb = await served();
+    const ids = [hex(16), hex(16), hex(16)];
+    ids.forEach((t, i) => tb.roots.ingest([batch([span({ traceId: t, spanId: hex(8), name: "agent", kind: "workflow", status: i === 0 ? 2 : 1 })])]));
+    tb.roots.store.insertFinding({ trace_id: ids[0], check_id: "c", check_kind: "rule", title: "F", probability: null, status: "raised", evidence_span_ids: [], detail: {}, model: null, triage_score: null, explanation_id: null });
+    const origin = { origin: tb.url.replace("127.0.0.1", "localhost") };
+    const get = async (q: string) => (await (await fetch(`${tb.url}/api/runs?${q}`, { headers: origin })).json()) as { runs: unknown[]; total: number; matching: number };
+    expect(await get("")).toMatchObject({ total: 3, matching: 3 });
+    expect(await get("has_finding=1")).toMatchObject({ total: 3, matching: 1 });
+    expect(await get("status=error")).toMatchObject({ total: 3, matching: 1 });
+    // matching counts every match, not just the page; there was no such count, so with more matches
+    // than the page holds (it asks for 150) the runs page read "150 matching" however many matched
+    const page = await get("limit=2");
+    expect(page.runs).toHaveLength(2);
+    expect(page).toMatchObject({ total: 3, matching: 3 });
+  });
+
   it("answers steering claims for unknown runs with mode unknown", async () => {
     const tb = await served();
     const r = await fetch(`${tb.url}/api/steer/claim`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ trace_id: hex(16) }) });
     expect(await r.json()).toEqual({ mode: "unknown", known: false, note: null });
+  });
+
+  it("refuses retention values it can't use instead of answering ok and ignoring them", async () => {
+    const tb = await served();
+    const headers = { "content-type": "application/json", origin: tb.url.replace("127.0.0.1", "localhost") };
+    const save = (b: unknown) => fetch(`${tb.url}/api/settings`, { method: "POST", headers, body: JSON.stringify(b) });
+    const before = { ...tb.roots.config.retention };
+    // 0 is what the Settings page sends for an empty box (Number("") === 0)
+    for (const bad of [{ retention_days: 0 }, { retention_days: 5000 }, { retention_days: "30" }, { retention_days: null }, { retention_max_gb: 0 }, { retention_max_gb: -1 }, { retention_max_gb: 20_000 }, { retention_max_gb: "2" }]) {
+      const r = await save(bad);
+      expect(r.status, JSON.stringify(bad)).toBe(400); // was 200 {"ok":true} with nothing saved
+      expect(((await r.json()) as { error: string }).error).toMatch(/^(Keep runs for|Size cap) must be/);
+    }
+    // nothing in a refused request is applied, not even the valid parts
+    expect((await save({ retention_days: 30, retention_max_gb: 0 })).status).toBe(400);
+    expect(tb.roots.config.retention).toEqual(before);
+    // valid values still save
+    expect((await save({ retention_days: 30, retention_max_gb: 2.5 })).status).toBe(200);
+    expect(tb.roots.config.retention).toEqual({ days: 30, maxGb: 2.5 });
   });
 
   it("clamps the findings list limit instead of failing on a bad value", async () => {

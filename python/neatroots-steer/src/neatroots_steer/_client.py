@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import threading
 import time
 import urllib.error
@@ -16,6 +17,9 @@ from typing import Any, Dict, Optional, Set
 from urllib.parse import urlparse
 
 logger = logging.getLogger("neatroots_steer")
+
+# Timed-out requests in a row before the hook backs off as if neatroots were stopped.
+_SLOW_REPLIES_BEFORE_BACKOFF = 3
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
 
@@ -56,6 +60,7 @@ class RootsClient:
         self._pending: Set[str] = set()
         self._sse_connected = False
         self._down_until = 0.0
+        self._timeouts = 0
         self._lock = threading.Lock()
         self._listener: Optional[threading.Thread] = None
         if listen and not self.disabled:
@@ -72,13 +77,23 @@ class RootsClient:
         )
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8") or "{}")
+                out = json.loads(resp.read().decode("utf-8") or "{}")
+            self._timeouts = 0
+            return out
         except urllib.error.HTTPError as exc:
             logger.debug("neatroots %s -> HTTP %s", path, exc.code)
             return None
         except Exception as exc:  # noqa: BLE001 - never break the agent
             logger.debug("neatroots unreachable at %s: %s", self.url, exc)
-            # Back off so a stopped neatroots costs nothing per LLM call.
+            # A slow answer means neatroots is busy, not stopped: ask again on the next call, so a
+            # halt isn't held back. Only a few timeouts in a row, or a neatroots that can't be
+            # reached, back off, so a stopped (or stuck) neatroots costs nothing per LLM call.
+            timed_out = isinstance(exc, socket.timeout) or isinstance(getattr(exc, "reason", None), socket.timeout)
+            if timed_out:
+                self._timeouts += 1
+                if self._timeouts < _SLOW_REPLIES_BEFORE_BACKOFF:
+                    return None
+            self._timeouts = 0
             self._down_until = time.monotonic() + 5.0
             return None
 

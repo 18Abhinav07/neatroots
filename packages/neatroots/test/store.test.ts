@@ -76,6 +76,29 @@ describe("store", () => {
     for (const marker of ["QA_AT_1K", "QA_AT_10K", "QA_AT_25K", "QA_TAIL"]) expect(st.searchSpans(marker).map((h) => h.trace_id)).toEqual([t]);
   });
 
+  it("lists every run whose spans match a search, newest first, not just the best-ranked 500 spans", () => {
+    const st = store();
+    const ids: string[] = [];
+    // 300 older runs mention the error a lot (they rank high); each has 2 matching spans
+    for (let i = 0; i < 300; i++) {
+      const t = hex(16);
+      const root = hex(8);
+      ids.push(t);
+      st.ingest([batch([span({ traceId: t, spanId: root, name: "agent", kind: "workflow" }), toolSpan(t, root, "db", '{"q":"a"}', "ECONNRESET ECONNRESET retry"), toolSpan(t, root, "db", '{"q":"b"}', "ECONNRESET again")])]);
+      st.db.prepare("UPDATE runs SET started_ms = ?, received_ms = ? WHERE trace_id = ?").run(1_000 + i, 1_000 + i, t);
+    }
+    // the newest run mentions it once, deep in a long output (it ranks low)
+    const newest = hex(16);
+    const root = hex(8);
+    st.ingest([batch([span({ traceId: newest, spanId: root, name: "agent", kind: "workflow" }), toolSpan(newest, root, "db", '{"q":"c"}', `${"unrelated words ".repeat(300)} ECONNRESET`)])]);
+    st.db.prepare("UPDATE runs SET started_ms = ?, received_ms = ? WHERE trace_id = ?").run(999_999, 999_999, newest);
+    const first = st.listRuns({ text: "ECONNRESET", limit: 150 });
+    expect(first[0]?.trace_id).toBe(newest); // was missing: only the best-ranked 500 spans were considered
+    const all = [...first, ...st.listRuns({ text: "ECONNRESET", limit: 150, offset: 150 }), ...st.listRuns({ text: "ECONNRESET", limit: 150, offset: 300 })];
+    expect(new Set(all.map((r) => r.trace_id)).size).toBe(301); // was 250 (500 spans, 2 per run)
+    expect(st.listRuns({ text: "no-such-word-here" })).toEqual([]);
+  });
+
   it("re-indexes spans that were stored with the old 4,000-character index", async () => {
     const st = store();
     const t = hex(16);
@@ -99,6 +122,78 @@ describe("store", () => {
     // a normal positive retention still prunes old runs
     expect(st.sweep(14, 5 * 1024 ** 3)).toBe(4);
     expect(st.listRuns({ limit: 500 }).length).toBe(0);
+  });
+
+  it("trims to the size cap by removing the oldest runs, not every run", () => {
+    // Bytes of data the store holds, measured independently of the code under test: the search
+    // index is compacted first (deleted rows leave markers until then), then database pages in use
+    // plus every blob file on disk.
+    const held = (st: Store, home: string) => {
+      st.db.prepare("INSERT INTO span_fts(span_fts) VALUES('optimize')").run();
+      const pages = (st.db.pragma("page_count", { simple: true }) as number) - (st.db.pragma("freelist_count", { simple: true }) as number);
+      const blobDir = path.join(home, "data", "blobs");
+      const files = fs.existsSync(blobDir) ? fs.readdirSync(blobDir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()) : [];
+      return pages * (st.db.pragma("page_size", { simple: true }) as number) + files.reduce((n, e) => n + fs.statSync(path.join(e.parentPath, e.name)).size, 0);
+    };
+    let seed = 1;
+    const word = () => ((seed = (seed * 48271) % 2147483647) % 1e9).toString(36);
+    const words = (n: number) => Array.from({ length: n }, word).join(" ");
+    const shared = words(6000); // over the blob threshold, and the same in every run (e.g. a big system prompt)
+    const payloads: Record<string, (i: number) => ReturnType<typeof s>[]> = {
+      "repeated text": () => [s("input.value", "lorem ipsum ".repeat(400))],
+      "unique words": () => [s("input.value", words(1500))], // full-text index keeps deleted markers until compacted
+      "big values stored as blobs": () => [s("input.value", words(6000))],
+      "a blob shared by every run": () => [s("system.prompt", shared), s("input.value", words(300))],
+    };
+    for (const [label, attrs] of Object.entries(payloads)) {
+      const h = tmpHome();
+      homes.push(h);
+      const st = new Store(path.join(h, "data"));
+      const ids: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        const t = hex(16);
+        ids.push(t);
+        st.ingest([batch([span({ traceId: t, spanId: hex(8), name: `r${i}`, kind: "workflow", attrs: attrs(i) })])]);
+        st.db.prepare("UPDATE runs SET received_ms = ?, ended_ms = ? WHERE trace_id = ?").run(1_000 + i, 1_000 + i, t);
+      }
+      st.setPinned(ids[0], true); // the oldest run, but pinned
+      const cap = Math.floor(held(st, h) * 0.6);
+      let compactions = 0;
+      const orig = st.db.prepare.bind(st.db);
+      st.db.prepare = ((sql: string) => {
+        if (sql.includes("'optimize'")) compactions++;
+        return orig(sql);
+      }) as typeof st.db.prepare;
+      const removed = st.sweep(999_999, cap);
+      st.db.prepare = orig;
+      // was: every unpinned run deleted (59 of 59), because the measured size never dropped
+      expect(removed, label).toBeGreaterThan(0);
+      expect(removed, label).toBeLessThan(50);
+      expect(compactions, label).toBeLessThanOrEqual(1); // the search index is rewritten at most once a sweep
+      const after = held(st, h);
+      expect(after, label).toBeLessThanOrEqual(cap);
+      expect(after, label).toBeLessThan(cap * 0.97); // trimmed toward the low-water mark, not just under the cap
+      expect(st.getRun(ids[0]), label).toBeDefined(); // pinned survives
+      expect(st.getRun(ids[59]), label).toBeDefined(); // newest survives
+      for (const t of ids.slice(1, 1 + removed)) expect(st.getRun(t), label).toBeUndefined(); // exactly the oldest went
+      for (const t of ids.slice(1 + removed)) expect(st.getRun(t), label).toBeDefined();
+      expect(st.sweep(999_999, cap), label).toBe(0); // the next sweep has nothing to do
+      st.close();
+    }
+  });
+
+  it("doesn't compact or trim a store that is under its cap", () => {
+    const st = store();
+    for (let i = 0; i < 10; i++) st.ingest([batch([span({ traceId: hex(16), spanId: hex(8), name: `r${i}`, kind: "workflow", attrs: [s("input.value", "hello ".repeat(200))] })])]);
+    let compactions = 0;
+    const orig = st.db.prepare.bind(st.db);
+    st.db.prepare = ((sql: string) => {
+      if (sql.includes("'optimize'")) compactions++;
+      return orig(sql);
+    }) as typeof st.db.prepare;
+    expect(st.sweep(14, 5 * 1024 ** 3)).toBe(0);
+    st.db.prepare = orig;
+    expect(compactions).toBe(0);
   });
 
   it("clamps bad limit/offset values instead of crashing or ignoring them", () => {

@@ -53,7 +53,7 @@ test.describe("runs list beyond one page", () => {
     const project = `e2e-many-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     await sendRuns(project, 155);
     await open(page, `runs?project=${project}`);
-    await expect(page.getByText(/^150 matching of \d+ runs$/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^155 matching of \d+ runs, newest 150 shown$/)).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "Load more runs" }).click();
     await expect(page.getByText(/^155 matching of \d+ runs$/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Load more runs" })).toBeHidden();

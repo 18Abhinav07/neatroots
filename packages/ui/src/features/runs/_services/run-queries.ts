@@ -16,14 +16,14 @@ export function useRuns(p: RunListParams) {
       if (p.hasFinding) q.set("has_finding", "1");
       if (p.project) q.set("project", p.project);
       if (p.check) q.set("check", p.check);
-      return api<{ runs: Run[]; total: number }>(`/api/runs?${q}`);
+      return api<{ runs: Run[]; total: number; matching?: number }>(`/api/runs?${q}`);
     },
     getNextPageParam: (last, pages) => (last.runs.length < RUNS_PAGE ? undefined : pages.length * RUNS_PAGE),
     placeholderData: keepPreviousData,
   });
   const pages = query.data?.pages;
   return {
-    data: pages ? { runs: pages.flatMap((pg) => pg.runs), total: pages[0]?.total ?? 0 } : undefined,
+    data: pages ? { runs: pages.flatMap((pg) => pg.runs), total: pages[0]?.total ?? 0, matching: pages[0]?.matching } : undefined,
     isLoading: query.isLoading,
     hasMore: !!query.hasNextPage,
     loadMore: () => void query.fetchNextPage(),

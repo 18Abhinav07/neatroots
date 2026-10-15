@@ -159,7 +159,7 @@ export function mountApi(app: Hono, roots: Roots): void {
 
   app.get("/api/runs", (c) => {
     const q = c.req.query();
-    const runs = roots.store.listRuns({
+    const filter = {
       project: q.project || undefined,
       workflow: q.workflow || undefined,
       status: q.status || undefined,
@@ -168,10 +168,10 @@ export function mountApi(app: Hono, roots: Roots): void {
       checkId: q.check || undefined,
       text: q.q || undefined,
       sinceMs: q.since ? Number(q.since) : undefined,
-      limit: clampInt(q.limit, 100, 1, 500),
-      offset: clampInt(q.offset, 0, 0, Number.MAX_SAFE_INTEGER),
-    });
-    return c.json({ runs: runs.map((r) => runSummary(roots, r)), total: roots.store.countRuns() });
+    };
+    const runs = roots.store.listRuns({ ...filter, limit: clampInt(q.limit, 100, 1, 500), offset: clampInt(q.offset, 0, 0, Number.MAX_SAFE_INTEGER) });
+    // total: every run (the page says "no runs yet" when it's 0); matching: runs these filters match.
+    return c.json({ runs: runs.map((r) => runSummary(roots, r)), total: roots.store.countRuns(), matching: roots.store.countMatchingRuns(filter) });
   });
 
   app.get("/api/runs/:traceId", async (c) => {
@@ -270,6 +270,11 @@ export function mountApi(app: Hono, roots: Roots): void {
       retention_days?: number;
       retention_max_gb?: number;
     }>(c);
+    // Check retention first, before anything changes: an out-of-range value used to be skipped
+    // while the reply still said ok, so the Settings page showed "Retention saved" for nothing.
+    const inRange = (v: unknown, min: number, max: number, minOpen = false) => typeof v === "number" && Number.isFinite(v) && (minOpen ? v > min : v >= min) && v <= max;
+    if (b.retention_days !== undefined && !inRange(b.retention_days, 1, 3650)) return err(c, 400, "Keep runs for must be between 1 and 3650 days");
+    if (b.retention_max_gb !== undefined && !inRange(b.retention_max_gb, 0, 10_000, true)) return err(c, 400, "Size cap must be more than 0 GB and at most 10000 GB");
     if (b.project) {
       const cur = roots.config.projects[b.project] ?? {};
       if (b.steering !== undefined) {
@@ -278,8 +283,8 @@ export function mountApi(app: Hono, roots: Roots): void {
       }
       if (b.forward !== undefined) roots.config.projects[b.project] = { ...cur, ...roots.config.projects[b.project], forward: !!b.forward };
     }
-    if (typeof b.retention_days === "number" && b.retention_days >= 1 && b.retention_days <= 3650) roots.config.retention.days = Math.round(b.retention_days);
-    if (typeof b.retention_max_gb === "number" && b.retention_max_gb > 0 && b.retention_max_gb <= 10_000) roots.config.retention.maxGb = b.retention_max_gb;
+    if (b.retention_days !== undefined) roots.config.retention.days = Math.round(b.retention_days);
+    if (b.retention_max_gb !== undefined) roots.config.retention.maxGb = b.retention_max_gb;
     if (b.steering_enabled !== undefined) roots.config.steering.enabled = !!b.steering_enabled;
     if (b.llm_model) roots.config.llm.model = b.llm_model;
     if (b.llm_base_url) roots.config.llm.baseUrl = b.llm_base_url;

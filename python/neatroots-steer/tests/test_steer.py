@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -16,6 +17,7 @@ class StubRoots:
         self.mode = mode
         self.claims = []
         self.checks = []
+        self.slow = []  # seconds to hold the next claim replies (a busy neatroots)
         stub = self
 
         class H(BaseHTTPRequestHandler):
@@ -32,6 +34,8 @@ class StubRoots:
                     stub.claims.append(body)
                     note = stub.notes.pop(0) if stub.notes else None
                     out = {"mode": stub.mode, "note": note}
+                    if stub.slow:
+                        time.sleep(stub.slow.pop(0))
                 elif self.path == "/api/steer/check":
                     stub.checks.append(body)
                     out = {"probability": 0.9, "answer": "yes", "evidence_span_ids": ["abc"]}
@@ -120,6 +124,27 @@ def test_note_ignored_when_steering_off(stub):
     stub.notes[:] = [{"id": "h", "kind": "halt", "text": "Your rule says stop.", "finding_id": None}]
     msgs = [{"role": "user", "content": "q"}]
     assert neatroots_steer.apply(msgs) == msgs
+
+
+def test_one_slow_reply_does_not_hold_back_a_halt(stub):
+    stub.notes[:] = []
+    stub.slow[:] = [1.2]  # longer than the hook waits
+    msgs = [{"role": "user", "content": "q"}]
+    assert neatroots_steer.apply(msgs) is msgs
+    stub.notes[:] = [{"id": "h", "kind": "halt", "text": "Your rule says stop.", "finding_id": None}]
+    # was: every call for the next 5 s skipped neatroots, so the halt never arrived
+    with pytest.raises(neatroots_steer.NeatrootsHalt):
+        neatroots_steer.apply([{"role": "user", "content": "again"}])
+
+
+def test_backs_off_after_a_few_slow_replies_in_a_row(stub):
+    stub.notes[:] = []
+    stub.slow[:] = [1.2, 1.2, 1.2]
+    for _ in range(3):
+        neatroots_steer.apply([{"role": "user", "content": "q"}])
+    sent = len(stub.claims)
+    neatroots_steer.apply([{"role": "user", "content": "q"}])
+    assert len(stub.claims) == sent  # skipped: neatroots is treated as stuck for a while
 
 
 def test_check_my_work_and_tool_call(stub):

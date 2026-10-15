@@ -80,6 +80,8 @@ interface LiveRun {
   doctor: boolean;
   /** Resuming after a restart: answers already stored are not asked again. */
   answered?: { traceChecks: Set<string>; toolSpans: Set<string> };
+  /** Checks re-run on a stored run: steering never had a chance, so nothing counts as missed. */
+  rechecked?: boolean;
 }
 
 export interface EngineStatus {
@@ -271,7 +273,7 @@ export class Engine {
   private async handleSpans(run: LiveRun, spanIds: string[]): Promise<void> {
     const snap = loadTrace(this.roots.store, run.traceId);
     const fresh = snap.spans.filter((s) => spanIds.includes(s.id));
-    this.applyRules(run, snap, false);
+    this.applyRules(run, snap, false, new Set(spanIds));
     this.ensurePlan(run, snap);
     for (const s of fresh) if ((s.kind === "TOOL" || s.kind === "MCP_TOOL") && !run.answered?.toolSpans.has(s.id)) void this.track(run.traceId, this.labelTool(run, s, snap));
     if (run.plan) this.scheduleQuestions(run, snap, fresh);
@@ -342,14 +344,14 @@ export class Engine {
 
   // ----------------------------------------------------------------- rules
 
-  private applyRules(run: LiveRun, snap: TraceSnapshot, atEnd: boolean): void {
+  private applyRules(run: LiveRun, snap: TraceSnapshot, atEnd: boolean, fresh?: ReadonlySet<string>): void {
     for (const lc of this.registry.rules()) {
       const rule = lc.check as RuleCheck;
       if (!this.appliesTo(rule, run)) continue;
       if (rule.rule.type === "run_end" && !atEnd) continue;
       let hit: RuleHit | null;
       try {
-        hit = evaluateRule(rule, snap, atEnd);
+        hit = evaluateRule(rule, snap, atEnd, fresh);
       } catch (err) {
         log.warn(`rule ${rule.id} failed: ${(err as Error).message}`);
         continue;
@@ -388,7 +390,8 @@ export class Engine {
 
   private resolve(f: Finding): void {
     const next = this.roots.store.updateFinding(f.id, { status: "resolved" });
-    this.steering.withdraw(f.id);
+    // The agent moving on doesn't undo a halt the user's rule asked for.
+    this.steering.withdraw(f.id, { keepHalts: true });
     if (next) this.roots.bus.emit("finding", next);
   }
 
@@ -587,23 +590,42 @@ export class Engine {
     // Only rules the user wrote may stop a run.
     if (isRule(c) && c.action === "halt" && (lc.source === "user" || lc.source === "project") && !run.ended) {
       this.steering.push({ traceId: run.traceId, findingId: f.id, kind: "halt", text: this.renderGuidance(c, params, f.title) });
-    } else if (!run.ended && this.steering.mode(run.project) !== "off" && !this.overlapsNotedFinding(run.traceId, f)) {
+    } else if (!run.ended && this.steering.mode(run.project) !== "off" && !this.overlapsNotedFinding(run.traceId, f) && this.roots.store.getRun(run.traceId)?.status === "running") {
       const template = this.steering.push({ traceId: run.traceId, findingId: f.id, kind: "template", text: this.renderGuidance(c, params, f.title) });
       if (template && run.used.notes < this.roots.config.budgets.notesPerRun) {
         run.used.notes++;
         void this.track(run.traceId, this.writeNote(run, f, template));
       }
+    } else if (!run.endHandled && !run.rechecked && this.steering.mode(run.project) !== "off" && !this.overlapsNotedFinding(run.traceId, f, true)) {
+      // A live check raised this, but the run was already over (the agent finished before the
+      // check did, common on very fast runs), so the note could never reach the agent. Keep it as
+      // not sent so the user sees it instead of it vanishing. Checks that only run at the end, and
+      // Re-run checks, could never have been steered, so they don't get here.
+      const note = this.roots.store.insertNote({
+        trace_id: run.traceId,
+        finding_id: f.id,
+        kind: "template",
+        text: this.renderGuidance(c, params, f.title),
+        status: "expired",
+        checks: null,
+      });
+      this.roots.bus.emit("note", note);
     }
     void this.track(run.traceId, this.triage(run, f));
     void snap;
   }
 
-  /** True when a note already went out (or is queued) for a finding about mostly the same spans. */
-  private overlapsNotedFinding(traceId: string, f: Finding): boolean {
+  /**
+   * True when a note already went out (or is queued) for a finding about mostly the same spans.
+   * With `notSent`, a note kept as not sent counts too, so a run that ended too soon shows the
+   * same single note a live run would have been sent.
+   */
+  private overlapsNotedFinding(traceId: string, f: Finding, notSent = false): boolean {
     if (!f.evidence_span_ids.length) return false;
     const mine = new Set(f.evidence_span_ids);
     for (const n of this.roots.store.notesForTrace(traceId)) {
-      if (!n.finding_id || n.finding_id === f.id || (n.status !== "pending" && n.status !== "delivered")) continue;
+      const counts = n.status === "pending" || n.status === "delivered" || (notSent && n.status === "expired");
+      if (!n.finding_id || n.finding_id === f.id || !counts) continue;
       const other = this.roots.store.getFinding(n.finding_id);
       if (!other) continue;
       const shared = other.evidence_span_ids.filter((id) => mine.has(id)).length;
@@ -1077,6 +1099,7 @@ ${library}`;
     this.live.delete(traceId);
     const run = this.liveRun(traceId)!;
     run.ended = row.status !== "running";
+    run.rechecked = true;
     if (opts.resume) {
       const done = this.roots.store.decisionsForTrace(traceId);
       for (const d of done) if (d.span_id) run.spanDone.add(`${d.check_id}:${d.span_id}`);

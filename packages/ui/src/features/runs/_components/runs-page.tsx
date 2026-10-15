@@ -22,6 +22,12 @@ function fromQuery(q: URLSearchParams): Partial<RunListParams> {
   return { project: q.get("project") ?? "", check: q.get("check") ?? undefined, label: q.get("label") ?? undefined };
 }
 
+/** "3 of 120 runs"; with filters, "12 matching of 120 runs" (and how many are shown, when not all). */
+function footerCount(shown: number, matching: number | null, total: number): string {
+  if (matching === null) return `${shown} of ${total} runs`;
+  return `${matching} matching of ${total} runs${shown < matching ? `, newest ${shown} shown` : ""}`;
+}
+
 /** Every run neatroots recorded, as a full-bleed table like the Neatlogs traces page. */
 export function RunsPage({ status, query }: { status?: Status; query: URLSearchParams }) {
   const [params, setParams] = useState<RunListParams>(() => ({ q: "", status: "", hasFinding: false, project: "", ...fromQuery(query) }));
@@ -107,7 +113,7 @@ export function RunsPage({ status, query }: { status?: Status; query: URLSearchP
               </button>
             </span>
           )}
-          <span className="ml-auto text-xs text-muted-foreground tabular-nums">{data ? `${runs.length}${filtered ? " matching" : ""} of ${data.total} runs` : ""}</span>
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">{data ? footerCount(runs.length, filtered ? (data.matching ?? runs.length) : null, data.total) : ""}</span>
         </div>
       }
     >

@@ -109,6 +109,12 @@ export class ImportJobs {
     const done = (async () => {
       try {
         for await (const t of source.traces({ values: filled, sinceMs: job.window.since_ms, untilMs, limit: opts.limit ?? 100, project: opts.project, signal: controller.signal })) {
+          if (t.error) {
+            job.failed += 1;
+            job.last_error = `trace ${t.sourceId}: ${t.error}`;
+            this.roots.bus.emit("import", { ...job });
+            continue;
+          }
           try {
             const updates = this.roots.ingest(t.batches);
             job.traces += 1;
