@@ -22,7 +22,7 @@ rule:
   at_least: 3
 guidance: >-
   You have called {tool} {count} times with the same arguments ({args}) ...
-action: flag              # or halt (your own rules only)
+action: flag              # or halt (your own rules only; needs steering on for the project)
 ```
 
 | type | Fires when |

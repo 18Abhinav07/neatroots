@@ -221,7 +221,8 @@ client = neatroots_steer.wrap(OpenAI())      # or Anthropic(); sync or async
 ```
 
 Modes: `advisory` (a note on the next LLM call), `gate` (each call waits up to 300 ms for pending
-checks), `self-check` (the agent gets `check_my_work`), and `halt` from rules you write. At most one
+checks), and `self-check` (the agent gets `check_my_work`). In any of them, rules you write with
+`action: halt` stop the run; with steering `off`, nothing is sent, halts included. At most one
 note per call and three per run. See [docs/steering.md](docs/steering.md).
 
 ## What leaves your machine
