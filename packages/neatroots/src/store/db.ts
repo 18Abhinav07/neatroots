@@ -333,6 +333,15 @@ const SEARCH_INDEX_VERSION = 2;
 /** A store over its size cap is trimmed to this share of the cap, so it isn't trimmed every hour. */
 export const RETENTION_LOW_WATER = 0.9;
 
+/** Free text as an FTS5 query: each word quoted, so operators and punctuation match literally. */
+function ftsQuery(text: string): string {
+  return text
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => `"${t.replace(/"/g, '""')}"`)
+    .join(" ");
+}
+
 function searchText(v: Parameters<typeof preview>[0]): string {
   if (v === undefined || v === null) return "";
   const s = preview(v, Number.MAX_SAFE_INTEGER);
@@ -680,13 +689,17 @@ export class Store {
       p.until = f.untilMs;
     }
     if (f.text) {
-      const ids = this.searchSpans(f.text, 500).map((h) => h.trace_id);
+      // Match the full-text index inside this query, so every matching run can be listed and
+      // paged newest first. (Taking the best-ranked 500 spans first dropped matching runs whose
+      // match ranked low, even the newest one.)
+      const match = ftsQuery(f.text);
+      const indexed = !!match && this.ftsQueryOk(match);
       // Escape LIKE wildcards so a literal % or _ in the query is matched as text,
       // not as "match anything". The ESCAPE clauses below pair with this.
       const escaped = f.text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
       const like = `%${escaped}%`;
-      where.push(`(trace_id IN (SELECT value FROM json_each(@ids)) OR root_name LIKE @like ESCAPE '\\' OR workflow LIKE @like ESCAPE '\\' OR input_preview LIKE @like ESCAPE '\\' OR output_preview LIKE @like ESCAPE '\\')`);
-      p.ids = JSON.stringify([...new Set(ids)]);
+      where.push(`(${indexed ? "trace_id IN (SELECT trace_id FROM span_fts WHERE span_fts MATCH @match) OR " : ""}root_name LIKE @like ESCAPE '\\' OR workflow LIKE @like ESCAPE '\\' OR input_preview LIKE @like ESCAPE '\\' OR output_preview LIKE @like ESCAPE '\\')`);
+      if (indexed) p.match = match;
       p.like = like;
     }
     const sql = `SELECT * FROM runs ${where.length ? "WHERE " + where.join(" AND ") : ""}
@@ -771,11 +784,7 @@ export class Store {
   }
 
   searchSpans(text: string, limit = 50): { trace_id: string; span_id: string; name: string; snippet: string }[] {
-    const q = text
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((t) => `"${t.replace(/"/g, '""')}"`)
-      .join(" ");
+    const q = ftsQuery(text);
     if (!q) return [];
     try {
       return this.db
@@ -786,6 +795,16 @@ export class Store {
         .all(q, limit) as { trace_id: string; span_id: string; name: string; snippet: string }[];
     } catch {
       return [];
+    }
+  }
+
+  /** True when `match` parses as a full-text query (so it can go inside a larger query safely). */
+  private ftsQueryOk(match: string): boolean {
+    try {
+      this.db.prepare("SELECT 1 FROM span_fts WHERE span_fts MATCH ? LIMIT 1").get(match);
+      return true;
+    } catch {
+      return false;
     }
   }
 

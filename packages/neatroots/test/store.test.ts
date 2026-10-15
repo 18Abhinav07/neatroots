@@ -76,6 +76,29 @@ describe("store", () => {
     for (const marker of ["QA_AT_1K", "QA_AT_10K", "QA_AT_25K", "QA_TAIL"]) expect(st.searchSpans(marker).map((h) => h.trace_id)).toEqual([t]);
   });
 
+  it("lists every run whose spans match a search, newest first, not just the best-ranked 500 spans", () => {
+    const st = store();
+    const ids: string[] = [];
+    // 300 older runs mention the error a lot (they rank high); each has 2 matching spans
+    for (let i = 0; i < 300; i++) {
+      const t = hex(16);
+      const root = hex(8);
+      ids.push(t);
+      st.ingest([batch([span({ traceId: t, spanId: root, name: "agent", kind: "workflow" }), toolSpan(t, root, "db", '{"q":"a"}', "ECONNRESET ECONNRESET retry"), toolSpan(t, root, "db", '{"q":"b"}', "ECONNRESET again")])]);
+      st.db.prepare("UPDATE runs SET started_ms = ?, received_ms = ? WHERE trace_id = ?").run(1_000 + i, 1_000 + i, t);
+    }
+    // the newest run mentions it once, deep in a long output (it ranks low)
+    const newest = hex(16);
+    const root = hex(8);
+    st.ingest([batch([span({ traceId: newest, spanId: root, name: "agent", kind: "workflow" }), toolSpan(newest, root, "db", '{"q":"c"}', `${"unrelated words ".repeat(300)} ECONNRESET`)])]);
+    st.db.prepare("UPDATE runs SET started_ms = ?, received_ms = ? WHERE trace_id = ?").run(999_999, 999_999, newest);
+    const first = st.listRuns({ text: "ECONNRESET", limit: 150 });
+    expect(first[0]?.trace_id).toBe(newest); // was missing: only the best-ranked 500 spans were considered
+    const all = [...first, ...st.listRuns({ text: "ECONNRESET", limit: 150, offset: 150 }), ...st.listRuns({ text: "ECONNRESET", limit: 150, offset: 300 })];
+    expect(new Set(all.map((r) => r.trace_id)).size).toBe(301); // was 250 (500 spans, 2 per run)
+    expect(st.listRuns({ text: "no-such-word-here" })).toEqual([]);
+  });
+
   it("re-indexes spans that were stored with the old 4,000-character index", async () => {
     const st = store();
     const t = hex(16);
