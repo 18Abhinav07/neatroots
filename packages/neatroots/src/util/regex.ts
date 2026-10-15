@@ -2,6 +2,8 @@
 // server's only thread, against every span. A pattern that backtracks catastrophically, such as
 // (a+)+, can take minutes on a 30-character input and stall the collector and the app with it, so
 // such patterns are refused when they are saved instead of discovered when they hang.
+// This catches nested repeats only: overlapping alternatives in a repeat, like (a|aa)+, also
+// backtrack badly and still pass. Making that complete would need a time limit or a linear-time engine.
 
 /** A repeat that can match many times: *, + and {n,} or {n,m} with a range. */
 function repeatAt(p: string, i: number): number {
