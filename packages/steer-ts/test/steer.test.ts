@@ -7,6 +7,8 @@ import { applyAnthropic, applyMessages, NeatrootsHalt, rootsMiddleware, checkMyW
 
 const notes: (Note | null)[] = [];
 const claims: any[] = [];
+/** Milliseconds to hold the next claim replies (a busy neatroots). */
+const slow: number[] = [];
 let server: http.Server;
 let url = "";
 
@@ -21,8 +23,10 @@ beforeAll(async () => {
         claims.push(b);
         out = { mode: "advisory", note: notes.shift() ?? null };
       } else if (req.url === "/api/steer/check") out = { probability: 0.2, answer: "no", evidence_span_ids: ["s1"] };
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify(out));
+      setTimeout(() => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(out));
+      }, req.url === "/api/steer/claim" ? (slow.shift() ?? 0) : 0);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
@@ -33,6 +37,7 @@ beforeEach(() => {
   configure({ url, traceId: () => "a".repeat(32) });
   notes.length = 0;
   claims.length = 0;
+  slow.length = 0;
 });
 
 const note = (text = "Stop retrying.", kind: Note["kind"] = "template"): Note => ({ id: "n1", kind, text, finding_id: "f1" });
@@ -107,6 +112,23 @@ describe("neatroots-steer (ts)", () => {
     expect((await checkMyWork("Did I verify?")).probability_yes).toBe(0.2);
     expect(JSON.parse((await handleToolCall("check_my_work", '{"question":"Q?"}'))!).answer).toBe("no");
     expect(await handleToolCall("other", "{}")).toBeUndefined();
+  });
+
+  it("asks again on the next call after one slow reply, so a halt isn't held back", async () => {
+    slow.push(900); // neatroots is busy: this reply takes longer than the hook waits
+    expect(await applyMessages([{ role: "user", content: "hi" }])).toEqual([{ role: "user", content: "hi" }]);
+    notes.push(note("Stop now.", "halt"));
+    // was: every call for the next 5 s skipped neatroots, so the halt never arrived
+    await expect(applyMessages([{ role: "user", content: "again" }])).rejects.toBeInstanceOf(NeatrootsHalt);
+  });
+
+  it("backs off after a few slow replies in a row, as for a stopped neatroots", async () => {
+    slow.push(900, 900, 900);
+    for (let i = 0; i < 3; i++) await applyMessages([{ role: "user", content: "hi" }]);
+    const sent = claims.length;
+    notes.push(note());
+    await applyMessages([{ role: "user", content: "hi" }]);
+    expect(claims.length).toBe(sent); // skipped: neatroots is treated as stuck for a while
   });
 
   it("is silent when neatroots is unreachable", async () => {
