@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeTraceProtobuf } from "../src/otlp/codec.js";
 import type { AnyValue, KeyValue } from "../src/otlp/types.js";
-import { BUILTIN_RULES, compileRules, redactBatches } from "../src/relay/redact.js";
+import { BUILTIN_RULES, compileRules, type RedactionHit, redactBatches, redactString } from "../src/relay/redact.js";
 import { batch, hex, makeRoots, s, span } from "./helpers.js";
 
 const KEY = "sk-proj-abcdefghij1234567890ABCDEFghij";
@@ -158,5 +158,28 @@ describe("redaction before a cloud send", () => {
     const { batches, hits } = redactBatches([b], BUILTIN_RULES);
     expect(batches[0].spans[0].name).toBe("lookup_order");
     expect(hits).toEqual([]);
+  });
+});
+
+describe("redaction time on adversarial input", () => {
+  // Redaction runs on the server's only thread before every cloud forward and hosted-LLM call,
+  // so no built-in rule may backtrack quadratically on a long attribute.
+  const inputs = ["a.", "a-", "a+", "a@", "1-", "sk-", "x@a."].map((unit) => unit.repeat(50_000));
+  inputs.push(`${"a.".repeat(50_000)}@`, `x@${"a.".repeat(50_000)}`, `x@${"a-".repeat(50_000)}`);
+
+  it.each(inputs.map((input) => [JSON.stringify(input.slice(0, 6)), input.length, input] as const))(
+    "redacts %s… (%i chars) quickly",
+    (_label, _length, input) => {
+      const started = performance.now();
+      redactString(input, BUILTIN_RULES, "attr", []);
+      expect(performance.now() - started).toBeLessThan(100);
+    },
+  );
+
+  it("still finds an email after a long run of local-part characters", () => {
+    const hits: RedactionHit[] = [];
+    const out = redactString(`${"a.".repeat(50_000)} reach me at jane.doe+tag@example.co.uk`, BUILTIN_RULES, "attr", hits);
+    expect(out.endsWith("reach me at [redacted:email]")).toBe(true);
+    expect(hits.map((h) => h.kind)).toEqual(["email"]);
   });
 });
