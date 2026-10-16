@@ -140,6 +140,17 @@ export const RuleSpec = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("cycle"),
+      /** Spans whose order is checked, usually tool calls. */
+      span: SpanSelector.optional(),
+      /** Longest repeating pattern, in calls. 2 catches a, b, a, b. */
+      max_period: z.number().int().min(2).max(5).default(3),
+      /** How many times the pattern repeats in a row before it fires. */
+      min_cycles: z.number().int().min(3).default(4),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("run_end"),
       /** Fire when the run ends with this condition. */
       when: z.enum(["error", "no_output", "interrupted"]),
@@ -210,7 +221,17 @@ export const ScoreQuestion = z
     /** Flag when the expected level reaches this (0-based). */
     flag_at_level: z.number().min(0),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    const highest = val.levels.length - 1;
+    if (val.flag_at_level > highest) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["flag_at_level"],
+        message: `must be at most ${highest} for ${val.levels.length} levels (0-based)`,
+      });
+    }
+  });
 
 export const QuestionCheck = z.discriminatedUnion("kind", [YesNoQuestion, ChoiceQuestion, ScoreQuestion]);
 export type QuestionCheck = z.infer<typeof QuestionCheck>;

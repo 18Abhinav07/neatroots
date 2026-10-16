@@ -32,7 +32,7 @@ action: flag              # or halt (your own rules only; needs steering on for 
 | `count` | the run has `at_least` matching spans |
 | `slow` | a matching span took at least `at_least_ms` milliseconds (one slow tool call, not the whole run; use `threshold` with `duration_ms` for the run) |
 | `threshold` | a run metric (`total_tokens`, `llm_calls`, `duration_ms`, …) reaches `at_least` |
-| `match` | a regex matches a span's `input`, `output`, `error` or `name` (the first 200,000 characters). A pattern that doesn't compile, or that nests repeats like `(a+)+` and could freeze neatroots, is rejected when the check is saved. That check catches the common slow shape, not every one: a repeat over alternatives that overlap, like `(a\|aa)+`, still gets through, so keep alternatives inside a repeat distinct |
+| `match` | a regex matches a span's `input`, `output`, `error` or `name`; an MCP tool result's `content[].text` items are read like plain output too (the first 200,000 characters in all). A pattern that doesn't compile, or that nests repeats like `(a+)+` and could freeze neatroots, is rejected when the check is saved. That check catches the common slow shape, not every one: a repeat over alternatives that overlap, like `(a\|aa)+`, still gets through, so keep alternatives inside a repeat distinct |
 | `requires_before` | a `span` call has no earlier successful `requires` call in the same run, for example a refund with no order lookup |
 | `unrecovered_error` | at run end, the last call of a tool failed (no later success of that tool) and the run still produced a final answer that does not say anything failed (a words check, so it is a hint, not proof) |
 | `run_end` | the run ended with `error`, `no_output` or `interrupted` |
@@ -60,7 +60,9 @@ group: refunds            # optional: checks in one group show as one problem pe
 ```
 
 `choice` questions take `options` (label → description) and `flag_on`; `score` questions take
-`levels` and `flag_at_level`.
+`levels` and `flag_at_level`. Score levels are numbered from zero, so `flag_at_level` must be
+between `0` and `levels.length - 1`. Fractional thresholds in that range are allowed: the score
+is the expected level, not necessarily a whole number.
 
 ### Make sure a question can see what it asks about
 

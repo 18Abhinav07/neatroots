@@ -16,7 +16,7 @@ import { mountAgentsApi } from "./api-agents.js";
 import { importSource, mountExploreApi } from "./api-explore.js";
 import { checkCoverage } from "./coverage.js";
 import { installInfo } from "../util/install.js";
-import { err, body } from "./util.js";
+import { err, body, clampInt } from "./util.js";
 import { askRuns } from "../engine/assist.js";
 import { loadTrace } from "../engine/trace.js";
 import type { RunRow } from "../types.js";
@@ -102,14 +102,6 @@ function projects(roots: Roots) {
     const r = rows.find((x) => x.project === name);
     return { project: name, runs: r?.runs ?? 0, last_ms: r?.last_ms ?? null, with_findings: r?.with_findings ?? 0, settings: projectSettings(roots.config, name), rerun: roots.config.rerun[name] ?? null };
   });
-}
-
-/** Parse a query param as an integer and clamp it to [min, max]; non-numbers fall back to `dflt`. */
-function clampInt(raw: string | undefined, dflt: number, min: number, max: number): number {
-  if (raw === undefined || raw === "") return dflt;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return dflt;
-  return Math.min(Math.max(Math.trunc(n), min), max);
 }
 
 

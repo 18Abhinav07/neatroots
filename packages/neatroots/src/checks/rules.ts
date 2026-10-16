@@ -2,9 +2,6 @@ import type { RuleCheck } from "./types.js";
 import { finalOutput, selectSpans, type SpanInfo, type TraceSnapshot } from "../engine/trace.js";
 import { preview } from "../semantics/view.js";
 
-/** How much of a field a `match` rule reads. */
-const MATCH_CHARS = 200_000;
-
 export interface RuleHit {
   /** Whether the condition holds now, looking at the latest spans. */
   firing: boolean;
@@ -13,13 +10,22 @@ export interface RuleHit {
   title?: string;
 }
 
+/** Object member order is not a change in arguments or results; array order still is. */
+function jsonKey(value: unknown): string {
+  return JSON.stringify(value ?? null, (_key, entry: unknown) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+    const object = entry as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(object).sort().map((key) => [key, object[key]]));
+  });
+}
+
 function keyOf(s: SpanInfo, fields: string[]): string {
   return fields
     .map((f) => {
       if (f === "tool") return s.toolName ?? s.name;
       if (f === "name") return s.name;
-      if (f === "input") return JSON.stringify(s.input ?? null);
-      if (f === "output") return JSON.stringify(s.output ?? null);
+      if (f === "input") return jsonKey(s.input);
+      if (f === "output") return jsonKey(s.output);
       if (f === "status") return s.status;
       return "";
     })
@@ -34,6 +40,36 @@ const DENIES_FAILURE = /\b(?:no|zero|without(?: any)?|free of)\s+(?:\w+\s+)?(?:e
 
 function clip(s: string, n = 120): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/** How much of a field a `match` rule reads, across all the texts it reads from it. */
+const MATCH_CHARS = 200_000;
+
+/**
+ * The texts a `match` rule reads from a field: each text item of an MCP tool result, read like
+ * a plain string output, then the field itself (as JSON when it isn't a string).
+ * JSON.stringify escapes the quotes inside `content[].text`, so `"error":` there reads as
+ * `\"error\":` and a pattern written for plain output would never see it. All texts share one
+ * MATCH_CHARS budget, so the text items, which are the tool's real output, are read first.
+ */
+function matchTexts(v: unknown): string[] {
+  const texts: string[] = [];
+  let budget = MATCH_CHARS;
+  const add = (text: string): void => {
+    if (budget <= 0) return;
+    const clipped = text.slice(0, budget);
+    texts.push(clipped);
+    budget -= clipped.length;
+  };
+  const content = v && typeof v === "object" && !Array.isArray(v) ? (v as { content?: unknown }).content : undefined;
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      const part = item && typeof item === "object" ? (item as { type?: unknown; text?: unknown }) : undefined;
+      if (part?.type === "text" && typeof part.text === "string") add(part.text);
+    }
+  }
+  add(typeof v === "string" ? v : JSON.stringify(v));
+  return texts;
 }
 
 /**
@@ -147,9 +183,10 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
       const hits = selectSpans(t.spans, r.span).filter((s) => {
         const v = r.field === "input" ? s.input : r.field === "output" ? s.output : r.field === "error" ? s.error : s.name;
         if (v === undefined || v === null) return false;
-        // Bounded, so even a slow (but accepted) pattern can't hold the server for long on a huge output.
-        re.lastIndex = 0;
-        return re.test((typeof v === "string" ? v : JSON.stringify(v)).slice(0, MATCH_CHARS));
+        return matchTexts(v).some((text) => {
+          re.lastIndex = 0;
+          return re.test(text);
+        });
       });
       if (!hits.length) return null;
       return { firing: true, evidenceSpanIds: hits.map((s) => s.id), params: { count: String(hits.length), span: hits[0].ref } };
@@ -214,6 +251,27 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
         evidenceSpanIds: [spans[0].id, spans[spans.length - 1].id],
         params: { count: String(spans.length), first: String(first), last: String(last) },
       };
+    }
+    case "cycle": {
+      const spans = selectSpans(t.spans, r.span).sort((a, b) => a.endMs - b.endMs);
+      const names = spans.map((s) => s.toolName ?? s.name);
+      const outs = spans.map((s) => jsonKey(s.output));
+      // Longest tail of the call list that is one short pattern repeated with no new results.
+      for (let p = 2; p <= r.max_period; p++) {
+        let n = spans.length;
+        while (n - p >= 0 && names[n - 1] === names[n - 1 - p] && outs[n - 1] === outs[n - 1 - p]) n--;
+        const start = n - p;
+        const len = spans.length - start;
+        if (start < 0 || len < p * r.min_cycles) continue;
+        const pattern = names.slice(start, start + p);
+        if (new Set(pattern).size < 2) continue;
+        return {
+          firing: true,
+          evidenceSpanIds: spans.slice(start).map((s) => s.id),
+          params: { pattern: pattern.join(" -> "), count: String(Math.floor(len / p)) },
+        };
+      }
+      return null;
     }
     case "run_end": {
       if (!atEnd || !t.run) return null;

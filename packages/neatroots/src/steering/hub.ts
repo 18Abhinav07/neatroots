@@ -52,6 +52,10 @@ export class SteeringHub {
     return this.roots.store.notesForTrace(traceId).filter((n) => n.status === "delivered").length;
   }
 
+  pendingCount(traceId: string): number {
+    return this.roots.store.notesForTrace(traceId, "pending").filter((n) => n.kind !== "halt").length;
+  }
+
   /** Queues a note for a run. Returns undefined when steering is off or the run's limit is reached. */
   push(input: { traceId: string; findingId: string | null; kind: Note["kind"]; text: string; checks?: Note["checks"] }): Note | undefined {
     const run = this.roots.store.getRun(input.traceId);
@@ -59,7 +63,7 @@ export class SteeringHub {
     // Off means nothing is sent (docs/steering.md), a halt from your own rule included.
     if (this.mode(run.project) === "off") return undefined;
     const limit = this.roots.config.steering.maxNotesPerRun;
-    if (input.kind !== "halt" && this.deliveredCount(input.traceId) >= limit) return undefined;
+    if (input.kind !== "halt" && this.deliveredCount(input.traceId) + this.pendingCount(input.traceId) >= limit) return undefined;
     const note = this.roots.store.insertNote({
       trace_id: input.traceId,
       finding_id: input.findingId,
@@ -122,12 +126,25 @@ export class SteeringHub {
     if (!pending.length) return undefined;
     const rank = (n: Note) => (n.kind === "halt" ? 0 : n.kind === "llm" ? 1 : 2);
     const pick = [...pending].sort((a, b) => rank(a) - rank(b) || a.created_ms - b.created_ms)[0];
+    if (pick.kind !== "halt" && this.deliveredCount(traceId) >= this.roots.config.steering.maxNotesPerRun) {
+      for (const n of pending) {
+        if (n.kind !== "halt") {
+          this.roots.store.updateNote(n.id, { status: "expired" });
+          this.roots.bus.emit("note", { ...n, status: "expired" });
+          this.broadcast({ event: "retract", data: { id: n.id, trace_id: n.trace_id } });
+        }
+      }
+      return undefined;
+    }
     this.roots.store.updateNote(pick.id, { status: "delivered", delivered_ms: Date.now(), delivered_span_id: spanId ?? null });
     const delivered = this.roots.store.getNote(pick.id)!;
     this.roots.bus.emit("note", delivered);
     if (pick.finding_id) {
       const f = this.roots.store.getFinding(pick.finding_id);
-      if (f && f.status === "raised") this.roots.store.updateFinding(f.id, { status: "active" });
+      if (f && f.status === "raised") {
+        const next = this.roots.store.updateFinding(f.id, { status: "active" });
+        if (next) this.roots.bus.emit("finding", next);
+      }
     }
     return delivered;
   }
