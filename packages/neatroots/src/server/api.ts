@@ -278,17 +278,24 @@ export function mountApi(app: Hono, roots: Roots): void {
       retention_days?: number;
       retention_max_gb?: number;
     }>(c);
-    // Check retention first, before anything changes: an out-of-range value used to be skipped
-    // while the reply still said ok, so the Settings page showed "Retention saved" for nothing.
+    // Check every value first, before anything changes: a refused request applies nothing, not
+    // even its valid parts (an out-of-range retention used to be skipped while the reply said ok).
     const inRange = (v: unknown, min: number, max: number, minOpen = false) => typeof v === "number" && Number.isFinite(v) && (minOpen ? v > min : v >= min) && v <= max;
     if (b.retention_days !== undefined && !inRange(b.retention_days, 1, 3650)) return err(c, 400, "Keep runs for must be between 1 and 3650 days");
     if (b.retention_max_gb !== undefined && !inRange(b.retention_max_gb, 0, 10_000, true)) return err(c, 400, "Size cap must be more than 0 GB and at most 10000 GB");
+    if (b.project && b.steering !== undefined && !STEERING_MODES.includes(b.steering)) return err(c, 400, `steering must be one of ${STEERING_MODES.join(", ")}`);
+    if (b.classifier_backend && !["auto", "laya", "jev", "jev-cloud", "llm"].includes(b.classifier_backend)) return err(c, 400, "classifier_backend must be auto, laya, jev, jev-cloud or llm");
+    if (b.cloud_endpoint && !allowedEndpoint(b.cloud_endpoint)) return err(c, 400, "cloud endpoint must be an https://*.neatlogs.com URL (or localhost for testing)");
+    for (const p of b.redact_patterns ?? []) {
+      try {
+        new RegExp(p);
+      } catch {
+        return err(c, 400, `invalid pattern: ${p}`);
+      }
+    }
     if (b.project) {
       const cur = roots.config.projects[b.project] ?? {};
-      if (b.steering !== undefined) {
-        if (!STEERING_MODES.includes(b.steering)) return err(c, 400, `steering must be one of ${STEERING_MODES.join(", ")}`);
-        roots.steering.setMode(b.project, b.steering);
-      }
+      if (b.steering !== undefined) roots.steering.setMode(b.project, b.steering);
       if (b.forward !== undefined) roots.config.projects[b.project] = { ...cur, ...roots.config.projects[b.project], forward: !!b.forward };
     }
     if (b.retention_days !== undefined) roots.config.retention.days = Math.round(b.retention_days);
@@ -296,10 +303,7 @@ export function mountApi(app: Hono, roots: Roots): void {
     if (b.steering_enabled !== undefined) roots.config.steering.enabled = !!b.steering_enabled;
     if (b.llm_model) roots.config.llm.model = b.llm_model;
     if (b.llm_base_url) roots.config.llm.baseUrl = b.llm_base_url;
-    if (b.classifier_backend) {
-      if (!["auto", "laya", "jev", "jev-cloud", "llm"].includes(b.classifier_backend)) return err(c, 400, "classifier_backend must be auto, laya, jev, jev-cloud or llm");
-      roots.config.classifier.backend = b.classifier_backend;
-    }
+    if (b.classifier_backend) roots.config.classifier.backend = b.classifier_backend;
     if (b.classifier_url) roots.config.classifier.baseUrl = b.classifier_url;
     if (b.jev_cloud_enabled !== undefined) roots.config.classifier.jevCloud.enabled = !!b.jev_cloud_enabled;
     if (b.laya_enabled !== undefined) {
@@ -308,20 +312,8 @@ export function mountApi(app: Hono, roots: Roots): void {
       else roots.laya.stop();
     }
     roots.decisions.reset();
-    if (b.cloud_endpoint) {
-      if (!allowedEndpoint(b.cloud_endpoint)) return err(c, 400, "cloud endpoint must be an https://*.neatlogs.com URL (or localhost for testing)");
-      roots.config.cloud.endpoint = b.cloud_endpoint;
-    }
-    if (b.redact_patterns) {
-      for (const p of b.redact_patterns) {
-        try {
-          new RegExp(p);
-        } catch {
-          return err(c, 400, `invalid pattern: ${p}`);
-        }
-      }
-      roots.config.cloud.redactPatterns = b.redact_patterns;
-    }
+    if (b.cloud_endpoint) roots.config.cloud.endpoint = b.cloud_endpoint;
+    if (b.redact_patterns) roots.config.cloud.redactPatterns = b.redact_patterns;
     if (b.check_dir && !roots.config.checkDirs.includes(b.check_dir)) {
       roots.config.checkDirs.push(b.check_dir);
       roots.checks.reload();
