@@ -507,4 +507,4 @@ export function mountApi(app: Hono, roots: Roots): void {
     const snap = loadTrace(roots.store, c.req.param("traceId"));
     return c.json({ spans: snap.spans.map((s) => ({ id: s.id, kind: s.kind, name: s.name, status: s.status })) });
   });
-    }
+}
