@@ -402,7 +402,9 @@ export class Engine {
           if (status === "raised") this.onFindingRaised(run, f, lc, hit.params, snap);
         }
       } else if (open && hit && !hit.firing) {
-        this.resolve(open);
+        // A streak that ended still happened, so its halt stands. A requires_before whose earlier
+        // call arrived late never happened at all, so its halt is withdrawn too.
+        this.resolve(open, { keepHalts: rule.rule.type !== "requires_before" });
       }
     }
   }
@@ -430,10 +432,10 @@ export class Engine {
     return true;
   }
 
-  private resolve(f: Finding): void {
+  private resolve(f: Finding, opts: { keepHalts?: boolean } = { keepHalts: true }): void {
     const next = this.roots.store.updateFinding(f.id, { status: "resolved" });
-    // The agent moving on doesn't undo a halt the user's rule asked for.
-    this.steering.withdraw(f.id, { keepHalts: true });
+    // By default the agent moving on doesn't undo a halt the user's rule asked for.
+    this.steering.withdraw(f.id, opts);
     if (next) this.roots.bus.emit("finding", next);
   }
 
