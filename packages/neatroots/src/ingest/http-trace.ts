@@ -77,6 +77,14 @@ function validate(node: unknown, path: string, errors: Record<string, string>, d
   if (n.score !== undefined && (typeof n.score !== "number" || !Number.isFinite(n.score))) errors[`${path}score`] = "must be a finite number";
   if (n.duration_ms !== undefined && (typeof n.duration_ms !== "number" || !Number.isFinite(n.duration_ms))) errors[`${path}duration_ms`] = "must be a finite number";
   if (n.status !== undefined && !["OK", "ERROR", "ok", "error"].includes(String(n.status))) errors[`${path}status`] = "must be OK or ERROR";
+  if (n.kind !== undefined && typeof n.kind !== "string") errors[`${path}kind`] = "must be a string";
+  if (n.tags !== undefined && (!Array.isArray(n.tags) || n.tags.some((t) => typeof t !== "string"))) errors[`${path}tags`] = "must be an array of strings";
+  if (n.logs !== undefined) {
+    if (!Array.isArray(n.logs)) errors[`${path}logs`] = "must be an array";
+    else n.logs.forEach((l, i) => {
+      if (!l || typeof l !== "object" || Array.isArray(l)) errors[`${path}logs[${i}]`] = "must be an object";
+    });
+  }
 }
 
 /**
