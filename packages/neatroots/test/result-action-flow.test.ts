@@ -1,0 +1,111 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { AnyCheck, type RuleCheck } from "../src/checks/types.js";
+import { checkFiles } from "../src/checks/offline.js";
+import { batch, hex, makeRoots, markerSpan, s, span, tmpHome, toolSpan, until } from "./helpers.js";
+
+const contract = (): RuleCheck => AnyCheck.parse({ id: "permission-contract", kind: "rule", rule: {
+  type: "result_action", result: { tool: "permission" }, path: ["allowed"], equals: false,
+  forbids: { tool: "write" }, within_ms: 5000, scope: "same_parent", clock: "same",
+} }) as RuleCheck;
+
+function recorded(traceId: string, root: string, blocked: boolean) {
+  const result = toolSpan(traceId, root, "permission", "{}", JSON.stringify({ allowed: !blocked, private_note: "never include this" }));
+  const action = toolSpan(traceId, root, "write", "{}", '{"ok":true}');
+  const parent = span({ traceId, spanId: root, name: "contract-run", kind: "workflow", attrs: [s("neatlogs.workflow.output", "done")] });
+  parent.startTimeUnixNano = String(BigInt(result.startTimeUnixNano) - 1_000_000n);
+  parent.endTimeUnixNano = String(BigInt(action.endTimeUnixNano) + 1_000_000n);
+  return { result, action, parent };
+}
+
+describe("result/action recorded flow", () => {
+  it("evaluates 120 labeled saved OTLP runs through the actual importer, SQLite and offline checks", () => {
+    const home = tmpHome();
+    try {
+      const checks = path.join(home, "checks");
+      fs.mkdirSync(checks);
+      fs.writeFileSync(path.join(checks, "contract.json.yaml"), JSON.stringify(contract()));
+      const files = Array.from({ length: 120 }, (_, i) => {
+        const traceId = hex(16);
+        const root = hex(8);
+        const { result, action, parent } = recorded(traceId, root, i % 2 === 0);
+        const file = path.join(home, `labeled-${i}.json`);
+        fs.writeFileSync(file, JSON.stringify({ resourceSpans: [{ resource: batch([]).resource, scopeSpans: [{ scope: batch([]).scope, spans: [result, action, parent] }] }] }));
+        return file;
+      });
+      const result = checkFiles(files, { dirs: [checks], only: ["permission-contract"] });
+      expect(result.errors).toEqual([]);
+      expect(result.runs).toHaveLength(120);
+      result.runs.forEach((run, i) => {
+        expect(run.findings.length, `label ${i}`).toBe(i % 2 === 0 ? 1 : 0);
+        expect(run.rule_evaluations).toEqual([{ check_id: "permission-contract", actions: 1, evaluated: 1, matched: i % 2 === 0 ? 1 : 0, skipped: {} }]);
+      });
+      expect(JSON.stringify(result)).not.toContain("never include this");
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
+  });
+
+  it("never joins colliding span and parent ids from different trace containers", () => {
+    const home = tmpHome();
+    try {
+      const checks = path.join(home, "checks");
+      fs.mkdirSync(checks);
+      fs.writeFileSync(path.join(checks, "contract.yaml"), JSON.stringify(contract()));
+      const root = hex(8);
+      const first = recorded(hex(16), root, true);
+      const second = recorded(hex(16), root, false);
+      second.result.spanId = first.result.spanId;
+      second.action.spanId = first.action.spanId;
+      const file = path.join(home, "two-traces.json");
+      fs.writeFileSync(file, JSON.stringify({ resourceSpans: [{ resource: batch([]).resource, scopeSpans: [{ scope: batch([]).scope, spans: [first.result, first.parent, second.action, second.parent] }] }] }));
+      const result = checkFiles([file], { dirs: [checks], only: ["permission-contract"] });
+      expect(result.runs).toHaveLength(2);
+      expect(result.runs.flatMap((r) => r.findings)).toEqual([]);
+      expect(result.runs.flatMap((r) => r.rule_evaluations ?? []).find((r) => r.actions === 1)?.skipped).toEqual({ no_preceding_result: 1 });
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
+  });
+
+  it("rechecks late recorded data, resolves stale evidence, and deduplicates repeated snapshots and rule versions", async () => {
+    const tb = await makeRoots();
+    try {
+      tb.roots.checks.save(contract(), "db", "mcp");
+      const traceId = hex(16);
+      const root = hex(8);
+      const { result, action, parent } = recorded(traceId, root, true);
+      tb.roots.ingest([batch([result, action])]);
+      await tb.roots.engine!.waitIdle(traceId, 5000);
+      expect(tb.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === "permission-contract")).toEqual([]);
+      tb.roots.ingest([batch([parent, markerSpan(traceId, root)])]);
+      const first = await until(() => tb.roots.store.findingsForTrace(traceId).find((f) => f.check_id === "permission-contract"));
+      expect(first.evidence_span_ids).toEqual([result.spanId, action.spanId]);
+      expect(tb.roots.store.notesForTrace(traceId).filter((n) => n.finding_id === first.id)).toEqual([]);
+      await tb.roots.engine!.recheck(traceId);
+      expect(tb.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === "permission-contract")).toHaveLength(1);
+      (tb.roots.engine as unknown as { live: Map<string, unknown> }).live.delete(traceId);
+      const clearing = toolSpan(traceId, root, "permission", "{}", '{"allowed":true}');
+      clearing.startTimeUnixNano = String(BigInt(result.endTimeUnixNano) + 100_000n);
+      clearing.endTimeUnixNano = String(BigInt(result.endTimeUnixNano) + 500_000n);
+      tb.roots.ingest([batch([clearing])]);
+      await until(() => tb.roots.store.getFinding(first.id)?.status === "resolved");
+      const blockedAgain = { ...clearing, attributes: [s("neatlogs.tool.name", "permission"), s("neatlogs.tool.output", '{"allowed":false}'), s("neatlogs.span.kind", "tool")] };
+      tb.roots.ingest([batch([blockedAgain])]);
+      const second = await until(() => tb.roots.store.openFindingFor(traceId, "permission-contract"));
+      await tb.roots.engine!.recheck(traceId);
+      expect(tb.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === "permission-contract")).toHaveLength(2);
+      expect(tb.roots.store.openFindingFor(traceId, "permission-contract")?.id).toBe(second.id);
+      const changed = contract();
+      changed.rule = { ...changed.rule, within_ms: 4000 } as RuleCheck["rule"];
+      tb.roots.checks.save(changed, "db", "mcp");
+      await tb.roots.engine!.recheck(traceId);
+      const versioned = tb.roots.store.openFindingFor(traceId, "permission-contract")!;
+      expect(versioned.id).not.toBe(second.id);
+      expect(tb.roots.store.getFinding(second.id)?.status).toBe("resolved");
+      await tb.roots.engine!.recheck(traceId);
+      expect(tb.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === "permission-contract")).toHaveLength(3);
+      tb.roots.store.updateFinding(versioned.id, { status: "dismissed" });
+      await tb.roots.engine!.recheck(traceId);
+      expect(tb.roots.store.getFinding(versioned.id)?.status).toBe("dismissed");
+      expect(tb.roots.store.findingsForTrace(traceId).filter((f) => f.check_id === "permission-contract")).toHaveLength(3);
+    } finally { await tb.close(); }
+  }, 15000);
+});
