@@ -253,7 +253,7 @@ can read) and never in the database.
 | `neatroots llm`, `neatroots models`, `neatroots jev` | Where LLM and decision-model work runs |
 | `neatroots steering <mode> --project <name>` | Steering per project; `neatroots steering stop` turns it off everywhere |
 | `neatroots checks list`, `neatroots checks validate <file>` | Checks in force, and YAML validation |
-| `neatroots check <files...>` | Run the rule checks over saved traces with no server or model. Exits 1 if a rule fires, for CI |
+| `neatroots check <files...>` | Run the rule checks over saved traces with no server or model. Exits 0 when clean, 1 if a rule fires, 2 for invalid input or check configuration |
 | `neatroots cloud login`, `neatroots cloud forward <trace>` | Neatlogs Cloud: send runs (project API key) |
 | `neatroots cloud token`, `neatroots cloud project` | Neatlogs Cloud: import traces (service-account token) |
 | `neatroots service install`, `neatroots update` | Run at login; update to the latest release |
@@ -283,10 +283,10 @@ can read) and never in the database.
 
 ```bash
 pnpm install && pnpm build    # UI, then the server (copies the UI into packages/neatroots/dist/ui)
-pnpm test                     # server tests (vitest)
+pnpm test                     # server and TypeScript steering tests (vitest)
 pnpm --filter @neatlogs/neatroots-ui e2e     # UI end-to-end tests (Playwright; real server, mock LLM)
-cd packages/steer-ts && pnpm test
-cd python/neatroots-steer && python -m pytest
+(cd python/neatroots-steer && python -m pytest)
+pnpm typecheck                # all pnpm workspaces
 sh examples/run-all.sh        # every example, against a running neatroots
 pnpm --filter @neatlogs/neatroots dev        # server with reload on 4100
 pnpm --filter @neatlogs/neatroots-ui dev     # UI on 5173 (set NEATROOTS_DEV_ORIGIN=http://localhost:5173 on the server)

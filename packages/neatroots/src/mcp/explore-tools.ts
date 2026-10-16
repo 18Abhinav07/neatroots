@@ -168,13 +168,14 @@ export const EXPLORE_TOOLS = [
     input: {},
     run: async (roots) =>
       roots.store.db
-        .prepare("SELECT project, COUNT(*) AS runs, SUM(open_finding_count > 0) AS with_problems, SUM(status = 'failed') AS failed, MAX(started_ms) AS last_ms FROM runs WHERE doctor = 0 GROUP BY project ORDER BY last_ms DESC")
+        // Runs store ok/error/interrupted, so count the two statuses the app shows as failed.
+        .prepare("SELECT project, COUNT(*) AS runs, SUM(open_finding_count > 0) AS with_problems, SUM(status IN ('error', 'interrupted')) AS failed, MAX(started_ms) AS last_ms FROM runs WHERE doctor = 0 GROUP BY project ORDER BY last_ms DESC")
         .all(),
   }),
   def({
     name: "query_sql",
     title: "Read-only SQL",
-    description: `Run one read-only SQLite SELECT over the local store (tables: ${SQL_TABLES}). Times are ms since the epoch. Use it for questions the other tools don't answer, e.g. "which tool failed most this week". At most 200 rows come back.`,
+    description: `Run one read-only SQLite SELECT over the local store (tables: ${SQL_TABLES}). Times are ms since the epoch. Use it for questions the other tools don't answer, e.g. "which tool failed most this week". At most 200 rows come back; truncated is true when there were more.`,
     readOnly: true,
     input: { sql: z.string().min(1) },
     run: async (roots, a) => {
@@ -182,8 +183,14 @@ export const EXPLORE_TOOLS = [
       if (!/^(select|with)\b/i.test(sql) || /;/.test(sql)) throw new Error("only a single SELECT (or WITH … SELECT) statement is allowed");
       const stmt = readonly(roots).prepare(sql);
       if (!stmt.reader) throw new Error("only queries that return rows are allowed");
-      const rows = stmt.all() as Record<string, unknown>[];
-      return { rows: rows.slice(0, 200).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" ? clip(v, 2000) : v]))), total_rows: rows.length, truncated: rows.length > 200 };
+      // Step through rows and stop one past the cap: all() would run the whole query first, so a
+      // huge or unbounded one (e.g. a recursive CTE) blocks the event loop or never returns.
+      const rows: Record<string, unknown>[] = [];
+      for (const r of stmt.iterate() as IterableIterator<Record<string, unknown>>) {
+        rows.push(r);
+        if (rows.length > 200) break;
+      }
+      return { rows: rows.slice(0, 200).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" ? clip(v, 2000) : v]))), truncated: rows.length > 200 };
     },
   }),
   def({

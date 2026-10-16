@@ -12,6 +12,8 @@
  *   const model = wrapLanguageModel({ model: openai("gpt-4o"), middleware: rootsMiddleware() });
  */
 
+import { SteeredRequest } from "./request.js";
+
 export const GUIDANCE_OPEN = "<neatroots-guidance>";
 export const GUIDANCE_CLOSE = "</neatroots-guidance>";
 
@@ -54,6 +56,7 @@ interface State {
   disabled: boolean;
   mode: string;
   modeCheckedAt: number;
+  modeTraceId?: string;
   downUntil: number;
   /** Requests in a row that timed out: neatroots is busy, not stopped, until there are a few. */
   timeouts: number;
@@ -81,6 +84,7 @@ export function configure(opts: { url?: string; disabled?: boolean; traceId?: ()
   if (opts.disabled !== undefined) state.disabled = opts.disabled;
   state.mode = "unknown";
   state.modeCheckedAt = 0;
+  state.modeTraceId = undefined;
   state.downUntil = 0;
   state.timeouts = 0;
 }
@@ -227,9 +231,11 @@ export async function guidance(traceId?: string): Promise<Note | undefined> {
     debug("no active trace; pass configure({ neatlogs }) if the SDK is initialized");
     return undefined;
   }
-  if (state.mode === "off" && Date.now() - state.modeCheckedAt < 10_000) return undefined;
+  // A cached mode belongs only to the trace that supplied it. New runs must flush and ask.
+  const mode = state.modeTraceId === traceId ? state.mode : "unknown";
+  if (mode === "off" && Date.now() - state.modeCheckedAt < 10_000) return undefined;
   let gateMs: number | undefined;
-  if (state.mode === "gate" || state.mode === "unknown") {
+  if (mode === "gate" || mode === "unknown") {
     await flushSdk();
     gateMs = 300;
   }
@@ -237,6 +243,7 @@ export async function guidance(traceId?: string): Promise<Note | undefined> {
   if (!res) return undefined;
   state.mode = res.mode || "unknown";
   state.modeCheckedAt = Date.now();
+  state.modeTraceId = traceId;
   if (!res.note) return undefined;
   await record(res.note);
   if (res.note.kind === "halt") throw new NeatrootsHalt(res.note.text);
@@ -325,17 +332,21 @@ function wrapMethod(
   if (!owner) return;
   const original = owner[name] as ((...a: unknown[]) => unknown) & { __neatroots?: boolean };
   if (typeof original !== "function" || original.__neatroots) return;
-  const wrapped = async function (this: unknown, ...args: unknown[]) {
-    const o = replayOverrides();
-    const params = o.model || o.system ? override((args[0] ?? {}) as Record<string, unknown>, o) : ((args[0] ?? {}) as Record<string, unknown>);
-    let next = params;
-    try {
-      const note = await guidance();
-      if (note) next = transform({ ...params }, note);
-    } catch (err) {
-      if (err instanceof NeatrootsHalt) throw err;
-    }
-    return original.apply(owner, [next, ...args.slice(1)]);
+  const wrapped = function (this: unknown, ...args: unknown[]) {
+    const request = (async () => {
+      const o = replayOverrides();
+      const params = o.model || o.system ? override((args[0] ?? {}) as Record<string, unknown>, o) : ((args[0] ?? {}) as Record<string, unknown>);
+      let next = params;
+      try {
+        const note = await guidance();
+        if (note) next = transform({ ...params }, note);
+      } catch (err) {
+        if (err instanceof NeatrootsHalt) throw err;
+      }
+      // Box the SDK promise so awaiting guidance does not parse the provider response.
+      return { value: original.apply(owner, [next, ...args.slice(1)]) };
+    })();
+    return new SteeredRequest(request);
   } as typeof original;
   wrapped.__neatroots = true;
   owner[name] = wrapped;

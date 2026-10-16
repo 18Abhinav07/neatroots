@@ -16,7 +16,7 @@ id: repeated-tool-call
 kind: rule
 title: Same tool called repeatedly with identical arguments
 rule:
-  type: repeat            # repeat | errors | count | threshold | match | requires_before | unrecovered_error | run_end
+  type: repeat            # repeat | errors | count | slow | threshold | match | requires_before | unrecovered_error | run_end
   span: { type: [tool, mcp_tool] }
   same: [tool, input]
   at_least: 3
@@ -30,8 +30,9 @@ action: flag              # or halt (your own rules only)
 | `repeat` | `at_least` matching spans share the `same` fields; resolves when the next call differs |
 | `errors` | `consecutive` matching spans failed in a row |
 | `count` | the run has `at_least` matching spans |
+| `slow` | a matching span took at least `at_least_ms` milliseconds (one slow tool call, not the whole run; use `threshold` with `duration_ms` for the run) |
 | `threshold` | a run metric (`total_tokens`, `llm_calls`, `duration_ms`, …) reaches `at_least` |
-| `match` | a regex matches a span's `input`, `output`, `error` or `name` |
+| `match` | a regex matches a span's `input`, `output`, `error` or `name`; an MCP tool result's `content[].text` items are read like plain output too |
 | `requires_before` | a `span` call has no earlier successful `requires` call in the same run, for example a refund with no order lookup. Spans can arrive out of order, so during a run it waits 250 ms for a late `requires` span before it raises (or halts), and a finding resolves if the earlier call turns up later |
 | `unrecovered_error` | at run end, the last call of a tool failed (no later success of that tool) and the run still produced a final answer that does not say anything failed (a words check, so it is a hint, not proof) |
 | `run_end` | the run ended with `error`, `no_output` or `interrupted` |
@@ -59,7 +60,9 @@ group: refunds            # optional: checks in one group show as one problem pe
 ```
 
 `choice` questions take `options` (label → description) and `flag_on`; `score` questions take
-`levels` and `flag_at_level`.
+`levels` and `flag_at_level`. Score levels are numbered from zero, so `flag_at_level` must be
+between `0` and `levels.length - 1`. Fractional thresholds in that range are allowed: the score
+is the expected level, not necessarily a whole number.
 
 ### Make sure a question can see what it asks about
 
