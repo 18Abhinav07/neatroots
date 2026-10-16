@@ -256,22 +256,29 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
       const spans = selectSpans(t.spans, r.span).sort((a, b) => a.endMs - b.endMs);
       const names = spans.map((s) => s.toolName ?? s.name);
       const outs = spans.map((s) => jsonKey(s.output));
-      // Longest tail of the call list that is one short pattern repeated with no new results.
+      // Stretches of the call list that are one short pattern repeated with no new results, found
+      // in one pass per period. One still holds if it reaches the newest call or a fresh span
+      // completed it; otherwise the newest stretch is reported as one the agent broke out of.
+      let best: { start: number; end: number; p: number; firing: boolean } | undefined;
       for (let p = 2; p <= r.max_period; p++) {
-        let n = spans.length;
-        while (n - p >= 0 && names[n - 1] === names[n - 1 - p] && outs[n - 1] === outs[n - 1 - p]) n--;
-        const start = n - p;
-        const len = spans.length - start;
-        if (start < 0 || len < p * r.min_cycles) continue;
-        const pattern = names.slice(start, start + p);
-        if (new Set(pattern).size < 2) continue;
-        return {
-          firing: true,
-          evidenceSpanIds: spans.slice(start).map((s) => s.id),
-          params: { pattern: pattern.join(" -> "), count: String(Math.floor(len / p)) },
-        };
+        let start = 0;
+        for (let end = p; end <= spans.length; end++) {
+          if (end < spans.length && names[end] === names[end - p] && outs[end] === outs[end - p]) continue;
+          // spans[start, end) repeat with period p; the next stretch can begin p - 1 calls back.
+          const from = start;
+          start = end - p + 1;
+          if (end - from < p * r.min_cycles || new Set(names.slice(from, from + p)).size < 2) continue;
+          const firing = end === spans.length || (!!fresh && spans.slice(from + p * r.min_cycles - 1, end).some((s) => fresh.has(s.id)));
+          if (!best || (firing && !best.firing) || (firing === best.firing && end > best.end)) best = { start: from, end, p, firing };
+        }
       }
-      return null;
+      if (!best) return null;
+      const { start, end, p } = best;
+      return {
+        firing: best.firing,
+        evidenceSpanIds: spans.slice(start, end).map((s) => s.id),
+        params: { pattern: names.slice(start, start + p).join(" -> "), count: String(Math.floor((end - start) / p)) },
+      };
     }
     case "run_end": {
       if (!atEnd || !t.run) return null;
