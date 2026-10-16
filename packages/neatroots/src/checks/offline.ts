@@ -21,6 +21,7 @@ export interface OfflineRun {
   trace_id: string;
   root_name: string | null;
   findings: OfflineFinding[];
+  rule_evaluations?: { check_id: string; actions: number; evaluated: number; matched: number; skipped: Record<string, number> }[];
 }
 
 export interface OfflineOptions {
@@ -51,14 +52,16 @@ export function checkFiles(files: string[], opts: OfflineOptions = {}): { runs: 
         const run = store.getRun(traceId);
         const snap = loadTrace(store, traceId);
         const findings: OfflineFinding[] = [];
+        const rule_evaluations: NonNullable<OfflineRun["rule_evaluations"]> = [];
         for (const rule of rules) {
           const a = rule.applies_to;
           const list = (v: string | string[] | undefined) => (v === undefined ? undefined : Array.isArray(v) ? v : [v]);
           if (run && ((list(a?.project) && !list(a?.project)!.includes(run.project ?? "")) || (list(a?.workflow) && !list(a?.workflow)!.includes(run.workflow ?? "")))) continue;
           const hit = evaluateRule(rule, snap, true);
-          if (hit) findings.push({ check_id: rule.id, title: rule.title ?? rule.id, evidence_span_ids: hit.evidenceSpanIds, params: hit.params });
+          if (hit && rule.rule.type === "result_action") rule_evaluations.push({ check_id: rule.id, actions: Number(hit.params.actions), evaluated: Number(hit.params.evaluated), matched: Number(hit.params.count), skipped: JSON.parse(hit.params.skipped) });
+          if (hit && (rule.rule.type !== "result_action" || hit.firing)) findings.push({ check_id: rule.id, title: rule.title ?? hit.title ?? rule.id, evidence_span_ids: hit.evidenceSpanIds, params: hit.params });
         }
-        runs.push({ file, trace_id: traceId, root_name: run?.root_name ?? null, findings });
+        runs.push({ file, trace_id: traceId, root_name: run?.root_name ?? null, findings, ...(rule_evaluations.length ? { rule_evaluations } : {}) });
       }
     }
     return { runs, rules: rules.map((r) => r.id), errors };
