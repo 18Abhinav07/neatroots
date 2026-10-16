@@ -9,7 +9,7 @@ A check is anything neatroots watches for. Checks are YAML, loaded from (later w
 
 ## Rules
 
-Code, no model, every span.
+Code, no model. Most rules check every span; `result_action` only checks recorded runs at the end or offline.
 
 ```yaml
 id: repeated-tool-call
@@ -35,7 +35,74 @@ action: flag              # or halt (your own rules only)
 | `match` | a regex matches a span's `input`, `output`, `error` or `name`; an MCP tool result's `content[].text` items are read like plain output too |
 | `requires_before` | a `span` call has no earlier successful `requires` call in the same run, for example a refund with no order lookup |
 | `unrecovered_error` | at run end, the last call of a tool failed (no later success of that tool) and the run still produced a final answer that does not say anything failed (a words check, so it is a hint, not proof) |
+| `result_action` | an explicit structured result/value precedes a configured action within a bounded window and recorded parent scope; end/offline only, uncertainty is skipped |
 | `run_end` | the run ended with `error`, `no_output` or `interrupted` |
+
+### Recorded result/action contracts
+
+`result_action` is opt-in. It matches a configured temporal pattern in recorded spans, not
+semantic consistency or a causal dependency. There is no shipped default for it.
+
+```yaml
+id: write-after-blocked-result
+kind: rule
+rule:
+  type: result_action
+  result: { tool: permission }
+  path: [allowed]
+  equals: false
+  forbids: { tool: write }
+  within_ms: 5000
+  scope: same_parent
+  clock: same
+  correlate:
+    result: { field: input, path: [entity_id] }
+    action: { field: input, path: [entity_id] }
+```
+
+The action must start strictly after the result ends, and no more than `within_ms` later.
+Times are recorded milliseconds. `within_ms` is required, positive, finite and at most one
+hour. `clock: same` is an explicit assumption by the rule author, not something neatroots can
+verify from arbitrary imported telemetry. Do not use this rule across incomparable clocks.
+Equal boundary timestamps, overlaps, invalid times and unfinished results are skipped.
+
+Both spans must be direct siblings with the same known parent in the same trace. Parent
+scope does not prove a dependency. Use `correlate` when that parent contains different entities
+or parallel work. Correlation reads an exact scalar from each configured input/output path;
+missing keys and incompatible keys are skipped, not coerced. Without correlation, the contract
+applies to the whole recorded parent scope. Selectors use the existing span-selector semantics.
+
+The latest eligible completed result wins, before checking its value. A newer clearing result
+supersedes an older blocked result. A newer eligible result with missing data, a tie, or a result
+still in flight makes the affected action uncertain; the checker does not fall back to stale data.
+Results for a different explicit correlation key do not supersede each other.
+
+Paths are typed: strings select own object properties and integers select array indexes, for
+example `[rows, 0, allowed]`. Paths have at most 16 segments. Prototype keys are rejected. A
+missing property is not `null`, `false`, `0` or an empty string. Values and correlation keys are
+scalars; types must match, with no coercion, substring match or implicit JSON-string parsing.
+This first version does not inspect text nested inside an MCP result automatically. It does
+not infer missing actions, intent, causality or natural-language meaning, and cannot halt a run.
+
+The end pass uses a stored snapshot after the usual trailing-span grace period. That is not a
+promise of complete telemetry. Late or updated spans on an ended run trigger another
+contract-only pass after a quiet period; an old finding resolves if the pattern no longer holds
+or cannot be evaluated safely. Explicit Re-run checks also uses the latest stored snapshot.
+Repeated snapshots reuse the same finding for the same rule version and evidence pair;
+dismissed findings are not reopened automatically. Changes to the rule create a new version.
+
+`neatroots check ... --json` includes per-rule `rule_evaluations`: action candidates, evaluated
+actions, matches, and skipped counts by reason. Text output shows the same counts and uses
+`?` rather than a clean check mark when temporal coverage is incomplete. These counts describe
+recorded candidates, not production precision or recall. Findings include the evidence span
+ids, configured typed value/path, timing, version and coverage, never whole tool outputs.
+The run UI shows this notice and coverage on a temporal finding. Clean/skipped evaluations
+without a finding are reported by the offline CLI, not persisted as run findings.
+
+Work is capped at 100,000 result/action candidate comparisons per rule and snapshot. Larger
+fan-out is skipped with `comparison_budget` before any pair is reported. This first version
+uses parent grouping and bounded scans, not a general temporal-logic engine or an unmeasured
+claim of O(N log N) performance. A skipped result is not evidence that an action was safe.
 
 ## Questions
 
