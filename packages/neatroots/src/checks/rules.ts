@@ -1,6 +1,7 @@
 import type { RuleCheck } from "./types.js";
 import { finalOutput, selectSpans, type SpanInfo, type TraceSnapshot } from "../engine/trace.js";
 import { preview } from "../semantics/view.js";
+import { resultActionHit } from "./result-action.js";
 
 export interface RuleHit {
   /** Whether the condition holds now, looking at the latest spans. */
@@ -273,6 +274,8 @@ export function evaluateRule(check: RuleCheck, t: TraceSnapshot, atEnd: boolean,
       }
       return null;
     }
+    case "result_action":
+      return atEnd ? resultActionHit(r, t) : null;
     case "run_end": {
       if (!atEnd || !t.run) return null;
       const root = t.spans.find((s) => !s.parentId);
