@@ -163,14 +163,28 @@ export function configPath(): string {
   return path.join(rootsHome(), "config.yaml");
 }
 
-function deepMerge<T>(base: T, over: unknown): T {
-  if (!over || typeof over !== "object" || Array.isArray(over)) return base;
+const isSection = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * Lays a parsed config.yaml over the defaults. A hand-edited value of the wrong shape is skipped
+ * and its key recorded in `skipped`, so the default stays: a section written as a scalar
+ * (`retention: 5`, `llm: ollama`) would otherwise replace the whole section and crash startup or a
+ * later read. A list setting given as one string (`checkDirs: ./checks`) becomes a one-item list.
+ */
+function deepMerge<T>(base: T, over: unknown, skipped: string[] = [], prefix = ""): T {
+  if (!isSection(over)) return base;
   const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(over as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(over)) {
+    if (v === undefined || v === null) continue;
     const cur = out[k];
-    if (cur && typeof cur === "object" && !Array.isArray(cur) && v && typeof v === "object" && !Array.isArray(v)) {
-      out[k] = deepMerge(cur, v);
-    } else if (v !== undefined && v !== null) {
+    const key = prefix + k;
+    if (isSection(cur)) {
+      if (isSection(v)) out[k] = deepMerge(cur, v, skipped, `${key}.`);
+      else skipped.push(key);
+    } else if (Array.isArray(cur) && !Array.isArray(v)) {
+      if (typeof v === "string") out[k] = [v];
+      else skipped.push(key);
+    } else {
       out[k] = v;
     }
   }
@@ -182,7 +196,9 @@ export function loadConfig(): RootsConfig {
   let cfg = defaultConfig();
   if (fs.existsSync(file)) {
     try {
-      cfg = deepMerge(cfg, YAML.parse(fs.readFileSync(file, "utf8")));
+      const skipped: string[] = [];
+      cfg = deepMerge(cfg, YAML.parse(fs.readFileSync(file, "utf8")), skipped);
+      for (const key of skipped) console.warn(`[neatroots] ignoring ${key} in ${file}: wrong shape, using the default`);
     } catch (err) {
       console.warn(`[neatroots] could not read ${file}: ${(err as Error).message}`);
     }
