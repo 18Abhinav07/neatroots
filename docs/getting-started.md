@@ -279,7 +279,7 @@ For TypeScript, run `npm install ~/.neatroots/app/steer/ts` and see [steering.md
 
 Limits:
 - At most one note per LLM call and three per run.
-- Only rules you write with `action: halt` can stop a run.
+- Only rules you write with `action: halt` can stop a run, and only while steering is on for the project.
 - `neatroots steering stop` turns steering off everywhere at once. The sidebar switch does the same.
 
 ## 9. Coding agents

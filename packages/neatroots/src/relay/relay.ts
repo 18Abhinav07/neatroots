@@ -10,6 +10,7 @@ import { projectSettings } from "../config.js";
 import type { ForwardRow } from "../types.js";
 import { log } from "../util/log.js";
 import { VERSION } from "../version.js";
+import { endpointProblem } from "./endpoint.js";
 
 export interface ForwardPreview {
   trace_ids: string[];
@@ -182,6 +183,8 @@ export class Relay {
     const endpoint = (opts.endpoint ?? this.endpoint()).replace(/\/+$/, "");
     const key = opts.apiKey ?? (await getCloudKey());
     const base = { trace_ids: traceIds, endpoint, initiated_by: initiatedBy };
+    const problem = endpointProblem(endpoint, !!this.roots.config.cloud.trustEndpoint);
+    if (problem) return this.roots.store.insertForward({ ...base, status: "error", http_status: null, span_count: 0, bytes: 0, redactions: 0, error: problem });
     const unknown = traceIds.filter((id) => !this.roots.store.getRun(id));
     if (unknown.length) {
       return this.roots.store.insertForward({ ...base, status: "error", http_status: null, span_count: 0, bytes: 0, redactions: 0, error: `no run with id ${unknown.join(", ")}` });
