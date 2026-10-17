@@ -543,7 +543,7 @@ export class Store {
       end_ms: endMs,
       duration_ms: Math.max(0, endMs - startMs),
       status_code: span.status.code,
-      status_message: span.status.message ?? null,
+      status_message: span.status.message != null ? (typeof span.status.message === "string" ? span.status.message : JSON.stringify(span.status.message)) : null,
       model: view.model ?? null,
       provider: view.provider ?? null,
       tool_name: view.toolName ?? null,
