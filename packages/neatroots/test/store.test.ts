@@ -3,15 +3,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../src/store/db.js";
 import { traceReadback } from "../src/server/readback.js";
-import { batch, hex, llmSpan, markerSpan, s, span, tmpHome, toolSpan } from "./helpers.js";
+import { batch, closeTrackedStores, hex, llmSpan, markerSpan, s, span, tmpHome, toolSpan, trackedStore } from "./helpers.js";
 
 const homes: string[] = [];
 function store(): Store {
   const h = tmpHome();
   homes.push(h);
-  return new Store(path.join(h, "data"));
+  return trackedStore(path.join(h, "data"));
 }
 afterEach(() => {
+  closeTrackedStores();
   for (const h of homes.splice(0)) fs.rmSync(h, { recursive: true, force: true });
 });
 
@@ -191,7 +192,7 @@ describe("store", () => {
     for (const [label, attrs] of Object.entries(payloads)) {
       const h = tmpHome();
       homes.push(h);
-      const st = new Store(path.join(h, "data"));
+      const st = trackedStore(path.join(h, "data"));
       const ids: string[] = [];
       for (let i = 0; i < 60; i++) {
         const t = hex(16);
@@ -221,7 +222,6 @@ describe("store", () => {
       for (const t of ids.slice(1, 1 + removed)) expect(st.getRun(t), label).toBeUndefined(); // exactly the oldest went
       for (const t of ids.slice(1 + removed)) expect(st.getRun(t), label).toBeDefined();
       expect(st.sweep(999_999, cap), label).toBe(0); // the next sweep has nothing to do
-      st.close();
     }
   });
 
