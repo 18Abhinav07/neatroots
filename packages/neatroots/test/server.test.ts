@@ -53,6 +53,24 @@ describe("server", () => {
     expect(json.status).toBe(400);
   });
 
+  it("caps decompression for gzip bodies sniffed by magic bytes", async () => {
+    const tb = await served();
+    const { t, batches } = sampleRun();
+    const sniffed = await fetch(`${tb.url}/v1/traces`, {
+      method: "POST",
+      headers: { "content-type": "application/x-protobuf", "x-api-key": "anything" },
+      body: zlib.gzipSync(encodeTraceRequest(batches)),
+    });
+    expect(sniffed.status).toBe(200);
+    expect(tb.roots.store.getRun(t)?.span_count).toBe(3);
+    const tooBig = await fetch(`${tb.url}/v1/traces`, {
+      method: "POST",
+      headers: { "content-type": "application/x-protobuf" },
+      body: zlib.gzipSync(Buffer.alloc(257 * 1024 * 1024)),
+    });
+    expect(tooBig.status).toBe(413);
+  });
+
   it("refuses foreign Host headers and cross-origin API calls, but allows OTLP from local pages", async () => {
     const tb = await served();
     const evilStatus = await new Promise<number>((resolve) => {
