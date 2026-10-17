@@ -1478,15 +1478,13 @@ export class Store {
    * Re-indexes spans stored before the index covered whole values (it kept 4,000 characters of
    * each), a few hundred at a time so startup isn't held up. Runs once per database.
    */
-  reindexSearch(onDone?: (n: number) => void): void {
+  reindexSearch(onDone?: (n: number, ok: boolean) => void): void {
     if (this.getMeta("search_index") === String(SEARCH_INDEX_VERSION)) return;
     let after = 0;
     let n = 0;
-    const step = () => {
-      if (!this.db.open) return;
-      const rows = this.db.prepare("SELECT seq, trace_id, span_id FROM spans WHERE seq > ? ORDER BY seq LIMIT 300").all(after) as { seq: number; trace_id: string; span_id: string }[];
+    // Each chunk commits as one, so the index and its run ids (span_fts_ids) change together.
+    const chunk = this.db.transaction((rows: { seq: number; trace_id: string; span_id: string }[]) => {
       for (const r of rows) {
-        after = r.seq;
         const full = this.getOtlpSpan(r.trace_id, r.span_id);
         if (!full) continue;
         const view = buildView(full.span, full.resource.attributes);
@@ -1494,11 +1492,24 @@ export class Store {
         this.indexSpan(r.trace_id, r.span_id, full.span.name, view);
         n++;
       }
-      if (rows.length) setImmediate(step);
-      else {
+    });
+    const step = () => {
+      if (!this.db.open) return;
+      try {
+        const rows = this.db.prepare("SELECT seq, trace_id, span_id FROM spans WHERE seq > ? ORDER BY seq LIMIT 300").all(after) as { seq: number; trace_id: string; span_id: string }[];
+        chunk(rows);
+        if (rows.length) {
+          after = rows[rows.length - 1].seq;
+          setImmediate(step);
+          return;
+        }
         this.setMeta("search_index", String(SEARCH_INDEX_VERSION));
-        onDone?.(n);
+      } catch {
+        // A busy or failing database: stop (a failed chunk rolls back), and start over at the next start.
+        onDone?.(n, false);
+        return;
       }
+      onDone?.(n, true);
     };
     setImmediate(step);
   }
