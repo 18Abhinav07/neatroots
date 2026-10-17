@@ -108,6 +108,8 @@ CREATE TABLE IF NOT EXISTS spans (
 );
 CREATE INDEX IF NOT EXISTS spans_trace_start ON spans (trace_id, start_ms);
 CREATE INDEX IF NOT EXISTS spans_seq ON spans (seq);
+-- Covers the kind:, tool: and model: run filters, so they scan this instead of the wide span rows.
+CREATE INDEX IF NOT EXISTS spans_filter ON spans (span_kind, tool_name, model, is_marker, trace_id, span_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS span_fts USING fts5 (
   trace_id UNINDEXED, span_id UNINDEXED, name, tool_name, body, tokenize = 'porter unicode61'
@@ -279,6 +281,12 @@ export interface RunFilter {
   hasFinding?: boolean;
   /** Runs with an open or resolved finding from this check. */
   checkId?: string;
+  /** Runs with an open finding. */
+  hasOpenFinding?: boolean;
+  /** Runs with a span of this kind (LLM, TOOL, ...) whose tool name and model contain these, ignoring case. */
+  spanKind?: string;
+  tool?: string;
+  model?: string;
   text?: string;
   sinceMs?: number;
   untilMs?: number;
@@ -376,6 +384,14 @@ function ftsQuery(text: string): string {
     .filter(Boolean)
     .map((t) => `"${t.replace(/"/g, '""')}"`)
     .join(" ");
+}
+
+/**
+ * A LIKE pattern for text anywhere in a column. Wildcards are escaped so a literal % or _ is
+ * matched as text, not as "match anything"; the ESCAPE '\' clauses that use it pair with this.
+ */
+function likeText(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 }
 
 function searchText(v: Parameters<typeof preview>[0]): string {
@@ -720,10 +736,25 @@ export class Store {
       p.session = f.sessionId;
     }
     if (f.hasFinding) where.push("finding_count > 0");
+    if (f.hasOpenFinding) where.push("open_finding_count > 0");
     if (f.checkId) {
       where.push("trace_id IN (SELECT trace_id FROM findings WHERE check_id = @check AND status NOT IN ('dismissed', 'failed', 'quiet'))");
       p.check = f.checkId;
     }
+    const span: string[] = [];
+    if (f.spanKind) {
+      span.push("s.span_kind = @kind");
+      p.kind = f.spanKind;
+    }
+    if (f.tool) {
+      span.push("s.tool_name LIKE @tool ESCAPE '\\'");
+      p.tool = likeText(f.tool);
+    }
+    if (f.model) {
+      span.push("s.model LIKE @model ESCAPE '\\'");
+      p.model = likeText(f.model);
+    }
+    if (span.length && !f.text) where.push(`trace_id IN (SELECT s.trace_id FROM spans s WHERE s.is_marker = 0 AND ${span.join(" AND ")})`);
     if (f.sinceMs) {
       where.push("started_ms >= @since");
       p.since = f.sinceMs;
@@ -738,10 +769,15 @@ export class Store {
       // match ranked low, even the newest one.)
       const match = ftsQuery(f.text);
       const indexed = !!match && this.ftsQueryOk(match);
-      // Escape LIKE wildcards so a literal % or _ in the query is matched as text,
-      // not as "match anything". The ESCAPE clauses below pair with this.
-      const escaped = f.text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-      const like = `%${escaped}%`;
+      if (span.length) {
+        // With span filters the text must match a span that passes them: tool:issue_refund timeout means the
+        // refund call mentions "timeout". Without the index there is no per-span text to match, as before.
+        // INDEXED BY: probing the wide span rows for every text match is about twice as slow on a large store.
+        where.push(indexed ? `trace_id IN (SELECT s.trace_id FROM spans s INDEXED BY spans_filter WHERE ${span.join(" AND ")} AND (s.trace_id, s.span_id) IN (SELECT trace_id, span_id FROM span_fts WHERE span_fts MATCH @match))` : "0");
+        if (indexed) p.match = match;
+        return { where, p };
+      }
+      const like = likeText(f.text);
       where.push(`(${indexed ? "trace_id IN (SELECT trace_id FROM span_fts WHERE span_fts MATCH @match) OR " : ""}root_name LIKE @like ESCAPE '\\' OR workflow LIKE @like ESCAPE '\\' OR input_preview LIKE @like ESCAPE '\\' OR output_preview LIKE @like ESCAPE '\\')`);
       if (indexed) p.match = match;
       p.like = like;
@@ -838,16 +874,20 @@ export class Store {
     return [...groups.values()];
   }
 
-  searchSpans(text: string, limit = 50): { trace_id: string; span_id: string; name: string; snippet: string }[] {
+  /**
+   * Best-ranked spans matching `text`. With `traceIds`, only spans from those runs, in stored order:
+   * ranking would score every match in the store, which costs more than the rest of a search.
+   */
+  searchSpans(text: string, limit = 50, traceIds?: string[]): { trace_id: string; span_id: string; name: string; snippet: string }[] {
     const q = ftsQuery(text);
     if (!q) return [];
     try {
       return this.db
         .prepare(
           `SELECT trace_id, span_id, name, snippet(span_fts, 4, '[', ']', '…', 12) AS snippet
-           FROM span_fts WHERE span_fts MATCH ? ORDER BY rank LIMIT ?`,
+           FROM span_fts WHERE span_fts MATCH ? ${traceIds ? `AND trace_id IN (${traceIds.map(() => "?").join(",")})` : "ORDER BY rank"} LIMIT ?`,
         )
-        .all(q, limit) as { trace_id: string; span_id: string; name: string; snippet: string }[];
+        .all(q, ...(traceIds ?? []), limit) as { trace_id: string; span_id: string; name: string; snippet: string }[];
     } catch {
       return [];
     }
