@@ -1475,6 +1475,30 @@ export class Store {
   }
 
   /**
+   * The search index's startup work, in order: fill in its run ids, then re-index spans stored
+   * before search covered whole values. Re-indexing replaces each span's rows, which goes through
+   * the run ids once they're in; without them, it scans the whole index for every span. So if the
+   * run ids can't be filled in (a locked or failing database), it tries again twice, a minute and
+   * then two later, and the re-index waits for them or for the next start.
+   */
+  maintainSearch(onIds?: (rows: number, ready: boolean) => void, onReindex?: (n: number, ok: boolean) => void, retryMs = 60_000): void {
+    const attempt = (tries: number) =>
+      this.rebuildSearchIds((rows, ready) => {
+        // These run on later turns of the event loop, by when the store may have been closed.
+        if (!this.db.open) return;
+        if (ready) {
+          onIds?.(rows, true);
+          if (this.db.open) this.reindexSearch(onReindex);
+        } else if (tries < 3) {
+          setTimeout(() => this.db.open && attempt(tries + 1), retryMs * tries).unref();
+        } else {
+          onIds?.(rows, false);
+        }
+      });
+    attempt(1);
+  }
+
+  /**
    * Re-indexes spans stored before the index covered whole values (it kept 4,000 characters of
    * each), a few hundred at a time so startup isn't held up. Runs once per database.
    */
