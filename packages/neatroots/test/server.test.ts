@@ -259,6 +259,25 @@ describe("server", () => {
     expect(page).toMatchObject({ total: 3, matching: 3 });
   });
 
+  it("refuses an annotation for a run or span it does not have", async () => {
+    const tb = await served();
+    const t = hex(16);
+    const sp = hex(8);
+    tb.roots.ingest([batch([span({ traceId: t, spanId: sp, name: "agent", kind: "workflow" })])]);
+    const origin = { origin: tb.url.replace("127.0.0.1", "localhost"), "content-type": "application/json" };
+    const post = (b: unknown) => fetch(`${tb.url}/api/annotations`, { method: "POST", headers: origin, body: JSON.stringify(b) });
+    // Orphan rows used to be stored and never shown anywhere
+    const badRun = await post({ trace_id: hex(16), label: "issue", text: "x" });
+    expect(badRun.status).toBe(404);
+    expect(await badRun.json()).toEqual({ error: "run not found" });
+    const badSpan = await post({ trace_id: t, span_id: hex(8), label: "note", text: "x" });
+    expect(badSpan.status).toBe(404);
+    expect(await badSpan.json()).toEqual({ error: "span not found" });
+    const ok = await post({ trace_id: t, span_id: sp, label: "good", text: "x" });
+    expect(ok.status).toBe(200);
+    expect(tb.roots.store.annotationsForTrace(t)).toHaveLength(1);
+  });
+
   it("MCP tools use the latest run once the run in focus is deleted", async () => {
     const tb = await served();
     const old = hex(16);
