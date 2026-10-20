@@ -1,3 +1,4 @@
+import { pipeChild } from "./pipe.js";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -312,27 +313,12 @@ export class AgentChats {
     log.debug(`chat ${id}: ${bin} ${args.slice(0, -1).join(" ")}`);
     const child = spawn(bin, args, { cwd: s.cwd, env: { ...process.env, NEATLOGS_ENDPOINT: `http://localhost:${this.roots.config.port}` }, stdio: ["ignore", "pipe", "pipe"], detached: true });
     this.running.set(id, child);
-    let buf = "";
-    let stderr = "";
     let sawResult = false;
-    child.stdout!.on("data", (b: Buffer) => {
-      if (this.closed || !this.get(id)) return;
-      buf += b.toString();
-      let nl: number;
-      while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl).trim();
-        buf = buf.slice(nl + 1);
-        if (!line) continue;
-        try {
-          const ev = JSON.parse(line) as Record<string, unknown>;
-          if ((s.agent === "claude" ? this.onClaude(id, ev) : this.onCodex(id, ev)) === "result") sawResult = true;
-        } catch {
-          /* not an event line */
-        }
-      }
-    });
-    child.stderr!.on("data", (b: Buffer) => {
-      stderr = (stderr + b.toString()).slice(-4000);
+    const tail = pipeChild(child, {
+      active: () => !this.closed && !!this.get(id),
+      onEvent: (ev) => {
+        if ((s.agent === "claude" ? this.onClaude(id, ev) : this.onCodex(id, ev)) === "result") sawResult = true;
+      },
     });
     await new Promise<void>((resolve) => {
       let done = false;
@@ -345,7 +331,7 @@ export class AgentChats {
         endGroup(child);
         const stopped = this.stopping.delete(id) || !!signal;
         if (stopped) this.emit(id, { kind: "status", text: "Stopped" });
-        else if (code !== 0 && !sawResult) this.emit(id, { kind: "error", text: this.explainFailure(s.agent, stderr) });
+        else if (code !== 0 && !sawResult) this.emit(id, { kind: "error", text: this.explainFailure(s.agent, tail()) });
         this.ended(id, code === 0 || stopped || sawResult ? "idle" : "error");
         resolve();
       };
