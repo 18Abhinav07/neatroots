@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { BlobStore } from "./blobs.js";
+import { deleteUnattachedLogsBefore, trimUnattachedLogs } from "./unattached-logs.js";
 import { SearchIds } from "./search-ids.js";
 import { sha256, newId } from "../util/ids.js";
 import { buildView, preview, type SpanView } from "../semantics/view.js";
@@ -134,6 +135,7 @@ CREATE TABLE IF NOT EXISTS logs (
   received_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS logs_trace ON logs (trace_id);
+CREATE INDEX IF NOT EXISTS logs_received ON logs (received_ms);
 
 CREATE TABLE IF NOT EXISTS plans (
   id TEXT PRIMARY KEY,
@@ -1352,6 +1354,7 @@ export class Store {
   /** Deletes the oldest unpinned runs past the age or size limit. Returns how many runs were removed. */
   sweep(maxAgeDays: number, maxBytes: number): number {
     let removed = 0;
+    let logsRemoved = 0;
     // Skip the age sweep for a non-positive age: a cutoff of "now" (days = 0)
     // would delete every unpinned run. maxBytes pruning below still runs.
     if (Number.isFinite(maxAgeDays) && maxAgeDays >= 1) {
@@ -1361,6 +1364,7 @@ export class Store {
         .all(cutoff) as { trace_id: string }[];
       this.deleteRuns(old.map((r) => r.trace_id));
       removed += old.length;
+      logsRemoved += deleteUnattachedLogsBefore(this.db, cutoff);
     }
     // Measure what the database holds, not the file size: SQLite keeps the file (and WAL) at its
     // high-water mark after a delete and reuses the freed pages, so the file size never drops
@@ -1373,13 +1377,23 @@ export class Store {
       size = this.storedBytes();
     }
     if (size > maxBytes) {
+      // Logs that belong to no run go first, down to the low-water mark: deleting runs can't free
+      // their space (#267). Row sizes understate the pages they use, so measure again and trim more.
+      for (let i = 0; i < 8 && size > maxBytes * RETENTION_LOW_WATER; i++) {
+        const n = trimUnattachedLogs(this.db, size - maxBytes * RETENTION_LOW_WATER);
+        if (!n) break;
+        logsRemoved += n;
+        size = this.storedBytes();
+      }
+    }
+    if (size > maxBytes) {
       // Trim the oldest unpinned runs down to a low-water mark below the cap, so a store sitting
       // at its cap isn't trimmed (and compacted) again on every hourly sweep.
       const oldest = this.oldestRunsCovering(size - maxBytes * RETENTION_LOW_WATER, size);
       this.deleteRuns(oldest);
       removed += oldest.length;
     }
-    if (removed) this.db.pragma("wal_checkpoint(TRUNCATE)");
+    if (removed || logsRemoved) this.db.pragma("wal_checkpoint(TRUNCATE)");
     return removed;
   }
 
