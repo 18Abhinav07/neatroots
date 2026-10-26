@@ -20,6 +20,8 @@ export class RefreshQueue {
     private readonly refresh: (span: SpanRef) => void,
     private readonly atomically: (work: () => void) => void,
     private readonly chunk = REFRESH_CHUNK,
+    /** Told which spans a slice refreshed, once that slice has committed. */
+    private readonly onRefreshed?: (spans: SpanRef[]) => void,
   ) {}
 
   get size(): number {
@@ -71,6 +73,12 @@ export class RefreshQueue {
       });
     } catch (e) {
       console.error("neatroots: refreshing spans after late logs failed:", e);
+      return;
+    }
+    try {
+      this.onRefreshed?.(slice.map(([, s]) => s));
+    } catch (e) {
+      console.error("neatroots: reporting refreshed spans failed:", e);
     }
   }
 }

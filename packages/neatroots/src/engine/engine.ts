@@ -302,7 +302,8 @@ export class Engine {
       run.ended = false;
       clearTimeout(run.endTimer);
     }
-    const fresh = u.spans.filter((s) => s.isNew && !s.view.isMarker);
+    // Message content logged after its span changes what the span shows, so its checks look at it again.
+    const fresh = u.spans.filter((s) => (s.isNew || u.lateLogs) && !s.view.isMarker);
     if (fresh.length) this.track(u.traceId, this.handleSpans(run, fresh.map((s) => s.row.span_id)));
     if (!reopened && (u.rootEnded || u.completed)) {
       run.ended = true;

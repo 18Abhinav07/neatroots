@@ -286,6 +286,8 @@ export interface TraceUpdate {
   /** A parentless span took the root back from one that only qualified through its remote parent (#157). */
   rootHandedBack: boolean;
   completed: boolean;
+  /** The spans were stored earlier; message content logged after them changed what they show (spans holds those). */
+  lateLogs?: boolean;
 }
 
 export interface RunFilter {
@@ -447,6 +449,7 @@ export class Store {
   }
 
   close(): void {
+    this.lateLogListener = undefined;
     this.lateLogRefreshes.flush();
     this.db.close();
   }
@@ -805,7 +808,33 @@ export class Store {
   private lateLogRefreshes = new RefreshQueue(
     (t) => this.refreshSpanView(t.traceId, t.spanId),
     (work) => this.db.transaction(work)(),
+    undefined,
+    (spans) => this.announceRefreshed(spans),
   );
+
+  private lateLogListener?: (updates: TraceUpdate[]) => void;
+
+  /** Called, per run, with the spans whose views changed because message content was logged after them. */
+  onLateLogs(fn: (updates: TraceUpdate[]) => void): void {
+    this.lateLogListener = fn;
+  }
+
+  private announceRefreshed(spans: { traceId: string; spanId: string }[]): void {
+    if (!this.lateLogListener) return;
+    const byTrace = new Map<string, Set<string>>();
+    for (const s of spans) byTrace.set(s.traceId, (byTrace.get(s.traceId) ?? new Set()).add(s.spanId));
+    const updates: TraceUpdate[] = [];
+    for (const [traceId, ids] of byTrace) {
+      const rows = this.getSpans(traceId, false).filter((r) => ids.has(r.span_id));
+      const refreshed: IngestedSpan[] = [];
+      for (const row of rows) {
+        const full = this.getOtlpSpan(traceId, row.span_id);
+        if (full) refreshed.push({ row, view: this.viewOf(full), isNew: false });
+      }
+      if (refreshed.length) updates.push({ traceId, spans: refreshed, runCreated: false, rootEnded: false, rootHandedBack: false, completed: false, lateLogs: true });
+    }
+    if (updates.length) this.lateLogListener(updates);
+  }
 
   /** Applies every pending refresh of spans whose logs arrived late. */
   flushPendingRefreshes(): void {
