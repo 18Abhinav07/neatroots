@@ -1,3 +1,4 @@
+import { genAiLogEvents, MAX_LOG_EVENTS } from "../src/store/genai-logs.js";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -220,6 +221,20 @@ describe("GenAI message events", () => {
     st.ingestLogs([{ ...log(t, sp.spanId, "gen_ai.user.message", { content: "log" }), timeUnixNano: "1000" }]);
     const view = st.viewOf(st.getOtlpSpan(t, sp.spanId)!);
     expect((view.input as { content: string }[]).map((m) => m.content)).toEqual(["span", "log"]);
+  });
+
+  it("reads a bounded number of log records per span, keeping the newest", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    st.ingest([batch([sp])]);
+    const recs = Array.from({ length: MAX_LOG_EVENTS + 20 }, (_, i) => ({ ...log(t, sp.spanId, "gen_ai.user.message", { content: `m${i}` }), timeUnixNano: String(1000 + i) }));
+    st.ingestLogs(recs);
+    const got = genAiLogEvents(st.db, t, sp.spanId);
+    expect(got).toHaveLength(MAX_LOG_EVENTS);
+    const content = (e: { body?: string }) => (JSON.parse(e.body!) as { content: string }).content;
+    expect(content(got[0])).toBe("m20");
+    expect(content(got.at(-1)!)).toBe(`m${MAX_LOG_EVENTS + 19}`);
   });
 
   it("stores the span itself unchanged, so /v1/traces and the read-back stay lossless", () => {
