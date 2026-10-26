@@ -30,7 +30,11 @@ const userLog = (traceId: string, spanId: string, content: string): OtlpLogRecor
   scope: { name: "app" },
 });
 const bare = (t: string) => span({ traceId: t, name: "chat gpt-4o", kind: "llm", attrs: [s("gen_ai.request.model", "gpt-4o")] });
-const lookups = (st: Store) => vi.spyOn(st as unknown as { genAiLogEvents: (t: string, sp: string) => unknown }, "genAiLogEvents");
+const lookups = (st: ReturnType<typeof trackedStore>) => {
+  const prepare = st.db.prepare.bind(st.db);
+  return vi.spyOn(st.db, "prepare").mockImplementation(((sql: string) => prepare(sql)) as typeof st.db.prepare);
+};
+const logQueries = (spy: ReturnType<typeof lookups>) => spy.mock.calls.filter(([sql]) => String(sql).includes("FROM logs WHERE trace_id")).length;
 
 describe("GenAI log events in the store", () => {
   it("only looks up log events for a span that is missing content or a finish reason", () => {
@@ -39,14 +43,14 @@ describe("GenAI log events in the store", () => {
     const full: OtlpSpan = llmSpan(hex(16), "", { system: "sys", user: "q", out: "a" });
     full.attributes.push(s("gen_ai.response.finish_reasons.0", "stop"));
     st.viewOf({ span: full, resource });
-    expect(spy).not.toHaveBeenCalled();
+    expect(logQueries(spy)).toBe(0);
 
     st.viewOf({ span: bare(hex(16)), resource });
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(logQueries(spy)).toBe(1);
 
     const noFinish = llmSpan(hex(16), "", { user: "q", out: "a" });
     st.viewOf({ span: noFinish, resource });
-    expect(spy).toHaveBeenCalledTimes(2);
+    expect(logQueries(spy)).toBe(2);
   });
 
   it("adds the logs_span index and event_name column to a database created before them", () => {

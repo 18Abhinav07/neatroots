@@ -6,7 +6,8 @@ import { deleteUnattachedLogsBefore, trimUnattachedLogs } from "./unattached-log
 import { SearchIds } from "./search-ids.js";
 import { sha256, newId } from "../util/ids.js";
 import { buildView, preview, type SpanView } from "../semantics/view.js";
-import { isGenAiEvent, type GenAiEvent } from "../semantics/genai-events.js";
+import { isGenAiEvent } from "../semantics/genai-events.js";
+import { genAiLogEvents } from "./genai-logs.js";
 import { hasRemoteParent, kvToPlain, type KeyValue, type OtlpResource, type OtlpScope, type OtlpSpan, type Plain, type ResourceSpansBatch } from "../otlp/types.js";
 import type {
   Annotation,
@@ -505,7 +506,7 @@ export class Store {
         const scopeId = this.upsertScope(b.scope);
         const resAttrs = kvToPlain(b.resource.attributes);
         for (const span of b.spans) {
-          const view = buildView(span, b.resource.attributes, () => this.genAiLogEvents(span.traceId, span.spanId));
+          const view = buildView(span, b.resource.attributes, () => genAiLogEvents(this.db, span.traceId, span.spanId));
           const previous = this.db
             .prepare(
               `SELECT is_marker, span_kind, status_code, prompt_tokens, completion_tokens, total_tokens, blobs
@@ -803,19 +804,9 @@ export class Store {
     return this.viewRevs.get(`${traceId}/${spanId}`) ?? 0;
   }
 
-  /** GenAI message events logged against a span, oldest first. */
-  private genAiLogEvents(traceId: string, spanId: string): GenAiEvent[] {
-    const rows = this.db
-      .prepare("SELECT event_name, body, attributes FROM logs WHERE trace_id = ? AND span_id = ? AND event_name LIKE 'gen_ai.%' ORDER BY id")
-      .all(traceId, spanId) as { event_name: string; body: string | null; attributes: string | null }[];
-    return rows
-      .filter((r) => isGenAiEvent(r.event_name))
-      .map((r) => ({ name: r.event_name, attributes: kvToPlain(json<KeyValue[]>(r.attributes, [])), body: r.body ?? undefined }));
-  }
-
   /** The view of a stored span, including GenAI message content logged against it. */
   viewOf(full: { span: OtlpSpan; resource: OtlpResource }): SpanView {
-    return buildView(full.span, full.resource.attributes, () => this.genAiLogEvents(full.span.traceId, full.span.spanId));
+    return buildView(full.span, full.resource.attributes, () => genAiLogEvents(this.db, full.span.traceId, full.span.spanId));
   }
 
   /** Re-derives a stored span's previews and search text after message content arrived for it. */

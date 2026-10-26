@@ -284,10 +284,14 @@ function exceptionMessage(span: OtlpSpan): string | undefined {
   return undefined;
 }
 
-/** Message content the span's own events carry, then log records correlated to it. */
+/** Message content the span's own events carry and log records correlated to it, in the order they happened. */
 function genAiEvents(span: OtlpSpan, logEvents: GenAiEvent[]): GenAiEvent[] {
-  const own = span.events.filter((e) => isGenAiEvent(e.name)).map((e) => ({ name: e.name, attributes: kvToPlain(e.attributes) }));
-  return [...own, ...logEvents];
+  const own = span.events.filter((e) => isGenAiEvent(e.name)).map((e) => ({ name: e.name, timeNs: e.timeUnixNano, attributes: kvToPlain(e.attributes) }));
+  const all = [...own, ...logEvents];
+  // Put the two sources in the order things happened; without a time on every event, keep span events first.
+  const times = all.map((e) => (e.timeNs && /^\d+$/.test(e.timeNs) && e.timeNs !== "0" ? BigInt(e.timeNs) : undefined));
+  if (times.some((t) => t === undefined)) return all;
+  return all.map((e, i) => ({ e, t: times[i] as bigint })).sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : 0)).map((x) => x.e);
 }
 
 export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[], logEvents: GenAiEvent[] | (() => GenAiEvent[]) = []): SpanView {

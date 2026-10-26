@@ -10,6 +10,8 @@ import type { Plain } from "../otlp/types.js";
 export interface GenAiEvent {
   name: string;
   attributes: Record<string, Plain>;
+  /** When it happened, as unix nanoseconds, so events from a span and from logs can be put in order. */
+  timeNs?: string;
   /** A log record's body, when it is an object. */
   body?: Plain;
 }
@@ -46,7 +48,9 @@ function parse(v: Plain | undefined): Plain | undefined {
 /** The event's payload: a log record's body, with the event's own attributes alongside. */
 function payload(e: GenAiEvent): Obj {
   const body = parse(e.body);
-  return { ...e.attributes, ...(isObj(body) ? body : body !== undefined ? { content: body } : {}) };
+  // Some senders put a span event's body, as JSON, in a single `gen_ai.event.content` attribute.
+  const packed = parse(e.attributes["gen_ai.event.content"]);
+  return { ...e.attributes, ...(isObj(packed) ? packed : {}), ...(isObj(body) ? body : body !== undefined ? { content: body } : {}) };
 }
 
 function toolCalls(v: Plain | undefined): Plain[] | undefined {

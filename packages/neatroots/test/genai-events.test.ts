@@ -185,6 +185,43 @@ describe("GenAI message events", () => {
     expect(st.viewOf(st.getOtlpSpan(t, sp.spanId)!).input).toEqual([{ role: "user", content: "real" }]);
   });
 
+  it("reads a span event whose body is JSON in gen_ai.event.content", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    sp.events = [
+      ev("gen_ai.user.message", { "gen_ai.event.content": JSON.stringify({ content: "azure question" }) }),
+      ev("gen_ai.choice", { "gen_ai.event.content": JSON.stringify({ index: 0, finish_reason: "stop", message: { role: "assistant", content: "azure answer" } }) }),
+    ];
+    st.ingest([batch([sp])]);
+    const view = st.viewOf(st.getOtlpSpan(t, sp.spanId)!);
+    expect(view.input).toEqual([{ role: "user", content: "azure question" }]);
+    expect(view.output).toEqual([{ role: "assistant", content: "azure answer" }]);
+    expect(view.finishReason).toBe("stop");
+  });
+
+  it("orders span events and log records by when they happened", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    sp.events = [{ ...ev("gen_ai.user.message", { content: "second" }), timeUnixNano: "2000" }];
+    st.ingest([batch([sp])]);
+    st.ingestLogs([{ ...log(t, sp.spanId, "gen_ai.user.message", { content: "first" }), timeUnixNano: "1000" }, { ...log(t, sp.spanId, "gen_ai.user.message", { content: "third" }), timeUnixNano: "3000" }]);
+    const view = st.viewOf(st.getOtlpSpan(t, sp.spanId)!);
+    expect((view.input as { content: string }[]).map((m) => m.content)).toEqual(["first", "second", "third"]);
+  });
+
+  it("keeps span events before log records when an event has no time", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    sp.events = [{ ...ev("gen_ai.user.message", { content: "span" }), timeUnixNano: "0" }];
+    st.ingest([batch([sp])]);
+    st.ingestLogs([{ ...log(t, sp.spanId, "gen_ai.user.message", { content: "log" }), timeUnixNano: "1000" }]);
+    const view = st.viewOf(st.getOtlpSpan(t, sp.spanId)!);
+    expect((view.input as { content: string }[]).map((m) => m.content)).toEqual(["span", "log"]);
+  });
+
   it("stores the span itself unchanged, so /v1/traces and the read-back stay lossless", () => {
     const st = store();
     const t = hex(16);
