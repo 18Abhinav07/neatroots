@@ -105,6 +105,8 @@ describe("GenAI message events", () => {
       expect(decodeLogsJson(rec({ eventName: "gen_ai.user.message" }))[0].eventName).toBe("gen_ai.user.message");
       expect(decodeLogsJson(rec({ event_name: "gen_ai.choice" }))[0].eventName).toBe("gen_ai.choice");
       expect(decodeLogsJson(rec({}))[0].eventName).toBeUndefined();
+      expect(decodeLogsJson(rec({ eventName: 123 }))[0].eventName).toBeUndefined();
+      expect(decodeLogsJson(rec({ eventName: { a: 1 } }))[0].eventName).toBeUndefined();
     });
 
     it("joins logs that arrive before their span", () => {
@@ -161,6 +163,26 @@ describe("GenAI message events", () => {
     expect(p.i).not.toContain("event question");
     expect(p.i).not.toContain("log question");
     expect(p.o).toContain("attr answer");
+  });
+
+  it("takes the finish reason from an event even when the messages are attributes", () => {
+    const st = store();
+    const t = hex(16);
+    const sp: OtlpSpan = llmSpan(t, "", { system: "sys", user: "q", out: "a" });
+    sp.events = [ev("gen_ai.choice", { index: "0", finish_reason: "length", message: JSON.stringify({ content: "x" }) })];
+    st.ingest([batch([sp])]);
+    const view = st.viewOf(st.getOtlpSpan(t, sp.spanId)!);
+    expect(view.finishReason).toBe("length");
+    expect(previews(st, t, sp.spanId).o).toContain("a");
+  });
+
+  it("ignores span events named after Object.prototype members", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    sp.events = [ev("toString", { content: "x" }), ev("constructor", { content: "y" }), ev("gen_ai.user.message", { content: "real" })];
+    st.ingest([batch([sp])]);
+    expect(st.viewOf(st.getOtlpSpan(t, sp.spanId)!).input).toEqual([{ role: "user", content: "real" }]);
   });
 
   it("stores the span itself unchanged, so /v1/traces and the read-back stay lossless", () => {

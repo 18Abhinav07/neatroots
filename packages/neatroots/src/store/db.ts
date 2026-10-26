@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS logs (
   received_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS logs_trace ON logs (trace_id);
+CREATE INDEX IF NOT EXISTS logs_span ON logs (trace_id, span_id);
 CREATE INDEX IF NOT EXISTS logs_received ON logs (received_ms);
 
 CREATE TABLE IF NOT EXISTS plans (
@@ -504,7 +505,7 @@ export class Store {
         const scopeId = this.upsertScope(b.scope);
         const resAttrs = kvToPlain(b.resource.attributes);
         for (const span of b.spans) {
-          const view = buildView(span, b.resource.attributes, this.genAiLogEvents(span.traceId, span.spanId));
+          const view = buildView(span, b.resource.attributes, () => this.genAiLogEvents(span.traceId, span.spanId));
           const previous = this.db
             .prepare(
               `SELECT is_marker, span_kind, status_code, prompt_tokens, completion_tokens, total_tokens, blobs
@@ -814,7 +815,7 @@ export class Store {
 
   /** The view of a stored span, including GenAI message content logged against it. */
   viewOf(full: { span: OtlpSpan; resource: OtlpResource }): SpanView {
-    return buildView(full.span, full.resource.attributes, this.genAiLogEvents(full.span.traceId, full.span.spanId));
+    return buildView(full.span, full.resource.attributes, () => this.genAiLogEvents(full.span.traceId, full.span.spanId));
   }
 
   /** Re-derives a stored span's previews and search text after message content arrived for it. */
@@ -1553,6 +1554,8 @@ export class Store {
     const shas = (this.db.prepare(`SELECT DISTINCT j.value AS sha FROM spans, json_each(CASE WHEN json_valid(spans.blobs) THEN spans.blobs ELSE '[]' END) AS j WHERE spans.${inIds} AND spans.blobs IS NOT NULL`).all(ids) as { sha: string }[]).map((r) => r.sha);
     const tx = this.db.transaction(() => {
       this.searchIds.deleteRuns(ids);
+      const gone = new Set(traceIds);
+      for (const k of this.viewRevs.keys()) if (gone.has(k.slice(0, k.indexOf("/")))) this.viewRevs.delete(k);
       for (const t of ["spans", "logs", "findings", "decisions", "explanations", "notes", "summaries", "annotations"]) {
         this.db.prepare(`DELETE FROM ${t} WHERE ${inIds}`).run(ids);
       }

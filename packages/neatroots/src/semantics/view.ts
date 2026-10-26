@@ -290,7 +290,7 @@ function genAiEvents(span: OtlpSpan, logEvents: GenAiEvent[]): GenAiEvent[] {
   return [...own, ...logEvents];
 }
 
-export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[], logEvents: GenAiEvent[] = []): SpanView {
+export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[], logEvents: GenAiEvent[] | (() => GenAiEvent[]) = []): SpanView {
   const attrs = kvToPlain(span.attributes);
   const res = kvToPlain(resourceAttrs);
   const kind = deriveKind(span, attrs);
@@ -328,8 +328,8 @@ export function buildView(span: OtlpSpan, resourceAttrs: KeyValue[], logEvents: 
       view.toolCalls = llmToolCalls(attrs);
       view.output = out ?? maybeJson(first(attrs, ["neatlogs.llm.output", ...genericOut]));
       // Attributes win; events only fill what they left empty, so attribute dialects read as before.
-      if (view.input === undefined || view.output === undefined) {
-        const ev = messagesFromEvents(genAiEvents(span, logEvents));
+      if (view.input === undefined || view.output === undefined || !view.finishReason) {
+        const ev = messagesFromEvents(genAiEvents(span, typeof logEvents === "function" ? logEvents() : logEvents));
         if (view.input === undefined && ev.input !== undefined) view.input = normalizeParts(ev.input);
         if (view.output === undefined && ev.output !== undefined) view.output = normalizeParts(ev.output);
         if (ev.finishReason && !view.finishReason) view.finishReason = ev.finishReason;

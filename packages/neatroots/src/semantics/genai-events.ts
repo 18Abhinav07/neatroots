@@ -84,7 +84,7 @@ export function messagesFromEvents(events: GenAiEvent[]): GenAiMessages {
   let finishReason: string | undefined;
   let system: Plain | undefined;
   for (const e of events) {
-    const role = MESSAGE_ROLES[e.name];
+    const role = Object.hasOwn(MESSAGE_ROLES, e.name) ? MESSAGE_ROLES[e.name] : undefined;
     const p = payload(e);
     if (role) {
       input.push(message(role, p));
@@ -110,5 +110,5 @@ export function messagesFromEvents(events: GenAiEvent[]): GenAiMessages {
 
 /** Whether an event name is one this reader understands. */
 export function isGenAiEvent(name: string | null | undefined): boolean {
-  return !!name && (name in MESSAGE_ROLES || name === "gen_ai.choice" || name.startsWith("gen_ai.content.") || name === "gen_ai.client.inference.operation.details");
+  return !!name && (Object.hasOwn(MESSAGE_ROLES, name) || name === "gen_ai.choice" || name.startsWith("gen_ai.content.") || name === "gen_ai.client.inference.operation.details");
 }
