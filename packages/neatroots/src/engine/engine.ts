@@ -305,7 +305,7 @@ export class Engine {
     // Message content logged after its span changes what the span shows, so its checks look at it again.
     if (u.lateLogs) this.forgetAnswers(run, u.spans.map((x) => x.row.span_id));
     const fresh = u.spans.filter((s) => (s.isNew || u.lateLogs) && !s.view.isMarker);
-    if (fresh.length) this.track(u.traceId, this.handleSpans(run, fresh.map((s) => s.row.span_id)));
+    if (fresh.length) this.track(u.traceId, this.handleSpans(run, fresh.map((s) => s.row.span_id), !!u.lateLogs));
     if (!reopened && (u.rootEnded || u.completed)) {
       run.ended = true;
       // Trailing spans can arrive in the next batch; give them a moment.
@@ -363,12 +363,13 @@ export class Engine {
     return true;
   }
 
-  private async handleSpans(run: LiveRun, spanIds: string[]): Promise<void> {
+  private async handleSpans(run: LiveRun, spanIds: string[], late = false): Promise<void> {
     const snap = loadTrace(this.roots.store, run.traceId);
     const fresh = snap.spans.filter((s) => spanIds.includes(s.id));
     this.applyRules(run, snap, false, new Set(spanIds));
     this.ensurePlan(run, snap);
-    for (const s of fresh) if ((s.kind === "TOOL" || s.kind === "MCP_TOOL") && !run.answered?.toolSpans.has(s.id)) void this.track(run.traceId, this.labelTool(run, s, snap));
+    // A tool span is labelled once, when it arrives; a late log would store a second label for it.
+    if (!late) for (const s of fresh) if ((s.kind === "TOOL" || s.kind === "MCP_TOOL") && !run.answered?.toolSpans.has(s.id)) void this.track(run.traceId, this.labelTool(run, s, snap));
     if (run.plan) this.scheduleQuestions(run, snap, fresh);
   }
 

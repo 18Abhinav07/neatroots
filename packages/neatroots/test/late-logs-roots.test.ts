@@ -75,6 +75,20 @@ describe("late GenAI logs through Roots", () => {
     await until(() => apply.mock.calls.some((c) => (c[3] as Set<string> | undefined)?.has(sp.spanId)));
   });
 
+  it("labels a tool span once, not again when its content arrives late", async () => {
+    const { tb, updates } = await setup();
+    const t = hex(16);
+    const sp = span({ traceId: t, name: "execute_tool search", kind: "tool", attrs: [s("gen_ai.tool.name", "search")] });
+    tb.roots.ingest([batch([sp])]);
+    await tb.roots.engine!.waitIdle(t, 5000);
+    const labels = () => tb.roots.store.decisionsForTrace(t).filter((d) => d.check_id === "neatroots.tool-result" && d.span_id === sp.spanId);
+    expect(labels()).toHaveLength(1);
+    tb.roots.ingestLogs([log(t, sp.spanId, "gen_ai.choice", "message", "results: three hits")]);
+    await until(() => late(updates).some((u) => u.spans.some((x) => x.row.span_id === sp.spanId)));
+    await tb.roots.engine!.waitIdle(t, 5000);
+    expect(labels()).toHaveLength(1);
+  });
+
   it("reaches the app's event stream when logs arrive over HTTP", async () => {
     const tb = await makeRoots({ serve: true });
     cleanup.push(() => tb.close());
