@@ -17,7 +17,7 @@ export const MAX_LOG_EVENTS = 500;
 /** GenAI message events logged against a span (the newest MAX_LOG_EVENTS), oldest first. */
 export function genAiLogEvents(db: Database.Database, traceId: string, spanId: string): GenAiEvent[] {
   const rows = db
-    .prepare("SELECT event_name, time_ns, body, attributes FROM logs WHERE trace_id = ? AND span_id = ? AND event_name LIKE 'gen_ai.%' ORDER BY id DESC LIMIT ?")
+    .prepare("SELECT event_name, time_ns, body, attributes FROM logs WHERE trace_id = ? AND span_id = ? AND event_name >= 'gen_ai.' AND event_name < 'gen_ai/' ORDER BY id DESC LIMIT ?")
     .all(traceId, spanId, MAX_LOG_EVENTS) as { event_name: string; time_ns: string | null; body: string | null; attributes: string | null }[];
   return rows
     .reverse()

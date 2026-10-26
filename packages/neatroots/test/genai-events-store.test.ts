@@ -53,19 +53,25 @@ describe("GenAI log events in the store", () => {
     expect(logQueries(spy)).toBe(2);
   });
 
-  it("adds the logs_span index and event_name column to a database created before them", () => {
+  it("seeks a span's GenAI events without scanning its other logs", () => {
+    const st = trackedStore(dir());
+    const plan = st.db.prepare("EXPLAIN QUERY PLAN SELECT id FROM logs WHERE trace_id = ? AND span_id = ? AND event_name >= 'gen_ai.' AND event_name < 'gen_ai/'").all("t", "s") as { detail: string }[];
+    expect(plan.map((p) => p.detail).join(" ")).toMatch(/logs_span_event \(trace_id=\? AND span_id=\? AND event_name>\? AND event_name<\?\)/);
+  });
+
+  it("adds the logs_span_event index and event_name column to a database created before them", () => {
     const d = dir();
     trackedStore(d).close();
     const raw = new Database(path.join(d, "neatroots.db"));
-    raw.exec("DROP INDEX logs_span; ALTER TABLE logs DROP COLUMN event_name;");
+    raw.exec("DROP INDEX logs_span_event; ALTER TABLE logs DROP COLUMN event_name;");
     raw.close();
     const st = trackedStore(d);
-    const idx = st.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='logs_span'").all();
+    const idx = st.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='logs_span_event'").all();
     const cols = (st.db.prepare("PRAGMA table_info(logs)").all() as { name: string }[]).map((c) => c.name);
     expect(idx).toHaveLength(1);
     expect(cols).toContain("event_name");
-    const plan = st.db.prepare("EXPLAIN QUERY PLAN SELECT body FROM logs WHERE trace_id = ? AND span_id = ?").all("a", "b") as { detail: string }[];
-    expect(plan.map((p) => p.detail).join(" ")).toContain("logs_span");
+    const plan = st.db.prepare("EXPLAIN QUERY PLAN SELECT body FROM logs WHERE trace_id = ? AND span_id = ? AND event_name >= 'gen_ai.' AND event_name < 'gen_ai/'").all("a", "b") as { detail: string }[];
+    expect(plan.map((p) => p.detail).join(" ")).toContain("logs_span_event");
   });
 
   it("drops view revisions of deleted runs and keeps the others", () => {

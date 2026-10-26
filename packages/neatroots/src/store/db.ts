@@ -138,7 +138,6 @@ CREATE TABLE IF NOT EXISTS logs (
   received_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS logs_trace ON logs (trace_id);
-CREATE INDEX IF NOT EXISTS logs_span ON logs (trace_id, span_id);
 CREATE INDEX IF NOT EXISTS logs_received ON logs (received_ms);
 
 CREATE TABLE IF NOT EXISTS plans (
@@ -458,6 +457,8 @@ export class Store {
     };
     ensure("plans", "body", "TEXT");
     ensure("logs", "event_name", "TEXT");
+    // A span's GenAI events are a range on event_name, so its other logs are never read.
+    this.db.exec("DROP INDEX IF EXISTS logs_span; CREATE INDEX IF NOT EXISTS logs_span_event ON logs (trace_id, span_id, event_name)");
     // Tool-result labels recorded before the rename to neatroots.
     this.db.prepare("UPDATE decisions SET check_id = 'neatroots.tool-result' WHERE check_id IN ('bolts.tool-result', 'neatbolt.tool-result')").run();
     this.db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1')").run();
