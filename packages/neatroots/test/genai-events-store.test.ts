@@ -53,10 +53,12 @@ describe("GenAI log events in the store", () => {
     expect(logQueries(spy)).toBe(2);
   });
 
-  it("seeks a span's GenAI events without scanning its other logs", () => {
+  it("seeks a span's GenAI events (the full query) without scanning its other logs", () => {
     const st = trackedStore(dir());
-    const plan = st.db.prepare("EXPLAIN QUERY PLAN SELECT id FROM logs WHERE trace_id = ? AND span_id = ? AND event_name >= 'gen_ai.' AND event_name < 'gen_ai/'").all("t", "s") as { detail: string }[];
-    expect(plan.map((p) => p.detail).join(" ")).toMatch(/logs_span_event \(trace_id=\? AND span_id=\? AND event_name>\? AND event_name<\?\)/);
+    const plan = st.db.prepare("EXPLAIN QUERY PLAN SELECT event_name, time_ns, body, attributes FROM logs WHERE trace_id = ? AND span_id = ? AND event_name >= 'gen_ai.' AND event_name < 'gen_ai/' ORDER BY id DESC LIMIT ?").all("t", "s", 500) as { detail: string }[];
+    const text = plan.map((p) => p.detail).join(" ");
+    expect(text).not.toMatch(/SCAN logs/);
+    expect(text).toMatch(/logs_span_event \(trace_id=\? AND span_id=\? AND event_name>\? AND event_name<\?\)/);
   });
 
   it("adds the logs_span_event index and event_name column to a database created before them", () => {
