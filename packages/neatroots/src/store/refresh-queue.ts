@@ -45,28 +45,32 @@ export class RefreshQueue {
 
   private drainSlice(): void {
     this.runSlice();
-    if (this.pending.size && !this.timer) {
-      this.timer = setImmediate(() => {
-        this.timer = undefined;
-        try {
-          this.drainSlice();
-        } catch (e) {
-          console.error("neatroots: refreshing spans after late logs failed:", e);
-        }
-      });
-    }
+    this.scheduleSlice();
   }
 
+  private scheduleSlice(): void {
+    if (!this.pending.size || this.timer) return;
+    this.timer = setImmediate(() => {
+      this.timer = undefined;
+      this.drainSlice();
+    });
+  }
+
+  /** Never throws: a span that cannot be refreshed is reported once, and the rest still go on. */
   private runSlice(): void {
     const slice: [string, SpanRef][] = [];
     for (const entry of this.pending) {
       if (slice.length >= this.chunk) break;
       slice.push(entry);
     }
-    // Leave the queue first, so a span that cannot be refreshed is reported once instead of retried forever.
+    // Leave the queue first, so a failed slice is not retried forever.
     for (const [key] of slice) this.pending.delete(key);
-    this.atomically(() => {
-      for (const [, s] of slice) this.refresh(s);
-    });
+    try {
+      this.atomically(() => {
+        for (const [, s] of slice) this.refresh(s);
+      });
+    } catch (e) {
+      console.error("neatroots: refreshing spans after late logs failed:", e);
+    }
   }
 }

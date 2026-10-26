@@ -793,10 +793,11 @@ export class Store {
           );
         if (r.traceId && r.spanId && isGenAiEvent(eventName)) touched.set(`${r.traceId}/${r.spanId}`, { traceId: r.traceId, spanId: r.spanId });
       }
-      // Message content can arrive after its span: refresh what was derived from the span alone.
-      this.lateLogRefreshes.queue(touched.values());
     });
     tx();
+    // Message content can arrive after its span: refresh what was derived from the span alone.
+    // Once the logs are stored, so a failed refresh can neither lose them nor fail the request.
+    this.lateLogRefreshes.queue(touched.values());
     return records.length;
   }
 
