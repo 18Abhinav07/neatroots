@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OtlpLogRecord } from "../src/otlp/codec.js";
 import type { TraceUpdate } from "../src/store/db.js";
-import { batch, hex, makeRoots, s, span, until, type TestRoots } from "./helpers.js";
+import { checkFromInput } from "../src/server/api.js";
+import { batch, hex, makeRoots, mockLlm, s, span, until, type TestRoots } from "./helpers.js";
 
 // SDKs batch spans and logs separately, so a span's message content often arrives after the span (and
 // after the run ended). Logs go through Roots like spans do, and the runs they change are announced.
@@ -125,5 +126,49 @@ describe("late GenAI logs through Roots", () => {
     const before = late(updates).length;
     await tb.close();
     expect(late(updates).length).toBe(before);
+  });
+
+  it("asks span and trace questions again, with the content that arrived late", async () => {
+    const llmServer = await mockLlm();
+    const tb = await makeRoots({ llmUrl: llmServer.url });
+    cleanup.push(async () => {
+      await tb.close();
+      await llmServer.close();
+    });
+    (tb.roots.llm as unknown as { isAvailable: () => Promise<boolean> }).isAvailable = async () => true;
+    for (const [id, scope] of [["late-span-q", "span"], ["late-trace-q", "trace"]]) {
+      const q = checkFromInput(`
+id: ${id}
+kind: yes_no
+scope: ${scope}
+title: ${id}
+ask: Did the model answer the user?
+flag_at: 0.9
+evidence: { spans: { type: [llm] } }
+`).check;
+      if (!q) throw new Error("question did not parse");
+      tb.roots.checks.save(q, "user");
+    }
+    const engine = tb.roots.engine as unknown as { decisions: { decide: (...a: unknown[]) => Promise<unknown> } };
+    const real = engine.decisions.decide.bind(engine.decisions);
+    const asked: { check: string; evidence: string }[] = [];
+    engine.decisions.decide = async (evidence: unknown, questions: unknown) => {
+      const [q] = questions as { name: string }[];
+      asked.push({ check: q.name, evidence: String(evidence) });
+      return real(evidence, questions);
+    };
+    const t = hex(16);
+    const sp = llm(t);
+    tb.roots.ingest([batch([sp])]);
+    await until(() => ["late-span-q", "late-trace-q"].every((c) => asked.some((a) => a.check === c)));
+    await tb.roots.engine!.waitIdle(t, 5000);
+    expect(asked.some((a) => a.evidence.includes("blue giraffe"))).toBe(false);
+    const choice = log(t, sp.spanId, "gen_ai.choice", "message", "");
+    choice.body = { kvlistValue: { values: [{ key: "message", value: { kvlistValue: { values: [{ key: "role", value: { stringValue: "assistant" } }, { key: "content", value: { stringValue: "the answer is blue giraffe" } }] } } }] } };
+    tb.roots.ingestLogs([choice]);
+    for (const c of ["late-span-q", "late-trace-q"]) await until(() => asked.some((a) => a.check === c && a.evidence.includes("blue giraffe")));
+    // Once with the content, not repeatedly.
+    await tb.roots.engine!.waitIdle(t, 5000);
+    for (const c of ["late-span-q", "late-trace-q"]) expect(asked.filter((a) => a.check === c && a.evidence.includes("blue giraffe"))).toHaveLength(1);
   });
 });

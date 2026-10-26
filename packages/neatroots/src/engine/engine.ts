@@ -303,6 +303,7 @@ export class Engine {
       clearTimeout(run.endTimer);
     }
     // Message content logged after its span changes what the span shows, so its checks look at it again.
+    if (u.lateLogs) this.forgetAnswers(run, u.spans.map((x) => x.row.span_id));
     const fresh = u.spans.filter((s) => (s.isNew || u.lateLogs) && !s.view.isMarker);
     if (fresh.length) this.track(u.traceId, this.handleSpans(run, fresh.map((s) => s.row.span_id)));
     if (!reopened && (u.rootEnded || u.completed)) {
@@ -311,6 +312,23 @@ export class Engine {
       clearTimeout(run.endTimer);
       run.endTimer = setTimeout(() => void this.track(u.traceId, this.handleEnd(run)), 400);
     }
+  }
+
+  /**
+   * Makes the questions asked about these spans before their message content arrived count as not asked yet.
+   * A span question is remembered per span and a trace question by the spans it saw, neither of which late
+   * content changes. A span still waiting in a queue is left alone: it is read when its turn comes.
+   */
+  private forgetAnswers(run: LiveRun, spanIds: string[]): void {
+    for (const id of spanIds) {
+      const suffix = `:${id}`;
+      for (const key of [...run.spanDone]) {
+        if (!key.endsWith(suffix)) continue;
+        if (run.spanQueue.get(key.slice(0, -suffix.length))?.includes(id)) continue;
+        run.spanDone.delete(key);
+      }
+    }
+    run.traceEvidence.clear();
   }
 
   /** Checks in force for a run: its plan plus every user, project and MCP question that applies. */
