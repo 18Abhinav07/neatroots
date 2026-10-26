@@ -8,6 +8,7 @@ import { sha256, newId } from "../util/ids.js";
 import { buildView, preview, type SpanView } from "../semantics/view.js";
 import { isGenAiEvent } from "../semantics/genai-events.js";
 import { genAiLogEvents } from "./genai-logs.js";
+import { RefreshQueue } from "./refresh-queue.js";
 import { hasRemoteParent, kvToPlain, type KeyValue, type OtlpResource, type OtlpScope, type OtlpSpan, type Plain, type ResourceSpansBatch } from "../otlp/types.js";
 import type {
   Annotation,
@@ -446,6 +447,7 @@ export class Store {
   }
 
   close(): void {
+    this.lateLogRefreshes.flush();
     this.db.close();
   }
 
@@ -792,10 +794,21 @@ export class Store {
         if (r.traceId && r.spanId && isGenAiEvent(eventName)) touched.set(`${r.traceId}/${r.spanId}`, { traceId: r.traceId, spanId: r.spanId });
       }
       // Message content can arrive after its span: refresh what was derived from the span alone.
-      for (const t of touched.values()) this.refreshSpanView(t.traceId, t.spanId);
+      this.lateLogRefreshes.queue(touched.values());
     });
     tx();
     return records.length;
+  }
+
+  /** Refreshes spans after late logs, a bounded slice at a time. */
+  private lateLogRefreshes = new RefreshQueue(
+    (t) => this.refreshSpanView(t.traceId, t.spanId),
+    (work) => this.db.transaction(work)(),
+  );
+
+  /** Applies every pending refresh of spans whose logs arrived late. */
+  flushPendingRefreshes(): void {
+    this.lateLogRefreshes.flush();
   }
 
   private viewRevs = new Map<string, number>();

@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OtlpLogRecord } from "../src/otlp/codec.js";
 import type { OtlpSpan } from "../src/otlp/types.js";
+import { LOG_EVENTS_SQL, logEventsArgs } from "../src/store/genai-logs.js";
 import { batch, closeTrackedStores, hex, llmSpan, s, span, tmpHome, trackedStore } from "./helpers.js";
 
 const homes: string[] = [];
@@ -55,10 +56,10 @@ describe("GenAI log events in the store", () => {
 
   it("seeks a span's GenAI events (the full query) without scanning its other logs", () => {
     const st = trackedStore(dir());
-    const plan = st.db.prepare("EXPLAIN QUERY PLAN SELECT event_name, time_ns, body, attributes FROM logs WHERE trace_id = ? AND span_id = ? AND event_name >= 'gen_ai.' AND event_name < 'gen_ai/' ORDER BY id DESC LIMIT ?").all("t", "s", 500) as { detail: string }[];
+    const plan = st.db.prepare(`EXPLAIN QUERY PLAN ${LOG_EVENTS_SQL}`).all(...logEventsArgs("t", "s")) as { detail: string }[];
     const text = plan.map((p) => p.detail).join(" ");
     expect(text).not.toMatch(/SCAN logs/);
-    expect(text).toMatch(/logs_span_event \(trace_id=\? AND span_id=\? AND event_name>\? AND event_name<\?\)/);
+    expect(text).toMatch(/logs_span_event \(trace_id=\? AND span_id=\? AND event_name=\?\)/);
   });
 
   it("adds the logs_span_event index and event_name column to a database created before them", () => {

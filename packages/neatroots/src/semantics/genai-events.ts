@@ -112,7 +112,18 @@ export function messagesFromEvents(events: GenAiEvent[]): GenAiMessages {
   return { input: all.length ? all : undefined, output: output?.length ? output : undefined, finishReason };
 }
 
+/** The event names this reader understands: the only ones worth reading back from stored logs. */
+export const GENAI_EVENT_NAMES: readonly string[] = [
+  ...Object.keys(MESSAGE_ROLES),
+  "gen_ai.choice",
+  "gen_ai.content.prompt",
+  "gen_ai.content.completion",
+  "gen_ai.client.inference.operation.details",
+];
+
+const GENAI_EVENT_SET = new Set(GENAI_EVENT_NAMES);
+
 /** Whether an event name is one this reader understands. */
 export function isGenAiEvent(name: string | null | undefined): boolean {
-  return !!name && (Object.hasOwn(MESSAGE_ROLES, name) || name === "gen_ai.choice" || name.startsWith("gen_ai.content.") || name === "gen_ai.client.inference.operation.details");
+  return !!name && GENAI_EVENT_SET.has(name);
 }

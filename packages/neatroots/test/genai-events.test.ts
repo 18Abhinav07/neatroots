@@ -1,4 +1,5 @@
 import { genAiLogEvents, MAX_LOG_EVENTS } from "../src/store/genai-logs.js";
+import { REFRESH_CHUNK } from "../src/store/refresh-queue.js";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -235,6 +236,60 @@ describe("GenAI message events", () => {
     const content = (e: { body?: string }) => (JSON.parse(e.body!) as { content: string }).content;
     expect(content(got[0])).toBe("m20");
     expect(content(got.at(-1)!)).toBe(`m${MAX_LOG_EVENTS + 19}`);
+  });
+
+  it("is not crowded out by newer logs that are not GenAI events", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    st.ingest([batch([sp])]);
+    st.ingestLogs([{ ...log(t, sp.spanId, "gen_ai.user.message", { content: "keep me" }), timeUnixNano: "1000" }]);
+    st.ingestLogs(Array.from({ length: MAX_LOG_EVENTS + 20 }, (_, i) => ({ ...log(t, sp.spanId, "gen_ai.unrecognized", { content: `x${i}` }), timeUnixNano: String(2000 + i) })));
+    const view = st.viewOf(st.getOtlpSpan(t, sp.spanId)!);
+    expect((view.input as { content: string }[]).map((m) => m.content)).toEqual(["keep me"]);
+  });
+
+  it("keeps the newest events of each supported name, not only of the busiest one", () => {
+    const st = store();
+    const t = hex(16);
+    const sp = genai(t);
+    st.ingest([batch([sp])]);
+    st.ingestLogs([
+      ...Array.from({ length: MAX_LOG_EVENTS + 5 }, (_, i) => ({ ...log(t, sp.spanId, "gen_ai.user.message", { content: `u${i}` }), timeUnixNano: String(1000 + i) })),
+      { ...log(t, sp.spanId, "gen_ai.choice", { index: 0, message: { content: "answer" } }), timeUnixNano: "99999" },
+    ]);
+    const got = genAiLogEvents(st.db, t, sp.spanId);
+    expect(got).toHaveLength(MAX_LOG_EVENTS);
+    expect(got.at(-1)!.name).toBe("gen_ai.choice");
+  });
+
+  it("refreshes only a bounded slice of spans before ingestion returns, and the rest soon after", async () => {
+    const st = store();
+    const t = hex(16);
+    const spans = Array.from({ length: REFRESH_CHUNK * 2 + 30 }, () => genai(t));
+    for (const sp of spans) sp.events = [];
+    st.ingest([batch(spans)]);
+    const preview = (sp: OtlpSpan) => (st.db.prepare("SELECT input_preview AS p FROM spans WHERE trace_id = ? AND span_id = ?").get(t, sp.spanId) as { p: string | null }).p;
+    st.ingestLogs(spans.map((sp) => ({ ...log(t, sp.spanId, "gen_ai.user.message", { content: "late" }), timeUnixNano: "1000" })));
+
+    const done = () => spans.filter((sp) => preview(sp)?.includes("late")).length;
+    expect(done()).toBe(REFRESH_CHUNK);
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    expect(done()).toBe(spans.length);
+  });
+
+  it("applies pending refreshes on flush and on close", () => {
+    const st = store();
+    const t = hex(16);
+    const spans = Array.from({ length: REFRESH_CHUNK + 10 }, () => genai(t));
+    for (const sp of spans) sp.events = [];
+    st.ingest([batch(spans)]);
+    st.ingestLogs(spans.map((sp) => ({ ...log(t, sp.spanId, "gen_ai.user.message", { content: "late" }), timeUnixNano: "1000" })));
+    st.flushPendingRefreshes();
+    const n = (st.db.prepare("SELECT COUNT(*) AS n FROM spans WHERE trace_id = ? AND input_preview LIKE '%late%'").get(t) as { n: number }).n;
+    expect(n).toBe(spans.length);
   });
 
   it("stores the span itself unchanged, so /v1/traces and the read-back stay lossless", () => {

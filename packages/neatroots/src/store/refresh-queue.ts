@@ -1,0 +1,72 @@
+export interface SpanRef {
+  traceId: string;
+  spanId: string;
+}
+
+/** Spans re-derived per slice, so one big batch of late logs cannot hold the event loop for all of them at once. */
+export const REFRESH_CHUNK = 100;
+
+/**
+ * Spans whose previews and search text must be re-derived after logs arrived for them. The first slice runs when
+ * the spans are queued, so an ordinary batch is fully applied before ingestion returns; the rest of a larger batch
+ * goes through on later turns of the event loop, a slice at a time. Every queued span is refreshed exactly once
+ * per queueing: a span queued again while it waits is not repeated.
+ */
+export class RefreshQueue {
+  private pending = new Map<string, SpanRef>();
+  private timer: NodeJS.Immediate | undefined;
+
+  constructor(
+    private readonly refresh: (span: SpanRef) => void,
+    private readonly atomically: (work: () => void) => void,
+    private readonly chunk = REFRESH_CHUNK,
+  ) {}
+
+  get size(): number {
+    return this.pending.size;
+  }
+
+  queue(spans: Iterable<SpanRef>): void {
+    for (const s of spans) this.pending.set(`${s.traceId}/${s.spanId}`, s);
+    this.drainSlice();
+  }
+
+  /** Refreshes everything still waiting, now. */
+  flush(): void {
+    this.stop();
+    while (this.pending.size) this.runSlice();
+  }
+
+  /** Drops the scheduled slice (the spans stay queued until flushed). */
+  stop(): void {
+    if (this.timer) clearImmediate(this.timer);
+    this.timer = undefined;
+  }
+
+  private drainSlice(): void {
+    this.runSlice();
+    if (this.pending.size && !this.timer) {
+      this.timer = setImmediate(() => {
+        this.timer = undefined;
+        try {
+          this.drainSlice();
+        } catch (e) {
+          console.error("neatroots: refreshing spans after late logs failed:", e);
+        }
+      });
+    }
+  }
+
+  private runSlice(): void {
+    const slice: [string, SpanRef][] = [];
+    for (const entry of this.pending) {
+      if (slice.length >= this.chunk) break;
+      slice.push(entry);
+    }
+    // Leave the queue first, so a span that cannot be refreshed is reported once instead of retried forever.
+    for (const [key] of slice) this.pending.delete(key);
+    this.atomically(() => {
+      for (const [, s] of slice) this.refresh(s);
+    });
+  }
+}
