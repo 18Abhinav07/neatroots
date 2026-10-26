@@ -6,6 +6,7 @@ import { deleteUnattachedLogsBefore, trimUnattachedLogs } from "./unattached-log
 import { SearchIds } from "./search-ids.js";
 import { sha256, newId } from "../util/ids.js";
 import { buildView, preview, type SpanView } from "../semantics/view.js";
+import { isGenAiEvent, type GenAiEvent } from "../semantics/genai-events.js";
 import { hasRemoteParent, kvToPlain, type KeyValue, type OtlpResource, type OtlpScope, type OtlpSpan, type Plain, type ResourceSpansBatch } from "../otlp/types.js";
 import type {
   Annotation,
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS logs (
   severity TEXT,
   body TEXT,
   attributes TEXT,
+  event_name TEXT,
   resource_id TEXT,
   received_ms INTEGER NOT NULL
 );
@@ -453,6 +455,7 @@ export class Store {
       if (!cols.some((c) => c.name === column)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
     };
     ensure("plans", "body", "TEXT");
+    ensure("logs", "event_name", "TEXT");
     // Tool-result labels recorded before the rename to neatroots.
     this.db.prepare("UPDATE decisions SET check_id = 'neatroots.tool-result' WHERE check_id IN ('bolts.tool-result', 'neatbolt.tool-result')").run();
     this.db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1')").run();
@@ -501,7 +504,7 @@ export class Store {
         const scopeId = this.upsertScope(b.scope);
         const resAttrs = kvToPlain(b.resource.attributes);
         for (const span of b.spans) {
-          const view = buildView(span, b.resource.attributes);
+          const view = buildView(span, b.resource.attributes, this.genAiLogEvents(span.traceId, span.spanId));
           const previous = this.db
             .prepare(
               `SELECT is_marker, span_kind, status_code, prompt_tokens, completion_tokens, total_tokens, blobs
@@ -762,13 +765,15 @@ export class Store {
 
   ingestLogs(records: OtlpLogRecord[]): number {
     const now = Date.now();
+    const touched = new Map<string, { traceId: string; spanId: string }>();
     const tx = this.db.transaction(() => {
       for (const r of records) {
         const resourceId = this.upsertResource(r.resource);
         const body = kvToPlain([{ key: "b", value: r.body }]).b;
+        const eventName = r.eventName ?? (typeof kvToPlain(r.attributes)["event.name"] === "string" ? (kvToPlain(r.attributes)["event.name"] as string) : undefined);
         this.db
           .prepare(
-            "INSERT INTO logs (trace_id, span_id, time_ns, severity, body, attributes, resource_id, received_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO logs (trace_id, span_id, time_ns, severity, body, attributes, event_name, resource_id, received_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           )
           .run(
             r.traceId || null,
@@ -777,13 +782,55 @@ export class Store {
             r.severityText ?? (r.severityNumber !== undefined ? String(r.severityNumber) : null),
             typeof body === "string" ? body : JSON.stringify(body),
             JSON.stringify(r.attributes),
+            eventName ?? null,
             resourceId,
             now,
           );
+        if (r.traceId && r.spanId && isGenAiEvent(eventName)) touched.set(`${r.traceId}/${r.spanId}`, { traceId: r.traceId, spanId: r.spanId });
       }
+      // Message content can arrive after its span: refresh what was derived from the span alone.
+      for (const t of touched.values()) this.refreshSpanView(t.traceId, t.spanId);
     });
     tx();
     return records.length;
+  }
+
+  private viewRevs = new Map<string, number>();
+
+  /** Changes whenever message content logged against a span re-derives its view, so caches of the view can tell. */
+  viewRevision(traceId: string, spanId: string): number {
+    return this.viewRevs.get(`${traceId}/${spanId}`) ?? 0;
+  }
+
+  /** GenAI message events logged against a span, oldest first. */
+  private genAiLogEvents(traceId: string, spanId: string): GenAiEvent[] {
+    const rows = this.db
+      .prepare("SELECT event_name, body, attributes FROM logs WHERE trace_id = ? AND span_id = ? AND event_name LIKE 'gen_ai.%' ORDER BY id")
+      .all(traceId, spanId) as { event_name: string; body: string | null; attributes: string | null }[];
+    return rows
+      .filter((r) => isGenAiEvent(r.event_name))
+      .map((r) => ({ name: r.event_name, attributes: kvToPlain(json<KeyValue[]>(r.attributes, [])), body: r.body ?? undefined }));
+  }
+
+  /** The view of a stored span, including GenAI message content logged against it. */
+  viewOf(full: { span: OtlpSpan; resource: OtlpResource }): SpanView {
+    return buildView(full.span, full.resource.attributes, this.genAiLogEvents(full.span.traceId, full.span.spanId));
+  }
+
+  /** Re-derives a stored span's previews and search text after message content arrived for it. */
+  private refreshSpanView(traceId: string, spanId: string): void {
+    const full = this.getOtlpSpan(traceId, spanId);
+    if (!full) return;
+    const view = this.viewOf(full);
+    if (view.isMarker) return;
+    this.viewRevs.set(`${traceId}/${spanId}`, this.viewRevision(traceId, spanId) + 1);
+    const inp = view.input !== undefined ? preview(view.input, 600) : null;
+    const out = view.output !== undefined ? preview(view.output, 600) : null;
+    this.db.prepare("UPDATE spans SET input_preview = ?, output_preview = ? WHERE trace_id = ? AND span_id = ?").run(inp, out, traceId, spanId);
+    this.db
+      .prepare("UPDATE runs SET input_preview = ?, output_preview = ? WHERE trace_id = ? AND root_span_id = ?")
+      .run(view.input !== undefined ? (currentRequest(view.input) ?? preview(view.input, 300)) : null, view.output !== undefined ? preview(view.output, 300) : null, traceId, spanId);
+    this.indexSpan(traceId, spanId, full.span.name, view);
   }
 
   // ------------------------------------------------------------------- reads
@@ -1627,7 +1674,7 @@ export class Store {
       for (const r of rows) {
         const full = this.getOtlpSpan(r.trace_id, r.span_id);
         if (!full) continue;
-        const view = buildView(full.span, full.resource.attributes);
+        const view = this.viewOf(full);
         if (view.isMarker) continue;
         this.indexSpan(r.trace_id, r.span_id, full.span.name, view);
         n++;
